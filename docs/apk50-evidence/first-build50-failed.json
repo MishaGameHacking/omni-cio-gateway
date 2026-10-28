@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "kind": "windows_development_check_build",
+  "origin": "Windows laptop",
+  "host": "LAPTOP-NPSGA016",
+  "base_commit": "5e35c9a7c7ee3aa402f264ce312f59c121617ddc",
+  "base_source_sha256": "ccb895a11da33f75655b96b24e6355b599132ae41de213b743a4c9135a6759a7",
+  "github": {
+    "run_id": 40621633081,
+    "run_attempt": 1,
+    "workflow_sha": "b8694b378c8dcb60bbddfd0036aec5d603abeeed",
+    "runner_name": "omni-cio-ci"
+  },
+  "status": "failed",
+  "started_at": "2026-10-28T02:34:09.621286+00:00",
+  "steps": [
+    {
+      "label": "java-default-profile",
+      "command": [
+        "C:\\actions-runner-2\\_work\\_tool\\Java_Temurin-Hotspot_jdk\\17.0.20-101\\x64\\bin\\java.exe",
+        "-XshowSettings:properties",
+        "-version"
+      ],
+      "started_at": "2026-10-28T02:34:20.249160+00:00",
+      "timeout_seconds": 30,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\java-default-profile.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:20.327837+00:00",
+      "duration_seconds": 0.078,
+      "log_bytes": 3556,
+      "log_sha256": "be4325e456e4461236b5e3c3cf114dc5a9b8b7ce1da0fd5ef7188540ffbf84c6"
+    },
+    {
+      "label": "venv",
+      "command": [
+        "C:\\Program Files\\Python314\\python.exe",
+        "-m",
+        "venv",
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv"
+      ],
+      "started_at": "2026-10-28T02:34:20.805133+00:00",
+      "timeout_seconds": 300,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\02-venv.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:27.941203+00:00",
+      "duration_seconds": 7.135,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "install-test-requirements",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "-r",
+        "C:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40621633081-1\\backend\\requirements-dev.txt"
+      ],
+      "started_at": "2026-10-28T02:34:27.943553+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\03-install-test-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:52.094272+00:00",
+      "duration_seconds": 24.15,
+      "log_bytes": 11206,
+      "log_sha256": "17a9877ec438d7f0daab51b7f4535c6576bf72717385004500ff0bd4601a0017"
+    },
+    {
+      "label": "install-native-tls-requirements",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "--require-virtualenv",
+        "install",
+        "--no-input",
+        "--no-cache-dir",
+        "--index-url",
+        "https://pypi.org/simple",
+        "--require-hashes",
+        "--only-binary=:all:",
+        "-r",
+        "C:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40621633081-1\\tools\\timeweb-actions-requirements.txt"
+      ],
+      "started_at": "2026-10-28T02:34:52.106549+00:00",
+      "timeout_seconds": 900,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\04-install-native-tls-requirements.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:53.678764+00:00",
+      "duration_seconds": 1.571,
+      "log_bytes": 324,
+      "log_sha256": "e3ec4ed7b695cb28b5216c4c62cce1ded7eb15136cc8c7dbb34b5d20c463efc6"
+    },
+    {
+      "label": "resolved-test-dependencies",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "freeze",
+        "--all"
+      ],
+      "started_at": "2026-10-28T02:34:53.687734+00:00",
+      "timeout_seconds": 60,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\05-resolved-test-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:54.319499+00:00",
+      "duration_seconds": 0.631,
+      "log_bytes": 609,
+      "log_sha256": "1c090018235e688ee655318b01d6fd7d4d2c18b040e08ae28c3954cde2eb0491"
+    },
+    {
+      "label": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_at": "2026-10-28T02:34:54.329990+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\06-diff-check.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:54.577368+00:00",
+      "duration_seconds": 0.246,
+      "log_bytes": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "dependencies",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "pip",
+        "check"
+      ],
+      "started_at": "2026-10-28T02:34:54.579138+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\07-dependencies.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:55.428924+00:00",
+      "duration_seconds": 0.849,
+      "log_bytes": 31,
+      "log_sha256": "672aec65a45bed50e70229c70934a7eebf0462595c459b83023027645d57cccf"
+    },
+    {
+      "label": "python-source-audit",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        ".github/scripts/audit_python_sources.py"
+      ],
+      "started_at": "2026-10-28T02:34:55.438136+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\08-python-source-audit.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:56.872612+00:00",
+      "duration_seconds": 1.433,
+      "log_bytes": 111,
+      "log_sha256": "b07af85a266251166943c5fcc771036b9884cb7226a1e4c6f090fc417b4010fe"
+    },
+    {
+      "label": "workspace-guard-tests",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "deploy/tests",
+        "-p",
+        "test_timeweb_workspace.py",
+        "-v"
+      ],
+      "started_at": "2026-10-28T02:34:56.881330+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\09-workspace-guard-tests.log",
+      "exit_code": 0,
+      "finished_at": "2026-10-28T02:34:58.685633+00:00",
+      "duration_seconds": 1.803,
+      "log_bytes": 2392,
+      "log_sha256": "3acbd8ae99788992a41cd95eae39be606f8b5176e3b751586acd06a3ed502d22"
+    },
+    {
+      "label": "host-tests",
+      "command": [
+        "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\venv\\Scripts\\python.exe",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        ".github/scripts/tests",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at": "2026-10-28T02:34:58.694740+00:00",
+      "timeout_seconds": 1800,
+      "log": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1\\10-host-tests.log",
+      "exit_code": 1,
+      "error_type": "RuntimeError",
+      "finished_at": "2026-10-28T02:36:10.433322+00:00",
+      "duration_seconds": 71.738,
+      "log_bytes": 313609,
+      "log_sha256": "348a20adbb1988f7618f7969bdcdb39569eceaf28c105ab7a8fd2eca069c1d80"
+    }
+  ],
+  "check": {
+    "status": "failed",
+    "started_at": "2026-10-28T02:34:54.328431+00:00",
+    "finished_at": "2026-10-28T02:36:10.456423+00:00"
+  },
+  "build": {
+    "status": "not_run"
+  },
+  "runtime": {
+    "status": "not_run"
+  },
+  "publication_authorized": false,
+  "phone_verified": false,
+  "timeweb_execution": false,
+  "root": "C:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40621633081-1",
+  "state": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1",
+  "bootstrap_sha256": "037870486bbe79a33e36b84b30347851c21d25b85678e9031ddbd0044b390f47",
+  "patch_manifest_sha256": "f59f23f29786d0006867aeecd954904f35adb08c5afb7ded544c14fce6939d66",
+  "python_version": "3.14.6",
+  "external_quality_gate": {
+    "status": "not_run_by_this_bootstrap"
+  },
+  "retention": {
+    "owned_checkout": "C:\\actions-runner\\_work\\omni-cio-gateway\\omni-cio-gateway\\windows-development-40621633081-1",
+    "owned_state": "C:\\actions-runner\\_work\\_temp\\analyst-development-40621633081-1",
+    "automatic_deletion_performed": false,
+    "cleanup_requires": [
+      "exact_private_archive_confirmed_on_Timeweb",
+      "exact_source_inventory_backed_up_in_Git",
+      "required_APK_inputs_retained_for_runtime_and_phone"
+    ],
+    "preserve_shared_sdk_gradle_signing_profile": true
+  },
+  "patch_files": [
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": ".github/scripts/tests/test_android17_live_spectrum.py",
+      "old_sha256": "8d7cb319a3b379074adc78e215f492c7769200992b8531b0af3bc19828112c4b",
+      "new_sha256": "28b152abcab1acfb7d9d9deac9c0d8848a58b2b71a65bd346b2437efff13382a"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": ".github/scripts/tests/test_spectrum_brand_identity.py",
+      "old_sha256": "6a9ccee22cda1a7e52ed558d251e18b2efe457540f57c54826b3484aaac319bf",
+      "new_sha256": "6793d1726d7743544c844cc36a0b8f712c76bb0eeb35c32e282b45ea5e8fc96b"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": "app/build.gradle.kts",
+      "old_sha256": "df803506ebb6e1c0793e127e349e73dabedc20bfada67c1e3ac1b41beb0760d8",
+      "new_sha256": "14d193738e51ac629903aaece13051ef75b05aba7a7efba68208862d46aadaf5"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": "app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt",
+      "old_sha256": "836d5dac4e9f1d1ed263389b6196cb5dbec04bef19a8465103730db5a5af7aea",
+      "new_sha256": "9414da122f69fc734e2d07734451420096dd25ee53b3e953c5f745bc6c4a0479"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": "app/src/main/java/ru/omnicio/app/ui/home/HomeSystemReadiness.kt",
+      "old_sha256": null,
+      "new_sha256": "f0a6fd7495f3e0d89d5bb594fce1c9f6f063eef92f1e51099d00299582515bb0"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": "app/src/main/java/ru/omnicio/app/ui/home/SystemReadinessModel.kt",
+      "old_sha256": null,
+      "new_sha256": "07a36e79d2f2f1fd5c5d8fdd889783f7e4aebfcd1683a0dba7f293e798ab1648"
+    },
+    {
+      "bundle": "n00-integrated-apk50",
+      "path": "app/src/test/java/ru/omnicio/app/ui/home/SystemReadinessModelTest.kt",
+      "old_sha256": null,
+      "new_sha256": "8b1f8eab6fb00500c7fcf56438622764568b696627af48be400071979b4ae142"
+    }
+  ],
+  "source_sha256": "d0d5627a129256d344d3e5e6b5743280d98f405bb4589945b621528e2e71c52c",
+  "complete_source_sha256": "4b60bea9e0e557e4c1ebd15915bef436e0d799a183e5092e2984b4273db8ccd1",
+  "signing_keystore_sha256_before": "bf4443e8ed6cb10b4ea4c9c0f46751e5955560e8c5f1bbb928b70febfc9e8ef2",
+  "java_runtime": "17.0.20.1+1",
+  "profile_locations": {
+    "java_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService",
+    "gradle_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.gradle",
+    "android_user_home": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android",
+    "existing_debug_keystore": "C:\\Windows\\ServiceProfiles\\NetworkService\\.android\\debug.keystore",
+    "profile_directory_created": false
+  },
+  "sdk_packages": {
+    "platforms;android-37.0": {
+      "source.properties": "fa89029fc0cee414cb5e44a37cd3033771217eeecb5086577bb6d9b1b03b5b5f",
+      "package.xml": "9efedaa8306dc2b690b3ed328b417f19dde7537000701fc761241c6b6ed94c32"
+    },
+    "build-tools;37.0.0": {
+      "source.properties": "fbd87c8567afbc6dc78e140097fcde234f4a61fa7065e85081d43e442ccd3d24",
+      "package.xml": "4a779a6941a75fa0e49074cfab118d499eb5706aa55a08c699578f731fcaa74e"
+    },
+    "emulator": {
+      "source.properties": "ba13085f647fb8389a4d06a1de0e4104ac4e841733e50f67223ac230e1ce685a",
+      "package.xml": "2fd2c4996482128e96927d491431b3aa6771c255091e34f8cd8fa305fd0a4cac"
+    },
+    "platform-tools": {
+      "source.properties": "2dccd788c0234d8cf7f7457377e57f57527a86a629c6ed54feb8af0f549dac38",
+      "package.xml": "5cc8d2f28e44f701d784b4cb31c8fcb5b3a67272856fd8851543b50a879efc8c"
+    },
+    "system-images;android-37.0;google_apis;x86_64": {
+      "source.properties": "bf15b0b43bd0155b258b3756cf523dd917735042633edbb645b34c285a45832d",
+      "package.xml": "bb564bbd70e0de0889a4ebb941cfb74591e445cfedafa1b02cf454a2986deab4"
+    },
+    "system-images;android-37.0;google_apis_ps16k;x86_64": {
+      "source.properties": "758a3348bdeda7cfa1d14ec4c749d5216a8fac5a81b71b80471ac5c7ba837365",
+      "package.xml": "1382dd8ecb580304ea8557eb3124ebcddc7a01c7b71ee322c91a21b2b45fa922"
+    }
+  },
+  "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+  "capacity": {
+    "physical_bytes": 17044721664,
+    "available_bytes": 9505562624,
+    "disk_free_bytes": 41699106816,
+    "logical_cpus": 8,
+    "observed_at": "2026-10-28T02:34:20.802989+00:00"
+  },
+  "failed_stage": "check",
+  "error_type": "RuntimeError",
+  "error": "step_failed:host-tests",
+  "finished_at": "2026-10-28T02:36:10.458365+00:00",
+  "source_sha256_after": "d0d5627a129256d344d3e5e6b5743280d98f405bb4589945b621528e2e71c52c",
+  "complete_source_sha256_after": "4b60bea9e0e557e4c1ebd15915bef436e0d799a183e5092e2984b4273db8ccd1"
+}
