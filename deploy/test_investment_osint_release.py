@@ -1,4 +1,5 @@
 """Temporary-file deployment regressions; no services, credentials or live data."""
+from contextlib import closing
 import base64
 import hashlib
 import io
@@ -151,14 +152,14 @@ class DeployedDependencyAndRetryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / 'fixture.db'
             now = int(time.time())
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE osint_targets_v1(id INTEGER PRIMARY KEY,next_at INTEGER,lease_until INTEGER,error TEXT)')
                 db.executemany('INSERT INTO osint_targets_v1 VALUES(?,?,?,?)', [
                     (1, now + 3600, 0, 'osint_response_too_large'),
                     (2, now + 3600, 0, 'osint_http_429'),
                     (3, now + 3600, now + 600, 'osint_source_unavailable')])
             self.assertEqual(release.retry_collection_failures(database), 1)
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 rows = db.execute('SELECT next_at FROM osint_targets_v1 ORDER BY id').fetchall()
             self.assertLess(rows[0][0], now + 3600)
             self.assertEqual(rows[1][0], now + 3600)
