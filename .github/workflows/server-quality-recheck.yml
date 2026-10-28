@@ -1,4 +1,4 @@
-name: Read exact server source quality findings
+name: Read source quality and stop superseded verification
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -6,18 +6,31 @@ on:
 permissions:
   contents: read
   checks: read
+  actions: write
 jobs:
   inspect:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - name: Read exact-head Sonar annotations without changing any check
+      - name: Read exact-head Sonar annotations
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const ref='67197fd66d3198f98d7f4631e238bca968300251';
+            const ref='5384abda0bf1b47a50ad136189eeab7e77d51dab';
             const runs=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
             for(const check of runs.filter(c=>c.name==='SonarCloud Code Analysis' && c.head_sha===ref)) {
               const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:check.id,per_page:100});
               for(const note of notes) core.info('SONAR_FINDING='+JSON.stringify({path:note.path,line:note.start_line,title:note.title,message:note.message}));
             }
+      - name: Cancel only the obsolete source verification from this change
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=40654890518;
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(run.head_sha!=='67197fd66d3198f98d7f4631e238bca968300251' ||
+               run.head_branch!=='codex/server-runtime-2026-10-28' ||
+               run.path!=='.github/workflows/server-runtime.yml' || run.event!=='push')
+              throw new Error('Superseded verification identity mismatch');
+            if(run.status!=='completed') await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
+            core.info('SUPERSEDED_RUN='+JSON.stringify({run_id,sha:run.head_sha,status:run.status}));
