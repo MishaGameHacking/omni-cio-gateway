@@ -18,28 +18,17 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def main():
-    if os.environ.get('COMPUTERNAME') != 'LAPTOP-NPSGA016':
-        raise RuntimeError('owner_laptop_required')
-    source = git('rev-parse', 'HEAD').decode().strip()
-    if source != os.environ['GITHUB_SHA'] or git('status', '--porcelain'):
-        raise RuntimeError('source_not_exact_clean_event')
-    run, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']
-    state = Path(os.environ['RUNNER_TEMP']) / ('backend-ci-' + run + '-' + attempt)
-    report_path = state / 'windows-backend-report.json'
-    report_bytes = report_path.read_bytes()
-    report = json.loads(report_bytes)
-    if not (report['status'] == 'passed' and report['tested_merge_sha'] == source
-            and report['host'] == 'LAPTOP-NPSGA016'
-            and report['linux']['status'] == 'passed'
-            and report['linux']['changed_sources'] == []):
-        raise RuntimeError('exact_laptop_verification_required')
+def baseline_inventory():
     names = git('ls-tree', '-r', '--name-only', BASE, 'backend').decode().splitlines()
     expected = {}
     for name in names:
         relative = Path(name).relative_to('backend').as_posix()
         if '/' not in relative and (relative.endswith('.py') or relative == 'requirements.txt'):
             expected[relative] = digest(git('show', BASE + ':' + name))
+    return expected
+
+
+def changed_modules(expected):
     changed = git('diff', '--name-status', BASE, 'HEAD', '--', 'backend').decode().splitlines()
     files = {}
     for line in changed:
@@ -56,6 +45,26 @@ def main():
                            'content': raw.decode('utf-8')}
     if not files or len(files) > 24:
         raise RuntimeError('invalid_release_size')
+    return files
+
+
+def main():
+    if os.environ.get('COMPUTERNAME') != 'LAPTOP-NPSGA016':
+        raise RuntimeError('owner_laptop_required')
+    source = git('rev-parse', 'HEAD').decode().strip()
+    if source != os.environ['GITHUB_SHA'] or git('status', '--porcelain'):
+        raise RuntimeError('source_not_exact_clean_event')
+    run, attempt = os.environ['GITHUB_RUN_ID'], os.environ['GITHUB_RUN_ATTEMPT']
+    state = Path(os.environ['RUNNER_TEMP']) / ('backend-ci-' + run + '-' + attempt)
+    report_bytes = (state / 'windows-backend-report.json').read_bytes()
+    report = json.loads(report_bytes)
+    if not (report['status'] == 'passed' and report['tested_merge_sha'] == source
+            and report['host'] == 'LAPTOP-NPSGA016'
+            and report['linux']['status'] == 'passed'
+            and report['linux']['changed_sources'] == []):
+        raise RuntimeError('exact_laptop_verification_required')
+    expected = baseline_inventory()
+    files = changed_modules(expected)
     bundle = {'schema': 1, 'base_commit': BASE, 'source_commit': source,
               'run_id': run, 'run_attempt': attempt, 'host': report['host'],
               'source_sha256': report['complete_source_sha256'],
