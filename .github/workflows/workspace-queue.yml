@@ -1,0 +1,28 @@
+name: Release workspace verification queue
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-queue.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=40717810090;
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            const {data:head}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/workspace-strategies-2026-10-28'});
+            if(run.head_sha!=='3aebc7ca3dbb6c29a24ab68e986ec3b7993b0168' ||
+               run.path!=='.github/workflows/workspace-redesign.yml' ||
+               run.head_branch!=='codex/workspace-strategies-2026-10-28' ||
+               head.object.sha!=='aad0a117074a1b083021f93ef9ff928102b95557')
+              throw new Error('Obsolete-run identity changed');
+            if(run.status!=='completed') {
+              await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
+              core.info('Cancelled superseded build only; verified backend result remains in its receipt.');
+            } else core.info('Superseded run already completed.');
