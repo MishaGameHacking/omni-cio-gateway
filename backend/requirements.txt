@@ -4,3 +4,4 @@ httpx==0.28.1
 PyJWT[crypto]==2.15.0
 cryptography==50.0.0
 tzdata==2026.5
+pypdf==6.21.3

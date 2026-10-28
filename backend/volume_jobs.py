@@ -1,7 +1,7 @@
 """Idempotent workspace jobs with durable checkpoints and honest paid states."""
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, nullcontext
 from contextvars import ContextVar
 from datetime import date, datetime, timezone
 import json
@@ -233,6 +233,12 @@ def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
         from volume_workspace import collect
         from volume_chat import run_message
         from volume_plans import reconcile_plan
+    if job["kind"] == "osint":
+        try:
+            from .osint_worker import collect as collect_osint
+        except ImportError:
+            from osint_worker import collect as collect_osint
+        return collect_osint(user, payload, checkpoint, progress)
     if job["kind"] == "events":
         try:
             from .event_monitor import collect_events
@@ -286,10 +292,11 @@ def run_job(identifier: str | None = None) -> None:
     try:
         with closing(backend.connect()) as db:
             user = db.execute("SELECT * FROM users WHERE id=?", (job["user_id"],)).fetchone()
-        if user is None or not user["tinvest_token_encrypted"]:
+        if user is None or (job["kind"] != "osint" and not user["tinvest_token_encrypted"]):
             raise HTTPException(409, "tinvest_not_connected")
         payload, checkpoint = json.loads(job["payload_json"]), json.loads(job["checkpoint_json"])
-        with monitoring_connection(job["user_id"], user["tinvest_token_encrypted"]):
+        access = nullcontext() if job["kind"] == "osint" else monitoring_connection(job["user_id"], user["tinvest_token_encrypted"])
+        with access:
             result = _perform_job(job, user, payload, checkpoint)
             with transaction(backend.connect) as db:
                 assert_current_in(db)

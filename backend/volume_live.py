@@ -21,15 +21,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 try:
-    from . import app as backend, research_store, server_version, volume_presentation
+    from . import app as backend, research_store, server_version, volume_presentation, osint_store, osint_api
 except ImportError:
     import app as backend
     import research_store
     import server_version
     import volume_presentation
+    import osint_store
+    import osint_api
 
 router = APIRouter(prefix="/workspace", tags=["Live data"])
 router.include_router(volume_presentation.router)
+router.include_router(osint_api.router)
 POLL_INTERVAL = .5
 USER_TABLES = (
     "workspace_presentation_preferences",
@@ -43,7 +46,7 @@ USER_TABLES = (
     "automation_preferences", "automation_observations",
     "automation_discovery", "automation_events",
 )
-GLOBAL_TABLES = ("market_facts", "research_revision_v1")
+GLOBAL_TABLES = ("market_facts", "research_revision_v1", "osint_revision_v1")
 _waiters: dict[int, int] = {}
 _waiter_lock = threading.Lock()
 
@@ -64,6 +67,7 @@ DEPLOYMENT = deployment_signature()
 def initialize(connect=None) -> None:
     connect = backend.connect if connect is None else connect
     volume_presentation.initialize(connect)
+    osint_store.initialize(connect)
     with closing(connect()) as db:
         # Reviewed evidence already has its own durable revision.
         research_store.initialize(db)
