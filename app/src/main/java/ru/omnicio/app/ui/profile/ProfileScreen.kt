@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import org.json.JSONObject
 import ru.omnicio.app.BuildConfig
+import ru.omnicio.app.data.updates.ServerVersion
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
@@ -70,6 +71,7 @@ fun ProfileScreen(
     LaunchedEffect(foreground) {
         if (foreground) while (isActive) { delay(20_000); refreshStatus() }
     }
+    val serverVersionLabel = ServerVersion.label(status?.optJSONObject("server_version"), resource.busy, resource.error != null)
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     val broker = LocalBrokerConnection.current
     val brokerLabel = when {
@@ -179,7 +181,10 @@ fun ProfileScreen(
                     SettingsGroup("Аккаунт") {
                         Text(user.name?.takeIf(String::isNotBlank) ?: "Вход через Telegram",
                             style = MaterialTheme.typography.titleMedium)
-                        SettingsLink("О приложении", "Версия " + BuildConfig.VERSION_NAME, SpectrumSymbol.Update) { dialog = "about" }
+                        SettingsLink("О приложении", serverVersionLabel, SpectrumSymbol.Update) {
+                            dialog = "about"
+                            resource.refresh()
+                        }
                         SettingsDivider()
                         SettingsLink("Выйти", "Завершить сеанс на этом устройстве", SpectrumSymbol.Profile, danger = true) {
                             dialog = "logout"
@@ -193,7 +198,7 @@ fun ProfileScreen(
         "security" -> SettingsInformation("Безопасность",
             "Доступ к брокерским данным хранится зашифрованным на сервере. Используйте токен для чтения данных. Сеанс на устройстве также зашифрован. Текущий режим не выставляет реальные торговые поручения. Для отзыва доступа отключите токен у брокера и в настройках подключения.") { dialog = null }
         "about" -> SettingsInformation("Analyst AI",
-            "Версия " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + "). Персональная система анализа. Независимое приложение, не официальное приложение Т-Банка. Доступность анализа зависит от подключённых источников и серверных настроек.") { dialog = null }
+            serverVersionLabel + "\n\nОболочка Android: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + "). Серверная система обновляется независимо от оболочки.\n\nПерсональная система анализа. Независимое приложение, не официальное приложение Т-Банка. Доступность анализа зависит от подключённых источников и серверных настроек.") { dialog = null }
         "logout" -> WorkspaceDialog("Выйти из Analyst AI?", onDismiss = { dialog = null }) {
             Text("Для следующего входа потребуется подтверждение Telegram. Подключение брокера на сервере сохранится.")
             SpectrumPrimaryButton("Выйти", { dialog = null; onLogout() }, Modifier.fillMaxWidth())

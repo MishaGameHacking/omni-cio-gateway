@@ -15,7 +15,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import Field, StrictBool
 
 try:
@@ -23,6 +23,7 @@ try:
     from . import volume_catalogue as catalogue, volume_market as market
     from . import portfolio_details as details, volume_purchases as purchases
     from .ai_budget import transaction, micro_rub, BudgetDenied
+    from . import server_version
     from .schema_migrations import execute_schema
     from .ai_jobs import assert_current_owner_in
     from .ai_guarded_client import configured_route, GuardError
@@ -38,6 +39,7 @@ except ImportError:
     import portfolio_details as details
     import volume_purchases as purchases
     from ai_budget import transaction, micro_rub, BudgetDenied
+    import server_version
     from schema_migrations import execute_schema
     from ai_jobs import assert_current_owner_in
     from ai_guarded_client import configured_route, GuardError
@@ -533,8 +535,10 @@ def _ai_configuration() -> dict:
 
 
 @router.get("/status")
-def status(user: Any = Depends(backend.current_user)) -> dict:
+def status(user: Any = Depends(backend.current_user), response: Response = None) -> dict:
     """Persisted status only. Do not initialize queues, expire leases or fetch data."""
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, private"
     try:
         from .autonomous_ai import SCHEDULER_ENABLED
     except ImportError:
@@ -591,7 +595,8 @@ def status(user: Any = Depends(backend.current_user)) -> dict:
             and not dispatch["regular_price_polling_allowed"] and events.get("complete") is True
             and event_age is not None and event_age < 1200):
         state_name, codes = "waiting", ["market_price_polling_paused"]
-    return {"schema_version": 1, "enabled": pref["enabled"], "preference_version": pref["version"],
+    return {"schema_version": 1, "server_version": server_version.current(),
+            "enabled": pref["enabled"], "preference_version": pref["version"],
             "broker_connected": connected, "scheduler_enabled": SCHEDULER_ENABLED, "state": state_name,
             "blockers": [reason(code) for code in codes], "last_observation_at": observed, "last_full_collection_at": full,
             "current_job": current_job, "dispatch": dispatch,

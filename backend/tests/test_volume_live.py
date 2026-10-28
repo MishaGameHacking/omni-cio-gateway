@@ -163,3 +163,28 @@ def test_waiter_limits_release_after_failures(setup):
         with live.watcher(1):
             raise RuntimeError("cancelled")
     assert not live._waiters
+
+
+def test_server_version_is_authenticated_uncached_and_does_not_create_jobs(setup):
+    assert setup.get("/workspace/version").status_code == 401
+    with closing(backend.connect()) as db:
+        before = [db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+                  for table in ("workspace_jobs", "ai_work_jobs", "ai_money_reservations")]
+    response = setup.get("/workspace/version", headers=headers())
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store, private"
+    assert response.json() == live.server_version.current()
+    assert set(response.json()) == {"schema_version", "version", "source_revision"}
+    with closing(backend.connect()) as db:
+        assert before == [db.execute("SELECT COUNT(*) FROM " + table).fetchone()[0]
+                          for table in ("workspace_jobs", "ai_work_jobs", "ai_money_reservations")]
+
+
+def test_source_release_changes_live_revision_for_the_same_client(setup, monkeypatch):
+    before = current()
+    monkeypatch.setattr(live.server_version, "SOURCE_REVISION", "a" * 64)
+    monkeypatch.setattr(live, "DEPLOYMENT", live.deployment_signature())
+    after = current()
+    assert after["revision"] != before["revision"]
+    assert after["broker_revision"] == before["broker_revision"]
+    assert setup.get("/workspace/version", headers=headers()).json()["version"] == "srv-" + "a" * 12

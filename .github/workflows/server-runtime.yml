@@ -59,3 +59,41 @@ jobs:
             ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/server-runtime.json
           if-no-files-found: error
           retention-days: 7
+
+  verify-client:
+    needs: verify
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 65
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
+    steps:
+      - name: Checkout exact version-display source on the owner laptop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Verify JVM behavior, Compose compilation and Android lint without publication
+        shell: cmd
+        working-directory: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\verify_server_version_client.py
+          if errorlevel 1 exit /b 1
+      - name: Preserve client verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/test-results/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/lint-results-debug.*
+          if-no-files-found: error
+          retention-days: 7
