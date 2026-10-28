@@ -21,10 +21,9 @@ class SpectrumForegroundTests(unittest.TestCase):
         theme = (ROOT / 'app/src/main/java/ru/omnicio/app/ui/theme/AnalystColors.kt').read_text(encoding='utf-8')
         backgrounds = dict(re.findall(r'^(LIGHT|DARK)_BACKGROUND = "([a-f0-9]{8})"$', driver, re.MULTILINE))
         self.assertEqual(set(backgrounds), {'LIGHT', 'DARK'})
-        foregrounds = re.search(
-            r'foreground = "([a-f0-9]{8})" if expected == DARK_BACKGROUND else "([a-f0-9]{8})"', driver)
-        self.assertIsNotNone(foregrounds)
-        observed_ink = {'DARK': foregrounds.group(1), 'LIGHT': foregrounds.group(2)}
+        foreground = re.search(r'foreground = "([a-f0-9]{8})"', driver)
+        self.assertIsNotNone(foreground)
+        observed_ink = {mode: foreground.group(1) for mode in ('LIGHT', 'DARK')}
         self.assertIn('self.marker("probe-background:" + expected)', driver)
         self.assertIn('self.marker("probe-foreground:" + foreground)', driver)
 
