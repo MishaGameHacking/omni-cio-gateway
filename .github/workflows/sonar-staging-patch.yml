@@ -1,0 +1,154 @@
+name: Apply bounded Sonar staging patches
+
+on:
+  push:
+    branches:
+      - codex/sonar50-staging-2026-10-28
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/sonar50-staging-2026-10-28
+          fetch-depth: 0
+      - name: Apply exact source patches
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def read(path):
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path, value):
+              Path(path).write_text(value, encoding="utf-8")
+
+          def replace(path, old, new, expected=1):
+              value = read(path)
+              count = value.count(old)
+              if count != expected:
+                  raise RuntimeError(f"{path}: expected {expected} exact matches, found {count}")
+              write(path, value.replace(old, new))
+
+          def replace_all(path, old, new, expected):
+              replace(path, old, new, expected=expected)
+
+          replace(
+              "backend/paper_execution.py",
+              """            try:\n                yield db\n                db.commit()\n            except BaseException:\n                db.rollback()\n                raise\n""",
+              """            try:\n                yield db\n            except BaseException:\n                db.rollback()\n                raise\n            else:\n                db.commit()\n""",
+          )
+
+          replace(
+              "backend/tests/test_autonomous_controller.py",
+              """    controller.update_preferences(controller.PreferenceUpdate(enabled=False, expected_version=0), fixture[\"user\"])\n    with pytest.raises(HTTPException) as conflict:\n        controller.update_preferences(controller.PreferenceUpdate(enabled=True, expected_version=0), fixture[\"user\"])\n""",
+              """    controller.update_preferences(controller.PreferenceUpdate(enabled=False, expected_version=0), fixture[\"user\"])\n    stale_update = controller.PreferenceUpdate(enabled=True, expected_version=0)\n    with pytest.raises(HTTPException) as conflict:\n        controller.update_preferences(stale_update, fixture[\"user\"])\n""",
+          )
+
+          replace(
+              ".github/scripts/tests/test_theme_state_evidence.py",
+              """        canvas.rect((140, 80, 260, 112), self.colors[\"onPrimary\"])\n        with self.assertRaisesRegex(AssertionError, \"primary container\"):\n            evidence.primary_button_pixels(canvas.image(), bounds, 1.0,\n                                           self.colors[\"onPrimary\"], self.colors[\"pressedPrimary\"])\n""",
+              """        canvas.rect((140, 80, 260, 112), self.colors[\"onPrimary\"])\n        image = canvas.image()\n        with self.assertRaisesRegex(AssertionError, \"primary container\"):\n            evidence.primary_button_pixels(image, bounds, 1.0,\n                                           self.colors[\"onPrimary\"], self.colors[\"pressedPrimary\"])\n""",
+          )
+
+          path = ".github/scripts/automation_ui_probe.py"
+          value = read(path)
+          if value.count('"Настройки"') != 6:
+              raise RuntimeError("automation settings literal count changed")
+          value = value.replace('"Настройки"', "SETTINGS_LABEL")
+          marker = 'CONFLICT = "Синтетический конфликт версии. Настройка не изменена."\n'
+          if value.count(marker) != 1:
+              raise RuntimeError("automation settings constant insertion point changed")
+          value = value.replace(marker, marker + 'SETTINGS_LABEL = "Настройки"\n')
+          write(path, value)
+
+          path = ".github/scripts/portfolio_research_probe.py"
+          value = read(path)
+          if value.count('"Контекст факта"') != 3:
+              raise RuntimeError("fact context literal count changed")
+          value = value.replace('"Контекст факта"', "FACT_CONTEXT_LABEL")
+          marker = "BACK_LABEL = 'Назад'\n"
+          if value.count(marker) != 1:
+              raise RuntimeError("fact context insertion point changed")
+          value = value.replace(marker, marker + 'FACT_CONTEXT_LABEL = "Контекст факта"\n')
+          write(path, value)
+
+          replace(
+              ".github/scripts/navigation_detail_probe.py",
+              're.fullmatch(r"[1-9][0-9]*", pid)',
+              're.fullmatch(r"[1-9]\\d*", pid)',
+          )
+
+          path = ".github/scripts/theme_state_evidence.py"
+          value = read(path)
+          for old, new in (
+              ('r"[0-9]{1,6}"', 'r"\\d{1,6}"'),
+              ('r"[0-9](?:\\.[0-9]{1,3})?"', 'r"\\d(?:\\.\\d{1,3})?"'),
+          ):
+              if value.count(old) != 1:
+                  raise RuntimeError(f"theme regex changed: {old}")
+              value = value.replace(old, new)
+          old = """def frame_pixels(image, tree, observed):\n"""
+          new = """def _switch_roles(checked, enabled):\n    if not enabled:\n        return \"disabledInk\", \"disabledContainer\"\n    if checked:\n        return \"onPrimary\", \"primary\"\n    return \"outline\", \"surfaceContainerHighest\"\n\n\ndef frame_pixels(image, tree, observed):\n"""
+          if value.count(old) != 1:
+              raise RuntimeError("theme switch helper insertion point changed")
+          value = value.replace(old, new)
+          old = """                foreground, background = (\"disabledInk\", \"disabledContainer\") if not enabled else \\\n                    ((\"onPrimary\", \"primary\") if checked else (\"outline\", \"surfaceContainerHighest\"))\n"""
+          new = """                foreground, background = _switch_roles(checked, enabled)\n"""
+          if value.count(old) != 1:
+              raise RuntimeError("theme nested switch roles changed")
+          value = value.replace(old, new)
+          write(path, value)
+
+          path = ".github/scripts/tests/test_navigation_detail_probe.py"
+          value = read(path)
+          value = value.replace("from unittest.mock import patch", "from unittest.mock import Mock, patch")
+          value = value.replace('patch("profile_ui_probe.time.monotonic", lambda: now[0])',
+                                'patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0])')
+          marker = 'USER = "synthetic-business-00000000-0000-0000-0000-000000000001"\n\n\n'
+          helper = '''USER = "synthetic-business-00000000-0000-0000-0000-000000000001"\n\n\ndef enter_wide_viewport(probe):\n    with details.wide_emulator_viewport(probe, {}):\n        pass\n\n\n'''
+          if value.count(marker) != 1:
+              raise RuntimeError("navigation helper insertion point changed")
+          value = value.replace(marker, helper)
+          old = '''        now, sleep = self.clock()\n        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            case(probe).observed("strategy")\n'''
+          new = '''        now, sleep = self.clock()\n        navigation_case = case(probe)\n        with patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n            navigation_case.observed("strategy")\n'''
+          if value.count(old) != 2:
+              raise RuntimeError("navigation persistent exception blocks changed")
+          value = value.replace(old, new)
+          old = '''            with self.subTest(marker=first[0][0].get("content-desc")), \\\n                    patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                    patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n                case(probe).observed("strategy")\n'''
+          new = '''            navigation_case = case(probe)\n            with self.subTest(marker=first[0][0].get("content-desc")), \\\n                    patch("profile_ui_probe.time.monotonic", side_effect=lambda: now[0]), \\\n                    patch("profile_ui_probe.time.sleep", sleep), self.assertRaises(AssertionError):\n                navigation_case.observed("strategy")\n'''
+          if value.count(old) != 1:
+              raise RuntimeError("navigation immediate exception block changed")
+          value = value.replace(old, new)
+          old = '''            with self.subTest(values=values), self.assertRaisesRegex(AssertionError, expected):\n                with details.wide_emulator_viewport(probe, {}):\n                    self.fail("Invalid viewport admitted")\n'''
+          new = '''            with self.subTest(values=values), self.assertRaisesRegex(AssertionError, expected):\n                enter_wide_viewport(probe)\n'''
+          if value.count(old) != 1:
+              raise RuntimeError("navigation invalid viewport block changed")
+          value = value.replace(old, new)
+          old = '''            with self.subTest(values=values), self.assertRaises(AssertionError):\n                with details.wide_emulator_viewport(probe, {}):\n                    self.fail("Foreign viewport admitted")\n'''
+          new = '''            with self.subTest(values=values), self.assertRaises(AssertionError):\n                enter_wide_viewport(probe)\n'''
+          if value.count(old) != 1:
+              raise RuntimeError("navigation foreign viewport block changed")
+          value = value.replace(old, new)
+          if value.count("probe.read_tree = lambda: frame()") != 1:
+              raise RuntimeError("navigation read_tree lambda changed")
+          value = value.replace("probe.read_tree = lambda: frame()", "probe.read_tree = Mock(return_value=frame())")
+          write(path, value)
+
+          workflow = Path(".github/workflows/sonar-staging-patch.yml")
+          workflow.unlink()
+          PY
+      - name: Commit exact patches
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "No patch produced"; exit 1; }
+          git commit -m "fix(sonar): apply bounded source patches"
+          git push origin HEAD:codex/sonar50-staging-2026-10-28
