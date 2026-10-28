@@ -65,7 +65,7 @@ private fun DecisionCandidates(tab: Int, rows: List<JSONObject>, blockers: List<
         item {
             Text(if (tab == 0) "На текущих данных · ${rows.size}" else "Ожидают обновления · ${rows.size}",
                 style = MaterialTheme.typography.titleLarge)
-            Text(if (tab == 0) "Кандидаты для исследования. Покупки и продажи не выполняются."
+            Text(if (tab == 0) "Кандидаты для исследования. Торговые решения требуют отдельной проверки."
                 else "Сервер повторит проверку. Устаревшие сведения не считаются актуальным решением.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

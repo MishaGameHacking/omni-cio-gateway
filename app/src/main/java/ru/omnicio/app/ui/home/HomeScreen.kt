@@ -104,6 +104,8 @@ private fun HomeAutomationCard(status: JSONObject?, error: String?, busy: Boolea
     val disconnected = status?.has("broker_connected") == true && !status.optBoolean("broker_connected")
     val mode = status?.text("state", "") ?: ""
     val currentError = error
+    val execution = status?.optJSONObject("execution")
+    val readOnly = execution?.text("mode", "") == "read_only" && execution.opt("real_orders_enabled") == false
     val title = when {
         currentError != null -> "Связь требует проверки"
         status == null -> "Получаем состояние"
@@ -122,6 +124,7 @@ private fun HomeAutomationCard(status: JSONObject?, error: String?, busy: Boolea
 
     SpectrumCard(modifier = Modifier.testTag("automation-state")) {
         Text("Сегодня", style = MaterialTheme.typography.titleLarge)
+        if (readOnly) SpectrumBadge("Только анализ")
         Text(title, style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         if (loading) SpectrumLoadingIndicator(description = title)
