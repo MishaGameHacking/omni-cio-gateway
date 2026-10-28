@@ -209,12 +209,15 @@ class PlainNativeScreenTests(unittest.TestCase):
 
     def test_real_errors_and_retained_3d_resources_remain_failures(self):
         for key in ("engines", "windows", "frames", "meshes", "pending", "pool"):
+            tree = self.frame(**{key: 1})
             with self.subTest(key=key), self.assertRaises(AssertionError):
-                evidence.ready_native_screen_metrics(self.frame(**{key: 1}), "balance-privacy", 1.0)
+                evidence.ready_native_screen_metrics(tree, "balance-privacy", 1.0)
+        error_tree = self.frame(error="failed")
         with self.assertRaises(AssertionError):
-            evidence.ready_native_screen_metrics(self.frame(error="failed"), "balance-privacy", 1.0)
+            evidence.ready_native_screen_metrics(error_tree, "balance-privacy", 1.0)
+        draw_tree = self.frame(draws=-1)
         with self.assertRaises(AssertionError):
-            evidence.ready_native_screen_metrics(self.frame(draws=-1), "balance-privacy", 1.0)
+            evidence.ready_native_screen_metrics(draw_tree, "balance-privacy", 1.0)
 
     def test_other_or_absent_renderer_cannot_pass(self):
         for value in ("filament", ""):
@@ -238,8 +241,9 @@ class PlainNativeScreenTests(unittest.TestCase):
 
     def test_invalid_expected_scale_is_not_silently_accepted(self):
         for scale in (0, -1, float("inf"), float("nan")):
+            tree = self.frame()
             with self.subTest(scale=scale), self.assertRaises(ValueError):
-                evidence.ready_native_screen_metrics(self.frame(), "balance-privacy", scale)
+                evidence.ready_native_screen_metrics(tree, "balance-privacy", scale)
 
 
 if __name__ == "__main__":
