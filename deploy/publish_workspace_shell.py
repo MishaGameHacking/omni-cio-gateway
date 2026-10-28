@@ -14,8 +14,8 @@ import zipfile
 
 PACKAGE = "ru.omnicio.app.debug"
 CERT = "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
-OLD_SHA = "d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95"
-OLD_BYTES = 29937843
+OLD_SHA = "d5d8a3a86c7400515206cab74c04299cd7008bdbc246bd22dddd21e05d0db0c9"
+OLD_BYTES = 29954227
 ROOT = Path("/srv/analyst-ai-ota/releases")
 
 
@@ -89,16 +89,16 @@ def publish(meta, folder, members):
     build = json.loads(members["build-result.json"])
     need(build["source_commit"] == meta["source_commit"] and build["status"] == "passed"
          and build["owned_processes_after"] == 0 and build["apk"] == report, "build_receipt_changed")
-    need(report["package"] == PACKAGE and report["version_code"] == 51
-         and report["version_name"] == "0.15.0-preview" and sha(apk) == meta["apk_sha256"]
+    need(report["package"] == PACKAGE and report["version_code"] == 52
+         and report["version_name"] == "0.16.0-preview" and sha(apk) == meta["apk_sha256"]
          and len(apk) == meta["apk_bytes"], "apk_identity_changed")
     _require_apk_evidence(report, sha256=meta["apk_sha256"], size=meta["apk_bytes"], certificate=CERT)
     _require_android_floor(report)
-    notes = ("Новые разделы главной, портфеля и решений. Пять серверных профилей "
-             "стратегии, ограниченная автоматическая подстройка и очистка старых статусов. "
+    notes = ("Новый светлый интерфейс от входа до настроек, компактная навигация с подписями "
+             "и объёмные смысловые иконки. Настройки стратегии без лишних шаговых переключателей. "
              "Серверные данные, профили и алгоритмы обновляются независимо от оболочки.")
     candidate = AndroidRelease.parse({"schema_version": 1, "package_name": PACKAGE,
-        "version_code": 51, "version_name": "0.15.0-preview", "apk_sha256": meta["apk_sha256"],
+        "version_code": 52, "version_name": "0.16.0-preview", "apk_sha256": meta["apk_sha256"],
         "apk_bytes": meta["apk_bytes"], "certificate_sha256": CERT, "min_sdk": 37,
         "published_at": int(time.time()), "notes": notes})
     directory = ROOT / PACKAGE
@@ -106,31 +106,31 @@ def publish(meta, folder, members):
     with publication_lock(directory):
         old = channel.current(PACKAGE)
         need(old.certificate_sha256 == CERT, "previous_certificate_changed")
-        previous = old.version_code == 50 and old.apk_sha256 == OLD_SHA and old.apk_bytes == OLD_BYTES
-        resumed = old.version_code == 51 and old.apk_sha256 == meta["apk_sha256"] and old.apk_bytes == len(apk)
+        previous = old.version_code == 51 and old.apk_sha256 == OLD_SHA and old.apk_bytes == OLD_BYTES
+        resumed = old.version_code == 52 and old.apk_sha256 == meta["apk_sha256"] and old.apk_bytes == len(apk)
         need(previous or resumed, "unexpected_current_release")
         if previous:
             save_new(folder / "previous-current.json", regular(directory / "current.json", 16384))
         else:
             baseline = AndroidRelease.parse(json.loads(regular(folder / "previous-current.json", 16384)))
-            need(baseline.version_code == 50 and baseline.apk_sha256 == OLD_SHA
+            need(baseline.version_code == 51 and baseline.apk_sha256 == OLD_SHA
                  and baseline.certificate_sha256 == CERT, "previous_release_receipt_changed")
         existing = _existing_current(channel, directory, candidate)
         if existing is not None:
             candidate = existing
         else:
             candidate = _resume_prepared(channel, directory, candidate)
-            with tempfile.TemporaryDirectory(prefix="shell51-", dir=folder) as temporary:
+            with tempfile.TemporaryDirectory(prefix="shell52-", dir=folder) as temporary:
                 path = Path(temporary) / "candidate.apk"
                 save_new(path, apk)
                 _stage_candidate(channel, directory, candidate, path)
         current = channel.current(PACKAGE)
         need(current == candidate and sha(regular(channel.verified_file(current), len(apk))) == meta["apk_sha256"],
              "channel_activation_failed")
-    return {**meta, "status": "published", "version_code": 51, "version_name": current.version_name,
+    return {**meta, "status": "published", "version_code": 52, "version_name": current.version_name,
             "certificate_sha256": CERT, "published_at": current.published_at,
             "url": "https://analyst-ai-2941515.twc1.net/client/apk/" + current.filename,
-            "previous_version_code": 50, "physical_phone_verified": False,
+            "previous_version_code": 51, "physical_phone_verified": False,
             "full_native_matrix_passed": False, "backend_deployment_performed": False}
 
 

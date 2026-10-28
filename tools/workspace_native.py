@@ -10,9 +10,9 @@ import sys
 import time
 import zipfile
 
-BASELINE_SHA = "d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95"
-BASELINE_BYTES = 29937843
-BASELINE_ARTIFACT_SHA = "0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc"
+BASELINE_SHA = "d5d8a3a86c7400515206cab74c04299cd7008bdbc246bd22dddd21e05d0db0c9"
+BASELINE_BYTES = 29954227
+BASELINE_ARTIFACT_SHA = "dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c"
 
 
 def need(value, code):
@@ -25,7 +25,7 @@ def digest(raw):
 
 
 def baseline_from_archive(raw):
-    """Use the immutable verified build50 artifact; no live download or TLS fallback."""
+    """Use the immutable verified build51 artifact; no live download or TLS fallback."""
     need(0 < len(raw) <= 64 * 1024**2 and digest(raw) == BASELINE_ARTIFACT_SHA,
          "baseline_artifact_changed")
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
@@ -37,7 +37,7 @@ def baseline_from_archive(raw):
         info = archive.getinfo(matches[0])
         need(info.file_size == BASELINE_BYTES, "baseline_size_changed")
         content = archive.read(info)
-    need(len(content) == BASELINE_BYTES and digest(content) == BASELINE_SHA, "baseline50_changed")
+    need(len(content) == BASELINE_BYTES and digest(content) == BASELINE_SHA, "baseline51_changed")
     return content
 
 
@@ -66,7 +66,7 @@ def prepare(root, state, ci):
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             ci.put_new(path, content)
-    previous = state / "previous50.apk"
+    previous = state / "previous51.apk"
     raw = (Path(os.environ["RUNNER_TEMP"]) / "workspace-baseline-artifact.zip").read_bytes()
     ci.put_new(previous, baseline_from_archive(raw))
     return expected
@@ -81,7 +81,7 @@ def run_worker(root, state, ci):
         # Canonical test driver acquires the host emulator lease itself.
         steps.run("native-api37-" + str(page), [python, ".github/scripts/test_apk_installation.py",
             "--sdk", str(ci.SDK), "--apk", str(root / ci.APK_PATHS[0]),
-            "--previous", str(state / "previous50.apk"), "--api", "37", "--page-bytes", str(page),
+            "--previous", str(state / "previous51.apk"), "--api", "37", "--page-bytes", str(page),
             "--work-dir", str(state / ("install-api37-" + str(page)))], 7200)
 
 

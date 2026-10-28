@@ -1,4 +1,4 @@
-"""Authenticated Timeweb transport and whole-file public verification for shell51."""
+"""Authenticated Timeweb transport and whole-file public verification for shell52."""
 from __future__ import annotations
 import hashlib
 import json
@@ -83,8 +83,8 @@ def verify_public(receipt):
     policy = get_json(policy_path, 16384)
     for key in ("version_code", "version_name", "apk_sha256", "apk_bytes", "certificate_sha256", "published_at"):
         need(type(policy[key]) is type(receipt[key]) and policy[key] == receipt[key], "public_policy_mismatch")
-    expected_path = "/client/apk/Analyst-AI-51-" + receipt["apk_sha256"] + ".apk"
-    need(policy["package_name"] == "ru.omnicio.app.debug" and policy["minimum_version_code"] == 51
+    expected_path = "/client/apk/Analyst-AI-52-" + receipt["apk_sha256"] + ".apk"
+    need(policy["package_name"] == "ru.omnicio.app.debug" and policy["minimum_version_code"] == 52
          and policy["min_sdk"] == 37 and policy["apk_path"] == expected_path
          and receipt["url"] == PUBLIC + expected_path, "public_channel_mismatch")
     digest, size = hashlib.sha256(), 0
