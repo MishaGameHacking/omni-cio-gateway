@@ -209,7 +209,8 @@ def test_automatic_analysis_rechecks_closure_at_execution_before_broker_or_model
         result = ai.run_user_analysis(int(fixture["user"]["id"]))
     finally:
         CURRENT_JOB.reset(marker)
-    assert result["state"] == "waiting" and result["tier"] == "none"
+    assert result["state"] == "waiting"
+    assert result["tier"] == "none"
     assert counts()["ai_money_reservations"] == 0
 
 
