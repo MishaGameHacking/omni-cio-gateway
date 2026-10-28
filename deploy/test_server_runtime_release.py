@@ -83,7 +83,7 @@ class ReleaseFilesTests(unittest.TestCase):
         bundle = {'schema': 1, 'base_commit': release.BASE, 'host': 'LAPTOP-NPSGA016',
                   'source_commit': 'a' * 40, 'apk_changed': False, 'expected': expected, 'files': files}
         release.validate(bundle)
-        files['autonomous_controller.py']['content'] = 'unverified replacement'
+        files['volume_live.py']['content'] = 'unverified replacement'
         with self.assertRaisesRegex(RuntimeError, 'invalid_module_identity'):
             release.validate(bundle)
 

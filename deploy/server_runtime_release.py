@@ -15,8 +15,8 @@ import time
 import urllib.error
 import urllib.request
 
-BASE = '1da6e6420b51ebe66c8196e3869a2525f0ffe69f'
-MODULES = {'autonomous_controller.py', 'volume_live.py', 'server_version.py'}
+BASE = '5384abda0bf1b47a50ad136189eeab7e77d51dab'
+MODULES = {'volume_live.py', 'volume_presentation.py'}
 SERVICES = ('analyst-ai-owner.service', 'analyst-ai-updates.service')
 PUBLIC = 'https://analyst-ai-2941515.twc1.net'
 
@@ -198,6 +198,7 @@ def run(envelope):
                         need(systemctl('show', service, '--property=MainPID', '--value') not in {'0', old_pids[service]},
                              'runtime_process_not_replaced')
                     need(request('/workspace/version')[0] == 401, 'version_endpoint_authentication_changed')
+                    need(request('/workspace/presentation')[0] == 401, 'presentation_endpoint_authentication_changed')
                     need(request(policy_path) == (policy_status, policy_before), 'apk_policy_changed')
                 except BaseException:
                     systemctl('stop', *SERVICES)
@@ -216,7 +217,7 @@ def run(envelope):
                    'source_commit': bundle['source_commit'], 'test_run_id': bundle['run_id'],
                    'deployment_run_id': run_id, 'installed_sha256': installed,
                    'checked_at_utc': datetime.now(timezone.utc).isoformat(),
-                   'health': 200, 'unauthenticated_live': 401, 'unauthenticated_version': 401,
+                   'health': 200, 'unauthenticated_live': 401, 'unauthenticated_version': 401, 'unauthenticated_presentation': 401,
                    'apk_policy_sha256': digest(policy_before), 'apk_changed': False,
                    'database_backup_created': True, 'tests_executed_on_timeweb': False,
                    'physical_phone_verified': False}

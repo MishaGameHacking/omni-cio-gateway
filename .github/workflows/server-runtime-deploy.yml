@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 5384abda0bf1b47a50ad136189eeab7e77d51dab
-  EXPECTED_TEST_RUN: '40655645566'
-  EXPECTED_ARTIFACT_SHA256: ef361ecb2b79f50fc097af7c862dbf0abc0064b2e96091ce9d2d65067c8cbd26
-  EXPECTED_BUNDLE_SHA256: 34eaf6e381521948cfef5b6aad6e20b0b32db720e29109ec452a7d094fecdc14
+  EXPECTED_SOURCE_SHA: 2d3e08614f15cfb1d9e9428a0d3613672394a92b
+  EXPECTED_TEST_RUN: '40676480217'
+  EXPECTED_ARTIFACT_SHA256: 53be10289594a115dbe905a03aa7974473c478e6eb25d16e080143b2131ff1d6
+  EXPECTED_BUNDLE_SHA256: 705a199e4d582f2a8f13803ad8b3bbd45d1258d8e2c4d8ef7e5ae954ede53dc9
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5384abda0bf1b47a50ad136189eeab7e77d51dab
+          ref: 2d3e08614f15cfb1d9e9428a0d3613672394a92b
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -74,7 +74,7 @@ jobs:
   deploy:
     needs: [quality, installer-tests]
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -90,7 +90,7 @@ jobs:
           script: |
             const run_id=Number(process.env.EXPECTED_TEST_RUN);
             let run;
-            for(let attempt=0;attempt<60;attempt++) {
+            for(let attempt=0;attempt<180;attempt++) {
               ({data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id}));
               if(run.status==='completed') break;
               await new Promise(resolve=>setTimeout(resolve,10000));
