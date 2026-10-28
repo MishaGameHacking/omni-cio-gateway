@@ -50,8 +50,8 @@ def project(discovery: dict, events: list, now: int) -> dict:
 def prune_obsolete_events(db, user_id: int, now: int) -> int:
     # Only repetitive automation status events. Financial operations, decisions,
     # strategy versions and portfolio valuations are not deletion targets.
-    cursor = db.execute("""DELETE FROM automation_events WHERE id IN (
+    cursor = db.execute("""DELETE FROM automation_events WHERE user_id=? AND id IN (
         SELECT id FROM automation_events WHERE user_id=? AND created_at<?
         AND kind IN ('candidate_research','initial_observation')
-        ORDER BY created_at LIMIT 200)""", (user_id, now - 30 * 86400))
+        ORDER BY created_at LIMIT 200)""", (user_id, user_id, now - 30 * 86400))
     return cursor.rowcount

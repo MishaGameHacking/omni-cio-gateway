@@ -95,6 +95,8 @@ jobs:
             ${{ runner.temp }}/server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/*.json
             ${{ runner.temp }}/server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/*.log
             server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/preview/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/debug/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/ci-ui-driver/build/outputs/apk/debug/
             server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/test-results/
             server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/lint-results-debug.*
           if-no-files-found: error

@@ -9,6 +9,7 @@ import re
 import sys
 
 PACKAGE = "ru.omnicio.app.debug"
+SYNTHETIC_FUND = "СИНТЕТИЧЕСКИЙ ФОНД"
 BANNER = "ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ"
 ERROR = "Синтетический отказ сервера. Настоящая сеть не вызывалась."
 CONFLICT = "Синтетический конфликт версии. Настройка не изменена."
@@ -288,6 +289,20 @@ class _AutomationCase:
         self.probe.reveal(expected, "workspace-content", direction="start")
 
 
+    def decisions(self, before):
+        self.probe.reveal(SYNTHETIC_FUND, "workspace-content")
+        self.probe.tap(SYNTHETIC_FUND, "workspace-content")
+        self.probe.reveal("К списку", "workspace-content")
+        self.probe.tap("К списку", "workspace-content")
+        self.probe.tap_visible("Проверка")
+        self.probe.reveal("Очередь проверок пуста", "workspace-content")
+        self.probe.tap_visible("История")
+        self.probe.reveal("СИНТЕТИЧЕСКАЯ ПРОВЕРКА", "workspace-content")
+        self.probe.tap_visible("Актуально")
+        self.probe.reveal(SYNTHETIC_FUND, "workspace-content")
+        if self.observed()["writes"] != before["writes"]:
+            raise AssertionError("Decision navigation wrote settings or started a paid task")
+
     def run(self):
         from profile_launch import launch_profile, profile_frame
         from spatial_frame_evidence import ready_spatial_metrics, read_screenshot
@@ -311,23 +326,12 @@ class _AutomationCase:
             self.probe.reveal(expected, "workspace-content")
             if self.scenario == "ready":
                 self.probe.tap("Открыть решения", "workspace-content")
-                self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+                self.probe.reveal(SYNTHETIC_FUND, "workspace-content")
                 self.probe.tap_visible("Настройки")
                 self.switch()
                 self.return_home(expected)
         elif self.scenario == "ready":
-            self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
-            self.probe.tap("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
-            self.probe.reveal("К списку", "workspace-content")
-            self.probe.tap("К списку", "workspace-content")
-            self.probe.tap_visible("Проверка")
-            self.probe.reveal("Очередь проверок пуста", "workspace-content")
-            self.probe.tap_visible("История")
-            self.probe.reveal("СИНТЕТИЧЕСКАЯ ПРОВЕРКА", "workspace-content")
-            self.probe.tap_visible("Актуально")
-            self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
-            if self.observed()["writes"] != before["writes"]:
-                raise AssertionError("Decision navigation wrote settings or started a paid task")
+            self.decisions(before)
         else:
             self.probe.reveal("Новых решений пока нет", "workspace-content")
         after = self.observed()
@@ -459,7 +463,7 @@ class _AutomationCase:
         tabs("home")
         tap("bottom-destination-actions", selected=False, label="Решения")
         self.wait_trace(lambda value: value["page"] == "decisions", "Bottom navigation did not open Decisions")
-        self.probe.reveal("СИНТЕТИЧЕСКИЙ ФОНД", "workspace-content")
+        self.probe.reveal(SYNTHETIC_FUND, "workspace-content")
         tabs("decisions")
         destination = "home" if self.route == "home" else "profile"
         tap("bottom-destination-" + destination, selected=False,

@@ -116,8 +116,11 @@ def test_cleanup_preserves_recent_events_and_financial_history(fixture):
             ("recent","candidate_research",now),("protected","financial_decision",now-31*86400)]:
             db.execute("INSERT INTO automation_events VALUES (?,?,?,?,?,?)",
                 (uid, "connection", identifier, kind, "{}", at))
+        db.execute("INSERT INTO automation_events VALUES (?,?,?,?,?,?)",
+            (uid + 1, "other-connection", "old", "candidate_research", "{}", now-31*86400))
         assert prune_obsolete_events(db, uid, now) == 1
-        assert {row[0] for row in db.execute("SELECT id FROM automation_events")} == {"recent","protected"}
+        assert {row[0] for row in db.execute("SELECT id FROM automation_events WHERE user_id=?", (uid,))} == {"recent","protected"}
+        assert db.execute("SELECT COUNT(*) FROM automation_events WHERE user_id=?", (uid + 1,)).fetchone()[0] == 1
     assert state.saved_snapshot(fixture["user"]) is not None
 
 
