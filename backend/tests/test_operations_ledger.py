@@ -80,7 +80,8 @@ def test_replaying_same_operation_and_duplicate_rows_is_idempotent(db):
 def test_pending_becomes_executed_and_late_pending_cannot_overwrite_it(db):
     pending = snapshot(operation(status="PROGRESS"))
     first = save(db, pending)
-    assert first["cash_movements"] == [] and first["operation_counts"]["pending"] == 1
+    assert first["cash_movements"] == []
+    assert first["operation_counts"]["pending"] == 1
     later = NOW + timedelta(minutes=1)
     executed = snapshot(operation(at=later), at=later)
     second = save(db, executed, at=later)
@@ -209,13 +210,17 @@ def test_snapshot_failure_rolls_back_ledger_revisions_and_cash_totals(db):
     db.execute("CREATE TABLE snapshot_marker (value TEXT)")
     db.commit()
     later = NOW + timedelta(minutes=1)
-    with pytest.raises(RuntimeError, match="synthetic_snapshot_failure"):
+
+    def fail_snapshot_transaction():
         with db:
             db.execute("BEGIN IMMEDIATE")
             ledger.record_snapshot_in(db, user_id=1, broker_key="connection-a",
                 snapshot=snapshot(operation(amount="99", at=later), at=later), at=later)
             db.execute("INSERT INTO snapshot_marker VALUES ('new snapshot')")
             raise RuntimeError("synthetic_snapshot_failure")
+
+    with pytest.raises(RuntimeError, match="synthetic_snapshot_failure"):
+        fail_snapshot_transaction()
     assert db.execute("SELECT COUNT(*) FROM snapshot_marker").fetchone()[0] == 0
     assert db.execute("SELECT COUNT(*) FROM broker_operation_history_v1").fetchone()[0] == 1
     assert movements(ledger.summary_in(db, user_id=1, broker_key="connection-a", account_ids=["account-a"])) == {("RUB", "coupon_income"): 10}
