@@ -141,7 +141,12 @@ def watcher(user_id: int):
                 _waiters.pop(user_id, None)
 
 
-@router.get("/live")
+@router.get("/live", responses={
+    401: {"description": "Authentication is missing, expired or revoked."},
+    429: {"description": "The bounded live-connection limit is reached; respect Retry-After."},
+    499: {"description": "The client disconnected before the long poll completed."},
+    503: {"description": "The durable revision store is temporarily unavailable; no freshness is confirmed."},
+})
 async def live(request: Request, after: str | None = Query(default=None, pattern=r"^[a-f0-9]{64}$"),
                wait: int = Query(default=20, ge=0, le=20),
                authorization: str | None = Header(default=None),

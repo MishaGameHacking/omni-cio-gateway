@@ -9,10 +9,12 @@ import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.SessionExpiry
 import ru.omnicio.app.data.updates.ClientVersion
 
+private val liveRevisionPattern = Regex("[a-f0-9]{64}")
+
 data class LiveChange(val revision: String, val brokerRevision: String, val brokerConnected: Boolean) {
     init {
-        require(revision.matches(Regex("[a-f0-9]{64}")))
-        require(brokerRevision.matches(Regex("[a-f0-9]{64}")))
+        require(revision.matches(liveRevisionPattern))
+        require(brokerRevision.matches(liveRevisionPattern))
     }
 }
 data class LivePoll(val change: LiveChange? = null, val status: Int = 0, val retryAfterMillis: Long = 0)
@@ -44,7 +46,7 @@ class WorkspaceLiveClient(private val baseUrl: String = BackendConfig.BASE_URL) 
     }
 
     fun poll(token: String, after: String?): LivePoll {
-        require(after == null || after.matches(Regex("[a-f0-9]{64}")))
+        require(after == null || after.matches(liveRevisionPattern))
         val started = generation.get()
         var connection: HttpsURLConnection? = null
         return try {
