@@ -75,7 +75,7 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     // Real JSON operations for JVM model checks; never packaged in the Android app.
-    testImplementation("org.json:json:20260814")
+    testImplementation(libs.json)
 
     screenshotTestImplementation(composeBom)
     screenshotTestImplementation(libs.compose.ui.tooling)
