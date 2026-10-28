@@ -1,4 +1,4 @@
-name: Read completed server shell quality analysis
+name: Request exact server shell privacy analysis
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -16,7 +16,7 @@ jobs:
         with:
           script: |
             const baseline='1da6e6420b51ebe66c8196e3869a2525f0ffe69f';
-            const ref='a72a91f7a2690addbcbb416a4c9530ed12c04be4';
+            const ref='619ddda9d5e1a02aacf7cd4408c4d48043e1f871';
             const old=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:baseline,per_page:100});
             const completed=old.filter(c=>c.name==='SonarCloud Code Analysis' && c.status==='completed');
             if (completed.length!==1) throw new Error('External analyzer identity is ambiguous');
