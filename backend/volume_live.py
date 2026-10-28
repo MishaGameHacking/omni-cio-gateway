@@ -41,6 +41,7 @@ USER_TABLES = (
     "automation_discovery", "automation_events",
 )
 GLOBAL_TABLES = ("market_facts", "research_revision_v1")
+TRIGGER_OPERATIONS = ("INSERT", "UPDATE", "DELETE")
 _waiters: dict[int, int] = {}
 _waiter_lock = threading.Lock()
 
@@ -59,46 +60,77 @@ def deployment_signature() -> str:
 DEPLOYMENT = deployment_signature()
 
 
+def _revision_tables(db) -> None:
+    db.execute("""CREATE TABLE IF NOT EXISTS workspace_live_versions (
+        user_id INTEGER PRIMARY KEY CHECK(user_id>0),
+        stamp TEXT NOT NULL CHECK(length(stamp)=64 AND stamp NOT GLOB '*[^0-9a-f]*'))""")
+    db.execute("""CREATE TABLE IF NOT EXISTS workspace_live_global (
+        singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+        stamp TEXT NOT NULL CHECK(length(stamp)=64 AND stamp NOT GLOB '*[^0-9a-f]*'))""")
+    db.execute("INSERT OR IGNORE INTO workspace_live_global VALUES (1,lower(hex(randomblob(32))))")
+
+
+def _columns(db, table: str) -> list[str]:
+    if table not in USER_TABLES + GLOBAL_TABLES:
+        raise RuntimeError("live_table_not_allowed")
+    columns = [row[1] for row in db.execute('PRAGMA table_info("' + table + '")')]
+    if table in USER_TABLES and "user_id" not in columns:
+        raise RuntimeError("live_table_has_no_owner:" + table)
+    if not all(re.fullmatch(r"[a-z_][a-z0-9_]*", name) for name in columns):
+        raise RuntimeError("live_table_column_invalid")
+    return columns
+
+
+def _trigger_owners(table: str, operation: str) -> tuple[str, ...]:
+    if operation not in TRIGGER_OPERATIONS:
+        raise RuntimeError("live_trigger_operation_invalid")
+    if table in GLOBAL_TABLES:
+        return ("1",)
+    if table not in USER_TABLES:
+        raise RuntimeError("live_table_not_allowed")
+    return {"INSERT": ("NEW.user_id",), "UPDATE": ("NEW.user_id", "OLD.user_id"),
+            "DELETE": ("OLD.user_id",)}[operation]
+
+
+def _trigger_definition(table: str, operation: str, columns: list[str]) -> tuple[str, str]:
+    owners = _trigger_owners(table, operation)
+    trigger = "live_v1_" + table + "_" + operation.lower()
+    when = ""
+    if operation == "UPDATE":
+        when = " WHEN " + " OR ".join('OLD."' + col + '" IS NOT NEW."' + col + '"' for col in columns)
+    if table in GLOBAL_TABLES:
+        version_table, identity = "workspace_live_global", "singleton"
+    else:
+        version_table, identity = "workspace_live_versions", "user_id"
+    statements = "".join(
+        "INSERT INTO " + version_table + "(" + identity + ",stamp) VALUES (" + owner +
+        ",lower(hex(randomblob(32)))) ON CONFLICT(" + identity + ") DO UPDATE SET stamp=excluded.stamp;"
+        for owner in owners)
+    sql = "CREATE TRIGGER " + trigger + " AFTER " + operation + " ON " + table + when + " BEGIN " + statements + " END"
+    return trigger, sql
+
+
+def _reconcile_table_triggers(db, table: str) -> None:
+    columns = _columns(db, table)
+    for operation in TRIGGER_OPERATIONS:
+        trigger, sql = _trigger_definition(table, operation, columns)
+        installed = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", (trigger,)).fetchone()
+        if installed is None or installed[0] != sql:
+            db.execute("DROP TRIGGER IF EXISTS " + trigger)
+            db.execute(sql)
+
+
 def initialize(connect=None) -> None:
     connect = backend.connect if connect is None else connect
     with closing(connect()) as db:
-        # Reviewed evidence already has its own durable revision.
+        # Keep the existing transaction boundary and research-store behavior.
         research_store.initialize(db)
         db.execute("BEGIN IMMEDIATE")
-        db.execute("""CREATE TABLE IF NOT EXISTS workspace_live_versions (
-            user_id INTEGER PRIMARY KEY CHECK(user_id>0),
-            stamp TEXT NOT NULL CHECK(length(stamp)=64 AND stamp NOT GLOB '*[^0-9a-f]*'))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS workspace_live_global (
-            singleton INTEGER PRIMARY KEY CHECK(singleton=1),
-            stamp TEXT NOT NULL CHECK(length(stamp)=64 AND stamp NOT GLOB '*[^0-9a-f]*'))""")
-        db.execute("INSERT OR IGNORE INTO workspace_live_global VALUES (1,lower(hex(randomblob(32))))")
+        _revision_tables(db)
         existing = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         for table in USER_TABLES + GLOBAL_TABLES:
-            if table not in existing:
-                continue
-            columns = [row[1] for row in db.execute('PRAGMA table_info("' + table + '")')]
-            if table in USER_TABLES and "user_id" not in columns:
-                raise RuntimeError("live_table_has_no_owner:" + table)
-            if not all(re.fullmatch(r"[a-z_][a-z0-9_]*", name) for name in columns):
-                raise RuntimeError("live_table_column_invalid")
-            for operation in ("INSERT", "UPDATE", "DELETE"):
-                trigger = "live_v1_" + table + "_" + operation.lower()
-                owners = ("1",) if table in GLOBAL_TABLES else (
-                    ("NEW.user_id", "OLD.user_id") if operation == "UPDATE"
-                    else ("OLD.user_id",) if operation == "DELETE" else ("NEW.user_id",))
-                when = ""
-                if operation == "UPDATE":
-                    when = " WHEN " + " OR ".join('OLD."' + col + '" IS NOT NEW."' + col + '"' for col in columns)
-                version_table, identity = ("workspace_live_global", "singleton") if table in GLOBAL_TABLES else ("workspace_live_versions", "user_id")
-                statements = "".join(
-                    "INSERT INTO " + version_table + "(" + identity + ",stamp) VALUES (" + owner +
-                    ",lower(hex(randomblob(32)))) ON CONFLICT(" + identity + ") DO UPDATE SET stamp=excluded.stamp;"
-                    for owner in owners)
-                sql = "CREATE TRIGGER " + trigger + " AFTER " + operation + " ON " + table + when + " BEGIN " + statements + " END"
-                installed = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?", (trigger,)).fetchone()
-                if installed is None or installed[0] != sql:
-                    db.execute("DROP TRIGGER IF EXISTS " + trigger)
-                    db.execute(sql)
+            if table in existing:
+                _reconcile_table_triggers(db, table)
         db.commit()
 
 
@@ -152,8 +184,6 @@ async def live(request: Request, after: str | None = Query(default=None, pattern
                authorization: str | None = Header(default=None),
                user: Any = Depends(backend.current_user)):
     user_id = int(user["id"])
-    # The dependency enforces current app/session policy. Recheck session
-    # revocation and expiry on every wait iteration without changing last_seen.
     token_hash = backend.hash_token((authorization or "")[7:].strip())
     deadline = time.monotonic() + wait
     with watcher(user_id):
