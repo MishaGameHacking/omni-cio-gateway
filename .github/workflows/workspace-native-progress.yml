@@ -1,4 +1,4 @@
-name: Read candidate52 native acceptance progress
+name: Read exact debug-probe verification progress
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,23 +9,19 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read bounded owned native verification markers
+      - name: Read bounded owned check logs
         shell: py -3 {0}
         run: |
           import os
           from pathlib import Path
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
-          owned = "workspace-native-40760401285-1"
-          markers = ("KERNEL_PAGE_SIZE=", "PREVIOUS_CLEAN_INSTALL=", "UPGRADE_TO_CANDIDATE=",
-                     "UPGRADE_BOOTSTRAP_LAUNCH=", "CANDIDATE_CLEAN_INSTALL=", "BOOTSTRAP_ACTIVITY_LAUNCH=",
-                     "PROFILE_UI_STAGE=", "PROFILE_UI_STAGE_PASSED=", "WORKSPACE_NATIVE_REPORT=",
-                     "AssertionError:", "RuntimeError:", "EMULATOR_HOST_LEASE=", "PROFILE_SCREENSHOT=")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp" / owned
+              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40763630833-1"
               for path in folder.glob("*.log"):
                   with path.open("rb") as stream:
-                      stream.seek(max(0,path.stat().st_size-30000))
-                      value=stream.read(30000).decode("utf-8", errors="replace")
-                  selected=[line[:1600] for line in value.splitlines() if any(word in line for word in markers)]
-                  print(owned + "/" + path.name + "\n" + "\n".join(selected[-25:]))
+                      stream.seek(max(0, path.stat().st_size - 24000))
+                      lines = stream.read(24000).decode("utf-8", errors="replace").splitlines()
+                  selected = [line for line in lines if any(word in line for word in
+                      ("e: ", "FAIL", "Error", "Exception", "BUILD ", "Task ", "Ran ", "OK", "tests completed", "LEASE"))]
+                  print(path.name + "\n" + "\n".join(selected[-35:]))
