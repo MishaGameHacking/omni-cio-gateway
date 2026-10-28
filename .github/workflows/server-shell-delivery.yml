@@ -1,0 +1,82 @@
+name: Deliver the verified server-aware Android shell
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/server-shell-delivery.yml]
+permissions:
+  contents: read
+  actions: read
+  checks: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: 2d3e08614f15cfb1d9e9428a0d3613672394a92b
+  EXPECTED_TEST_RUN: '40676480217'
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40678018780'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: 0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc
+  EXPECTED_APK_SHA256: d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 57e26621f84690f3614833c5c77fbf071dcd5cbd
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 2d3e08614f15cfb1d9e9428a0d3613672394a92b
+          path: .source-quality
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Require exact successful laptop build, delivery-tool checks, clean analysis and server deployment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref=process.env.EXPECTED_SOURCE_SHA;
+            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/server-runtime-2026-10-28'});
+            if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
+            for(const [run_id,sha,path] of [
+                [Number(process.env.EXPECTED_TEST_RUN),ref,'.github/workflows/server-runtime.yml'],
+                [40673947731,'57e26621f84690f3614833c5c77fbf071dcd5cbd','.github/workflows/server-shell-tools-check.yml'],
+                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'ac9dc7038b6b6dd2ff7bc08fa6e7433cea3a6c5d','.github/workflows/server-runtime-deploy.yml']]) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
+                throw new Error('Required exact verification is not successful');
+            }
+            const {newestSonarCheck,assertCleanSonar}=require('./.source-quality/.github/scripts/require_clean_sonar.cjs');
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=newestSonarCheck(checks,ref);
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact source analysis not completed');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,ref);
+            const run_id=Number(process.env.EXPECTED_TEST_RUN);
+            const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+            const matches=items.filter(x=>x.name==='server-version-client-'+run_id+'-1'&&!x.expired);
+            if(matches.length!==1||matches[0].digest!=='sha256:'+process.env.EXPECTED_CLIENT_ARTIFACT_SHA256)
+              throw new Error('Client artifact identity changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'shell-artifact.zip'),Buffer.from(archive.data));
+      - name: Bind exact signed APK bytes and clean build evidence
+        run: python3 tools/prepare_shell_delivery.py
+      - name: Transfer to the existing Timeweb runtime, publish atomically, verify the complete HTTPS APK
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/deliver_server_shell.py
+      - name: Preserve public delivery receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-shell-delivery-${{ github.run_id }}
+          path: plan-reports/
+          retention-days: 7
+          if-no-files-found: warn
