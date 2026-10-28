@@ -7,9 +7,11 @@ coroutines = "1.9.0"
 browser = "1.10.0"
 filament = "1.72.1"
 junit = "4.13.2"
+json = "20260814"
 
 [libraries]
 junit = { module = "junit:junit", version.ref = "junit" }
+json = { module = "org.json:json", version.ref = "json" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
 compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
