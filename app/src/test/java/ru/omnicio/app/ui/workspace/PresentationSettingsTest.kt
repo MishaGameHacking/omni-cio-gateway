@@ -5,6 +5,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PresentationSettingsTest {
+    @Test fun appearanceResetPreservesPrivacyAndHomeSettings() {
+        val original = WorkspacePreferences(AccentStyle.IRIS, InterfaceDensity.COMPACT, false, true, false,
+            false, MotionLevel.OFF, true, true)
+        val reset = original.resetAppearance()
+        assertTrue(reset.screenshotsBlocked)
+        assertTrue(reset.hideHomeBalance)
+        assertFalse(reset.homeStructure)
+        assertEquals(AccentStyle.AURORA, reset.accent)
+        assertEquals(MotionLevel.LIVE, reset.motion)
+        val patch = settingsDifference(original.toSettings(), reset.toSettings())
+        assertFalse(patch.has("screenshots_blocked"))
+        assertFalse(patch.has("hide_home_balance"))
+        assertFalse(patch.has("home_structure"))
+    }
+
     @Test fun captureIsBlockedUntilTheCurrentAccountPolicyIsConfirmed() {
         assertTrue(screenCaptureBlocked(false, true, false))
         assertTrue(screenCaptureBlocked(true, false, false))

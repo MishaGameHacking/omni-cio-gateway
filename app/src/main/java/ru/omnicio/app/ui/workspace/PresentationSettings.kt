@@ -55,3 +55,7 @@ internal fun restoredSettingsPatch(raw: String?): JSONObject {
 /** A previous account's permissive cache never opens a capture window for an unknown account policy. */
 internal fun screenCaptureBlocked(signedIn: Boolean, serverConfirmed: Boolean, preference: Boolean): Boolean =
     !signedIn || !serverConfirmed || preference
+
+/** An appearance reset must preserve independently selected privacy and home settings. */
+internal fun WorkspacePreferences.resetAppearance(): WorkspacePreferences = WorkspacePreferences(
+    hideHomeBalance = hideHomeBalance, homeStructure = homeStructure, screenshotsBlocked = screenshotsBlocked)
