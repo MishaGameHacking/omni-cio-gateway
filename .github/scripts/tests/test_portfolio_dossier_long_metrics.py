@@ -124,15 +124,17 @@ class LongMetricsEventTraversalTests(unittest.TestCase):
 
     def test_a_matching_value_outside_its_observation_cannot_reach_the_event(self):
         probe = LongMetricsEventProbe(2, missing_second_value=True)
+        case = self.case(probe)
         with patch("profile_scroll.time.sleep"), self.assertRaisesRegex(
                 AssertionError, "Exact native source record did not expose its value: dossier-conflict-observation-1 / 8.25"):
-            research._event_draft(self.case(probe))
+            research._event_draft(case)
         self.assertEqual(probe.actions, [])
 
     def test_a_foreign_observation_cannot_reach_the_event(self):
         probe = LongMetricsEventProbe(2, wrong_second_package=True)
+        case = self.case(probe)
         with patch("profile_scroll.time.sleep"), self.assertRaises(AssertionError):
-            research._event_draft(self.case(probe))
+            research._event_draft(case)
         self.assertEqual(probe.actions, [])
 
 
