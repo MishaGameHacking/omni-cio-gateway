@@ -1,4 +1,4 @@
-name: Observe owner laptop availability for server version verification
+name: Observe owner laptop source checkout progress
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -10,8 +10,21 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
-      - name: Report only host availability and free disk without touching running jobs
-        shell: cmd
+      - name: Read only checkout file sizes for the two version-verification jobs
+        shell: py -3 {0}
         run: |
-          py -3 -c "import os,json,shutil,datetime; assert os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; print(json.dumps({'host':os.environ['COMPUTERNAME'],'checked_at_utc':datetime.datetime.now(datetime.timezone.utc).isoformat(),'disk_free_bytes':shutil.disk_usage('C:/').free,'read_only':True}))"
-          if errorlevel 1 exit /b 1
+          import datetime,json,os,pathlib
+          assert os.environ.get("COMPUTERNAME")=="LAPTOP-NPSGA016"
+          rows=[]
+          for runner in ("actions-runner","actions-runner-2","actions-runner-3","actions-runner-4"):
+              for run in ("40654890518","40655645566"):
+                  root=pathlib.Path("C:/")/runner/"_work/omni-cio-gateway/omni-cio-gateway"/("backend-ci-"+run+"-1")
+                  if not root.exists() or root.is_symlink():
+                      continue
+                  git=root/".git"
+                  packs=list((git/"objects/pack").glob("*"))
+                  rows.append({"runner":runner,"run_id":run,"git":git.is_dir(),
+                      "index":(git/"index").exists(),"fetch_head":(git/"FETCH_HEAD").exists(),
+                      "pack_bytes":sum(p.stat().st_size for p in packs if p.is_file()),
+                      "pack_files":len(packs)})
+          print(json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"checkouts":rows}))
