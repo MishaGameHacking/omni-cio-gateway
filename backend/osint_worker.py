@@ -15,7 +15,7 @@ from fastapi import HTTPException
 
 try:
     from . import app as backend, osint_store as store, osint_network as net, osint_content as content
-    from .osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF
+    from .osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF, MAX_FEED
     from .osint_analysis import analyze, clean_text
     from .osint_retention import cleanup
     from .ai_budget import transaction
@@ -24,7 +24,7 @@ except ImportError:
     import osint_store as store
     import osint_network as net
     import osint_content as content
-    from osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF
+    from osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF, MAX_FEED
     from osint_analysis import analyze, clean_text
     from osint_retention import cleanup
     from ai_budget import transaction
@@ -185,7 +185,7 @@ def process(target, guard):
     if target["kind"] == "gdelt":
         headers = {}
     status, response_headers, raw, final_url = net.request(url, source.hosts, headers,
-        maximum=MAX_PDF if target["kind"] == "pdf" else MAX_BODY,
+        maximum={"pdf": MAX_PDF, "rss": MAX_FEED}.get(target["kind"], MAX_BODY),
         before_request=lambda destination: _before(destination, source, guard,
                                                     robots_required=target["kind"] in {"index", "pdf"}))
     now = int(time.time())

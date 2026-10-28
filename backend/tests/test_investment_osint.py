@@ -318,7 +318,7 @@ def test_redirect_does_not_contact_unapproved_host(monkeypatch):
 
 def test_tls_checks_certificate_hostname_and_connects_checked_numeric_address(monkeypatch):
     from types import SimpleNamespace
-    socket = SimpleNamespace(close=lambda: None)
+    socket = SimpleNamespace(close=lambda: None, settimeout=lambda _value: None)
     observed = {}
     context = SimpleNamespace(check_hostname=False, verify_mode=0)
 
@@ -427,3 +427,17 @@ def test_retention_remains_scheduled_while_all_publishers_are_backing_off(corpus
     cleanup(corpus, NOW)
     assert store.due(corpus, NOW + 3599) is False
     assert store.due(corpus, NOW + 3600) is True
+
+
+def test_large_official_rss_is_bounded_independently_of_html_and_discovery():
+    description = b"x" * (3 * 1024 * 1024)
+    raw = (b"<rss><channel><item><title>MOEX financial report</title>"
+           b"<link>https://www.moex.com/large-report</link><description>" + description +
+           b"</description></item></channel></rss>")
+    rows, coverage = content.feed(raw, catalogue.BY_ID["moex_news"], NOW)
+    assert len(rows) == 1
+    assert len(rows[0]["text"]) <= catalogue.MAX_TEXT
+    assert coverage["items_seen"] == 1
+    oversized = b"x" * (catalogue.MAX_FEED + 1)
+    with pytest.raises(catalogue.IntakeError, match="xml_unsafe"):
+        content.feed(oversized, catalogue.BY_ID["moex_news"], NOW)

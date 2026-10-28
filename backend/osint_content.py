@@ -10,10 +10,10 @@ from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 
 try:
-    from .osint_catalogue import IntakeError, canonical_url, target_url, MAX_BODY
+    from .osint_catalogue import IntakeError, canonical_url, target_url, MAX_BODY, MAX_FEED
     from .osint_analysis import clean_text
 except ImportError:
-    from osint_catalogue import IntakeError, canonical_url, target_url, MAX_BODY
+    from osint_catalogue import IntakeError, canonical_url, target_url, MAX_BODY, MAX_FEED
     from osint_analysis import clean_text
 
 
@@ -116,14 +116,14 @@ def _entry(item, source, now):
 
 
 def feed(raw: bytes, source, now: int) -> tuple[list[dict], dict]:
-    if len(raw) > MAX_BODY or b"\0" in raw or re.search(br"<!DOCTYPE|<!ENTITY", raw, re.I):
+    if len(raw) > MAX_FEED or b"\0" in raw or re.search(br"<!DOCTYPE|<!ENTITY", raw, re.I):
         raise IntakeError("osint_xml_unsafe")
     try:
         root = ElementTree.fromstring(raw)
     except ElementTree.ParseError:
         raise IntakeError("osint_feed_invalid") from None
     nodes = list(root.iter())
-    if len(nodes) > 20000 or root.tag.rsplit("}", 1)[-1].lower() not in {"rss", "rdf", "feed"}:
+    if len(nodes) > 100000 or root.tag.rsplit("}", 1)[-1].lower() not in {"rss", "rdf", "feed"}:
         raise IntakeError("osint_feed_schema_invalid")
     entries = [item for item in nodes if item.tag.rsplit("}", 1)[-1] in {"item", "entry"}]
     rows, rejected = [], 0

@@ -15,7 +15,7 @@ try:
 except ImportError:
     from osint_catalogue import IntakeError, USER_AGENT, canonical_url
 
-TIMEOUT = 12
+TIMEOUT = 25
 REDIRECTS = {301, 302, 303, 307, 308}
 
 
@@ -45,6 +45,7 @@ def _connection(host: str):
     context.verify_mode = ssl.CERT_REQUIRED
     connection = http.client.HTTPSConnection(host, timeout=TIMEOUT, context=context)
     sock = _connect_address(addresses)
+    sock.settimeout(TIMEOUT)
     try:
         connection.sock = context.wrap_socket(sock, server_hostname=host)
     except BaseException:

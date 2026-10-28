@@ -11,6 +11,7 @@ MOEX_HOSTS = ("www.moex.com", "moex.com")
 MOEX_RSS_DOCUMENTATION = "https://www.moex.com/a40"
 MAX_TEXT = 240_000
 MAX_BODY = 2 * 1024 * 1024
+MAX_FEED = 16 * 1024 * 1024
 MAX_PDF = 12 * 1024 * 1024
 
 
