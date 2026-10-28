@@ -7,6 +7,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import org.json.JSONObject
 import java.time.LocalDate
+import ru.omnicio.app.data.portfolio.PortfolioAccount
+import ru.omnicio.app.data.portfolio.PortfolioPosition
 import ru.omnicio.app.ui.spectrum.*
 
 @Composable
@@ -51,55 +53,165 @@ fun ChatContextEditor(current: ChatContext, onClose: () -> Unit) {
             .put("instrument", instrument ?: JSONObject.NULL).put("start", start).put("end", end)
             .put("keep_event", keepEvent))
         if (valid) {
-            val title = when (mode) {
-                0 -> "Общий вопрос"
-                2 -> selected?.title.orEmpty()
-                else -> accounts.firstOrNull { it.id == accountId }?.name ?: "Мой портфель"
-            }
+            val title = chatContextTitle(mode, selected?.title, accounts, accountId)
             val next = editedChatContext(mode, title, instrument, accountId, start to end,
                 contextEventId.takeIf { keepEvent && instrument == contextInstrument })
             if (!equivalentJson(current.json(), next.json()) || current.title != next.title) select(next)
         }
     }
     WorkspaceDialog("Контекст следующего вопроса", onClose) {
-        if (!restored) {
-            SpectrumLoadingIndicator(description = "Восстанавливаем ваш выбор")
-            AutoSaveStatus(null) { memory?.retry(AutoSaveKind.Notifications) }
-            return@WorkspaceDialog
+        ChatContextDialogContent(
+            restored = restored,
+            memory = memory,
+            valid = valid,
+            mode = mode,
+            onModeChange = { mode = it },
+            accounts = accounts,
+            accountId = accountId,
+            onAccountChange = { accountId = it; instrument = null },
+            validAccount = validAccount,
+            positions = positions,
+            instrument = instrument,
+            onInstrumentChange = { instrument = it },
+            contextInstrument = contextInstrument,
+            contextEventId = contextEventId,
+            keepEvent = keepEvent,
+            onKeepEventChange = { keepEvent = it },
+            start = start,
+            onStartChange = { start = it },
+            end = end,
+            onEndChange = { end = it },
+            validRange = validRange,
+            onClose = onClose,
+        )
+    }
+}
+
+private fun chatContextTitle(mode: Int, selectedTitle: String?, accounts: List<PortfolioAccount>, accountId: String?): String =
+    when (mode) {
+        0 -> "Общий вопрос"
+        2 -> selectedTitle.orEmpty()
+        else -> accounts.firstOrNull { it.id == accountId }?.name ?: "Мой портфель"
+    }
+
+@Composable
+private fun ChatContextDialogContent(
+    restored: Boolean,
+    memory: WorkspaceAutoSaveController?,
+    valid: Boolean,
+    mode: Int,
+    onModeChange: (Int) -> Unit,
+    accounts: List<PortfolioAccount>,
+    accountId: String?,
+    onAccountChange: (String?) -> Unit,
+    validAccount: Boolean,
+    positions: List<PortfolioPosition>,
+    instrument: String?,
+    onInstrumentChange: (String) -> Unit,
+    contextInstrument: String?,
+    contextEventId: String?,
+    keepEvent: Boolean,
+    onKeepEventChange: (Boolean) -> Unit,
+    start: String,
+    onStartChange: (String) -> Unit,
+    end: String,
+    onEndChange: (String) -> Unit,
+    validRange: Boolean,
+    onClose: () -> Unit,
+) {
+    if (!restored) {
+        SpectrumLoadingIndicator(description = "Восстанавливаем ваш выбор")
+        AutoSaveStatus(null) { memory?.retry(AutoSaveKind.Notifications) }
+        return
+    }
+    Text(memory?.selectionError ?: if (memory != null && memory.savedSelectionRevision < memory.selectionRevision) "Запоминаем выбор…"
+        else if (valid) "Выбор применяется автоматически" else
+        "Дополните выбранные значения для применения.", style = MaterialTheme.typography.bodySmall)
+    WorkspaceChoices("О чём говорим", listOf("Общий вопрос", "Портфель", "Инструмент"), mode, onModeChange)
+    if (mode != 0) {
+        ChatContextPortfolioControls(
+            mode = mode,
+            accounts = accounts,
+            accountId = accountId,
+            onAccountChange = onAccountChange,
+            validAccount = validAccount,
+            positions = positions,
+            instrument = instrument,
+            onInstrumentChange = onInstrumentChange,
+            contextInstrument = contextInstrument,
+            contextEventId = contextEventId,
+            keepEvent = keepEvent,
+            onKeepEventChange = onKeepEventChange,
+            start = start,
+            onStartChange = onStartChange,
+            end = end,
+            onEndChange = onEndChange,
+            validRange = validRange,
+        )
+    }
+    SpectrumSecondaryButton("Готово", onClose, Modifier.fillMaxWidth())
+}
+
+@Composable
+private fun ChatContextPortfolioControls(
+    mode: Int,
+    accounts: List<PortfolioAccount>,
+    accountId: String?,
+    onAccountChange: (String?) -> Unit,
+    validAccount: Boolean,
+    positions: List<PortfolioPosition>,
+    instrument: String?,
+    onInstrumentChange: (String) -> Unit,
+    contextInstrument: String?,
+    contextEventId: String?,
+    keepEvent: Boolean,
+    onKeepEventChange: (Boolean) -> Unit,
+    start: String,
+    onStartChange: (String) -> Unit,
+    end: String,
+    onEndChange: (String) -> Unit,
+    validRange: Boolean,
+) {
+    WorkspaceChoicePicker("Счёт", accountId.orEmpty(), listOf(WorkspaceSuggestion("", "Все мои счета")) +
+        accounts.map { WorkspaceSuggestion(it.id, it.name) }) {
+        onAccountChange(it.takeIf(String::isNotBlank))
+    }
+    if (!validAccount) Text("Выбранный счёт не найден в текущем снимке. Дождитесь загрузки или выберите доступный счёт, включая «Все мои счета».")
+    if (mode == 2) {
+        WorkspaceChoicePicker("Инструмент", instrument.orEmpty(), positions.map {
+            WorkspaceSuggestion(it.id, it.title, listOfNotNull(it.ticker, it.isin).joinToString(" "))
+        }, onInstrumentChange)
+        if (instrument == contextInstrument && contextEventId != null) {
+            Text("Контекст включает выбранную публикацию из досье.", style = MaterialTheme.typography.bodySmall)
+            WorkspaceCheckbox("Включить эту публикацию", keepEvent, onKeepEventChange)
         }
-        Text(memory?.selectionError ?: if (memory != null && memory.savedSelectionRevision < memory.selectionRevision) "Запоминаем выбор…"
-            else if (valid) "Выбор применяется автоматически" else
-            "Дополните выбранные значения для применения.", style = MaterialTheme.typography.bodySmall)
-        WorkspaceChoices("О чём говорим", listOf("Общий вопрос", "Портфель", "Инструмент"), mode) { mode = it }
-        if (mode != 0) {
-            WorkspaceChoicePicker("Счёт", accountId.orEmpty(), listOf(WorkspaceSuggestion("", "Все мои счета")) +
-                accounts.map { WorkspaceSuggestion(it.id, it.name) }) {
-                accountId = it.takeIf(String::isNotBlank); instrument = null
-            }
-            if (!validAccount) Text("Выбранный счёт не найден в текущем снимке. Дождитесь загрузки или выберите доступный счёт, включая «Все мои счета».")
-            if (mode == 2) {
-                WorkspaceChoicePicker("Инструмент", instrument.orEmpty(), positions.map {
-                    WorkspaceSuggestion(it.id, it.title, listOfNotNull(it.ticker, it.isin).joinToString(" "))
-                }) { instrument = it }
-                if (instrument == contextInstrument && contextEventId != null) {
-                    Text("Контекст включает выбранную публикацию из досье.", style = MaterialTheme.typography.bodySmall)
-                    WorkspaceCheckbox("Включить эту публикацию", keepEvent) { keepEvent = it }
-                }
-            }
-            DetailFold("Период операций", initiallyOpen = start.isNotBlank()) {
-                WorkspaceTextInput(start, { start = it.take(10) }, "С · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
-                WorkspaceTextInput(end, { end = it.take(10) }, "По · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
-                val today = remember { LocalDate.now() }
-                WorkspaceSuggestionRow("", listOf(WorkspaceSuggestion("month", "Последний месяц"),
-                    WorkspaceSuggestion("year", "С начала года"), WorkspaceSuggestion("all", "Весь период"))) { period ->
-                    start = when (period) { "month" -> today.minusMonths(1).toString(); "year" -> today.withDayOfYear(1).toString(); else -> "" }
-                    end = if (period == "all") "" else today.toString()
-                }
-                Text("Период ограничивает доступные операции. Текущая оценка портфеля сохраняет фактическую дату снимка.", style = MaterialTheme.typography.bodySmall)
-                if (!validRange) Text("Укажите обе даты в правильном порядке.", color = MaterialTheme.colorScheme.error)
-            }
+    }
+    ChatContextPeriod(start, onStartChange, end, onEndChange, validRange)
+}
+
+@Composable
+private fun ChatContextPeriod(
+    start: String,
+    onStartChange: (String) -> Unit,
+    end: String,
+    onEndChange: (String) -> Unit,
+    validRange: Boolean,
+) {
+    DetailFold("Период операций", initiallyOpen = start.isNotBlank()) {
+        WorkspaceTextInput(start, { onStartChange(it.take(10)) }, "С · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
+        WorkspaceTextInput(end, { onEndChange(it.take(10)) }, "По · ГГГГ-ММ-ДД", Modifier.fillMaxWidth())
+        val today = remember { LocalDate.now() }
+        WorkspaceSuggestionRow("", listOf(WorkspaceSuggestion("month", "Последний месяц"),
+            WorkspaceSuggestion("year", "С начала года"), WorkspaceSuggestion("all", "Весь период"))) { period ->
+            onStartChange(when (period) {
+                "month" -> today.minusMonths(1).toString()
+                "year" -> today.withDayOfYear(1).toString()
+                else -> ""
+            })
+            onEndChange(if (period == "all") "" else today.toString())
         }
-        SpectrumSecondaryButton("Готово", onClose, Modifier.fillMaxWidth())
+        Text("Период ограничивает доступные операции. Текущая оценка портфеля сохраняет фактическую дату снимка.", style = MaterialTheme.typography.bodySmall)
+        if (!validRange) Text("Укажите обе даты в правильном порядке.", color = MaterialTheme.colorScheme.error)
     }
 }
 
