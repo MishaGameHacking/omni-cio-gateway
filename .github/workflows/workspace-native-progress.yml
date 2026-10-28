@@ -1,0 +1,30 @@
+name: Read shell51 native acceptance progress
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-native-progress.yml]
+permissions: {}
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read only bounded logs of the owned synthetic native run
+        shell: py -3 {0}
+        run: |
+          import json, os, re
+          from pathlib import Path
+          if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
+              raise RuntimeError("owner_laptop_required")
+          for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
+              folder = Path("C:/") / runner / "_work/_temp/workspace-native-40730944124-1"
+              report = folder / "native-steps.json"
+              if report.is_file():
+                  value = json.loads(report.read_text(encoding="utf-8"))
+                  print("NATIVE_STEPS=" + json.dumps([{key:step.get(key) for key in ("label","exit_code","started_at","finished_at")} for step in value.get("steps",[])]))
+              for log in sorted(folder.glob("native-steps-*.log")):
+                  with log.open("rb") as stream:
+                      stream.seek(max(0,log.stat().st_size-20000))
+                      content = stream.read(20000).decode("utf-8",errors="replace")
+                  lines = [line for line in content.splitlines() if re.search(r"PASS|FAIL|ERROR|Error|Exception|Assertion|Traceback|CASE|STAGE|PROFILE|EMULATOR|INSTAL|UPDATE|APK|not found|not settle|not reach",line)]
+                  print("NATIVE_PROGRESS=" + log.name + "\n" + "\n".join(lines)[-12000:])
