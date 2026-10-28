@@ -1,4 +1,4 @@
-name: Deliver verified redesigned Android shell51
+name: Publish preview52 after laptop build and visual review
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,13 +9,13 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
-  EXPECTED_TEST_RUN: '40724497603'
+  EXPECTED_SOURCE_SHA: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
+  EXPECTED_TEST_RUN: '40757238094'
   EXPECTED_RUNTIME_DEPLOY_RUN: '40721312988'
   EXPECTED_RUNTIME_SOURCE_SHA: aad0a117074a1b083021f93ef9ff928102b95557
   EXPECTED_RUNTIME_TEST_RUN: '40718753255'
-  EXPECTED_CLIENT_ARTIFACT_SHA256: dce40c3b8ba6a08c40a51886ca8cb721895709b2049df2606f2b1edd332ab68c
-  EXPECTED_APK_SHA256: d5d8a3a86c7400515206cab74c04299cd7008bdbc246bd22dddd21e05d0db0c9
+  EXPECTED_CLIENT_ARTIFACT_SHA256: 790e913040bcf222d0102a98c7651ede41fc586fca815322c8df035b6ce343c4
+  EXPECTED_APK_SHA256: 49cca6b9f3bd1c27f4283e17149475cce27f1e4d7ab8595ae1f1a7e14dae5654
 jobs:
   deliver:
     permissions:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: c9ec61aea2385bcee3e65b84d872c469241af2a4
+          ref: 94fe75e7bf09d8cec33123f7081d14b9be17bae0
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 900f4fe794ca2aa6a911515189369ba6c3bb3ebb
+          ref: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
           path: .source-quality
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
@@ -59,7 +59,8 @@ jobs:
             if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
             for(const [run_id,sha,path] of [
                 [Number(process.env.EXPECTED_TEST_RUN),ref,'.github/workflows/workspace-redesign.yml'],
-                [40723629124,'c9ec61aea2385bcee3e65b84d872c469241af2a4','.github/workflows/workspace-shell-tools-check.yml'],
+                [40757305810,'416a43f1eb3d1f7115a0c7a92f82ea10748f620d','.github/workflows/workspace-redesign-visual.yml'],
+                [40753466731,'94fe75e7bf09d8cec33123f7081d14b9be17bae0','.github/workflows/workspace-shell-tools-check.yml'],
                 [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'ad710d8ef0e54071cb5ecdc39d2ba9e8441e1a6d','.github/workflows/workspace-deploy.yml']]) {
               const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
               if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
@@ -93,3 +94,4 @@ jobs:
           path: plan-reports/
           retention-days: 7
           if-no-files-found: warn
+
