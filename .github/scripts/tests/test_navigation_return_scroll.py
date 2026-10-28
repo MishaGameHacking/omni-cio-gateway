@@ -102,15 +102,17 @@ class NavigationReturnScrollTests(unittest.TestCase):
     def test_unchanged_page_or_foreign_marker_cannot_start_scroll(self):
         for values in ({"returns": False}, {"foreign": True}):
             probe = ReturnFrames(**values)
+            home = self.home(probe)
             with self.subTest(values=values), self.assertRaisesRegex(AssertionError, "Home page did not return"):
-                self.home(probe).return_home(HEADLINE)
+                home.return_home(HEADLINE)
             self.assertEqual(probe.scrolls, [])
             self.assertEqual(len(probe.taps), 1)
 
     def test_missing_status_keeps_the_original_finite_scroll_failure(self):
         probe = ReturnFrames(stuck=True)
+        home = self.home(probe)
         with self.assertRaisesRegex(AssertionError, "List target not reachable"):
-            self.home(probe).return_home(HEADLINE)
+            home.return_home(HEADLINE)
         self.assertEqual(probe.scrolls, ["start"] * 10)
         self.assertEqual(len(probe.taps), 1)
 
@@ -125,8 +127,9 @@ class NavigationReturnScrollTests(unittest.TestCase):
 
     def test_missing_saved_appearance_caption_is_not_accepted_as_top_preview(self):
         probe = ReturnFrames(0, appearance=True, stuck=True)
+        appearance = case(probe)
         with self.assertRaisesRegex(AssertionError, "List target not reachable: " + SAVED):
-            case(probe).saved_appearance_anchor()
+            appearance.saved_appearance_anchor()
         self.assertEqual(probe.scrolls, ["end"] * 20)
         self.assertEqual(probe.taps, [])
 
