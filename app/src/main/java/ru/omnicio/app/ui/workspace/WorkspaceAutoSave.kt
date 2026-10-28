@@ -65,6 +65,8 @@ class WorkspaceAutoSaveController {
 
 val LocalWorkspaceAutoSave = staticCompositionLocalOf<WorkspaceAutoSaveController?> { null }
 
+private const val NOTIFICATION_PREFERENCES_PATH = "/workspace/notifications/preferences"
+
 private fun AutoSaveRecord.json(): JSONObject = JSONObject().put("kind", kind.name).put("revision", revision)
     .put("baseline", JSONObject(baseline)).put("draft", JSONObject(draft)).put("version", version)
     .put("valid", valid).put("phase", phase.name).put("document_id", documentId)
@@ -193,7 +195,7 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                 var command = recovery
                 if (command == null) {
                     val path = when (sent.kind) {
-                        AutoSaveKind.Notifications -> "/workspace/notifications/preferences"
+                        AutoSaveKind.Notifications -> NOTIFICATION_PREFERENCES_PATH
                         AutoSaveKind.Strategy -> "/workspace/strategy"
                         AutoSaveKind.Analysis -> "/analysis/profile"
                         AutoSaveKind.Goal -> "/workspace/goals"
@@ -243,7 +245,7 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                     version = command.getInt("version")
                     val reply = when (sent.kind) {
                       AutoSaveKind.Notifications ->
-                        request("/workspace/notifications/preferences", "PUT", JSONObject(command.getJSONObject("config").toString())
+                        request(NOTIFICATION_PREFERENCES_PATH, "PUT", JSONObject(command.getJSONObject("config").toString())
                             .put("expected_version", version))
                       AutoSaveKind.Strategy -> request("/workspace/strategy/confirm", "POST", JSONObject()
                         .put("preview_id", command.getString("preview_id")).put("expected_version", version)
@@ -268,7 +270,7 @@ fun WorkspaceAutoSaveProvider(content: @Composable () -> Unit) {
                         }
                     } else {
                         if (sent.kind == AutoSaveKind.Notifications && reply.status == 409) {
-                            val observed = request("/workspace/notifications/preferences")
+                            val observed = request(NOTIFICATION_PREFERENCES_PATH)
                             if (observed.signedOut) { reauthenticate(); break }
                             val actual = observed.data?.optJSONObject("preferences")
                             if (actual != null && equivalentJson(actual, command.getJSONObject("config"))) {
