@@ -19,8 +19,11 @@ jobs:
       - name: Apply exact source patches
         shell: bash
         run: |
+          python -m py_compile .github/scripts/fix_sonar_patcher.py
+          python .github/scripts/fix_sonar_patcher.py
           python -m py_compile .github/scripts/apply_sonar_staging_patches.py
           python .github/scripts/apply_sonar_staging_patches.py
+          rm .github/scripts/fix_sonar_patcher.py
           rm .github/scripts/apply_sonar_staging_patches.py
           rm .github/workflows/sonar-staging-patch.yml
       - name: Commit exact patches
