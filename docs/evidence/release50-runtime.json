@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "status": "deployed",
+  "server_id": 9417611,
+  "source_commit": "2d3e08614f15cfb1d9e9428a0d3613672394a92b",
+  "test_run_id": "40676480217",
+  "deployment_run_id": "40678018780",
+  "installed_sha256": {
+    "volume_live.py": "686c9fbc6fd1151432bf841d34a1415fb58ed18d1010005d4aacf793fe33b593",
+    "volume_presentation.py": "da35bc8f2198f7fd3553e469f3163f09ac281869ccd3787f56b1a88b49ca3a61"
+  },
+  "checked_at_utc": "2026-10-28T11:29:15.539656+00:00",
+  "health": 200,
+  "unauthenticated_live": 401,
+  "unauthenticated_version": 401,
+  "unauthenticated_presentation": 401,
+  "apk_policy_sha256": "e1bfbf91c311e5f5dc386c2dd9940cbbc9348bac8bc50b91c22143cabe81bf81",
+  "apk_changed": false,
+  "database_backup_created": true,
+  "tests_executed_on_timeweb": false,
+  "physical_phone_verified": false
+}

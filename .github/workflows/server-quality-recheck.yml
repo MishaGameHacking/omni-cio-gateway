@@ -1,4 +1,4 @@
-name: Inspect final shell quality and release the superseded build slot
+name: Inspect deployed shell source quality
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -6,27 +6,25 @@ on:
 permissions:
   contents: read
   checks: read
-  actions: write
 jobs:
   inspect:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 2d3e08614f15cfb1d9e9428a0d3613672394a92b
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const source='2d3e08614f15cfb1d9e9428a0d3613672394a92b';
-            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/server-runtime-2026-10-28'});
-            if(branch.object.sha!==source) throw new Error('Final source changed; no cancellation performed');
-            const run_id=40674568527;
-            const {data:old}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
-            if(old.head_sha!=='619ddda9d5e1a02aacf7cd4408c4d48043e1f871'||old.path!=='.github/workflows/server-runtime.yml'||old.run_attempt!==1)
-              throw new Error('Superseded build identity changed');
-            if(['in_progress','queued','pending'].includes(old.status)) {
-              await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
-              core.info('SUPERSEDED_BUILD_CANCELLATION_REQUESTED='+run_id);
-            } else core.info('SUPERSEDED_BUILD_ALREADY_COMPLETED='+old.conclusion);
-            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:source,per_page:100});
-            for(const check of checks.filter(x=>/sonar/i.test(x.name))) {
-              core.info(JSON.stringify({id:check.id,head_sha:check.head_sha,name:check.name,status:check.status,conclusion:check.conclusion,summary:check.output.summary}));
-            }
+            const ref='2d3e08614f15cfb1d9e9428a0d3613672394a92b';
+            const {newestSonarCheck,assertCleanSonar}=require('./.github/scripts/require_clean_sonar.cjs');
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=newestSonarCheck(checks,ref);
+            if(!sonar||sonar.status!=='completed') throw new Error('Deployed-source analysis is incomplete');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,ref);
+            core.info('DEPLOYED_SOURCE_QUALITY_VERIFIED='+ref);

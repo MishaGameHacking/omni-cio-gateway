@@ -1,0 +1,39 @@
+{
+  "source_commit": "2d3e08614f15cfb1d9e9428a0d3613672394a92b",
+  "run_id": 40676480217,
+  "host": "LAPTOP-NPSGA016",
+  "status": "passed",
+  "backend": {
+    "tests": 2179,
+    "subtests": 1557,
+    "python_sources": 427
+  },
+  "jvm": {
+    "suites": 42,
+    "tests": 243,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "host_tests": {
+    "run": 1266,
+    "skipped": 3,
+    "failures": 0
+  },
+  "tools_tests": 52,
+  "android_lint": "passed",
+  "owned_processes_after": 0,
+  "artifact_sha256": "0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc",
+  "apk": {
+    "package": "ru.omnicio.app.debug",
+    "version_code": 50,
+    "version_name": "0.14.3-preview",
+    "min_sdk": 37,
+    "target_sdk": 37,
+    "sha256": "d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95",
+    "bytes": 29937843,
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
+  },
+  "full_native_matrix_passed": false,
+  "physical_phone_verified": false
+}

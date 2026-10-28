@@ -1,0 +1,41 @@
+{
+  "publication": {
+    "apk_bytes": 29937843,
+    "apk_sha256": "d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95",
+    "client_artifact_sha256": "0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc",
+    "delivery_run_id": "40680480572",
+    "members": {
+      "apk-verification.json": {
+        "bytes": 17051,
+        "sha256": "f18e79037e2cb75f3e4274adb9394633d876a6a11474770d344fb79605314d36"
+      },
+      "app-preview.apk": {
+        "bytes": 29937843,
+        "sha256": "d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95"
+      },
+      "build-result.json": {
+        "bytes": 10236,
+        "sha256": "ca6b80f013b14f474e3b32b80f5a403e7a546ae6f95cb718f3d730e321655ef1"
+      }
+    },
+    "payload_bytes": 29965486,
+    "payload_sha256": "2bac8e91131e93a2bce17a6be3f2fc920edcba89f4f8ac30c2a1220886b0aa3f",
+    "runtime_deploy_run_id": "40678018780",
+    "source_commit": "2d3e08614f15cfb1d9e9428a0d3613672394a92b",
+    "test_run_id": "40676480217",
+    "status": "published",
+    "version_code": 50,
+    "version_name": "0.14.3-preview",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "published_at": 1793187074,
+    "url": "https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-50-d5216a4604edb611c9e124e1aa9472aa5323dfc65f97631dffe8c73b9b233a95.apk",
+    "previous_version_code": 49,
+    "physical_phone_verified": false,
+    "full_native_matrix_passed": false,
+    "backend_deployment_performed": false
+  },
+  "https_policy_verified": true,
+  "https_entire_apk_verified": true,
+  "backend_health": 200,
+  "physical_phone_verified": false
+}
