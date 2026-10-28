@@ -1,0 +1,33 @@
+name: Read current laptop client-check progress
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-client-progress.yml]
+permissions: {}
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read bounded non-secret logs of the exact owned verification run
+        shell: powershell
+        run: |
+          @'
+          import json, os, re
+          from pathlib import Path
+          if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
+              raise RuntimeError("owner_laptop_required")
+          run = "40723456399"
+          for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
+              folder = Path("C:/") / runner / "_work/_temp" / ("server-version-client-" + run + "-1")
+              report = folder / "shell-build-steps.json"
+              if report.is_file():
+                  value = json.loads(report.read_text(encoding="utf-8"))
+                  print("CLIENT_STEPS=" + json.dumps([{key:step.get(key) for key in ("label","exit_code","seconds")} for step in value.get("steps",[])]))
+              for log in folder.glob("shell-build-steps-*-gradle.log"):
+                  with log.open("rb") as stream:
+                      stream.seek(max(0,log.stat().st_size-24000))
+                      text = stream.read(24000).decode("utf-8",errors="replace")
+                  print("GRADLE_PROGRESS=" + "\\n".join(line for line in text.splitlines() if re.search(r"Task |FAIL|ERROR|^e: |BUILD |Exception|What went wrong",line))[-10000:])
+          '@ | py -3 -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
