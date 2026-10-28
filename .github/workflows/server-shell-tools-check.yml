@@ -1,0 +1,34 @@
+name: Check server shell delivery inputs on owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/server-shell-tools-check.yml
+      - deploy/publish_server_shell.py
+      - deploy/test_server_shell.py
+      - tools/prepare_shell_delivery.py
+      - tools/deliver_server_shell.py
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: shell-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            deploy
+            tools
+      - name: Check transport syntax and tampered input handling using synthetic files
+        shell: cmd
+        working-directory: shell-tools-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
+          if errorlevel 1 exit /b 1
+          py -3 -m py_compile deploy\publish_server_shell.py tools\prepare_shell_delivery.py tools\deliver_server_shell.py
+          if errorlevel 1 exit /b 1
+          py -3 -c "import pathlib,subprocess; root=pathlib.Path.cwd(); wsl=subprocess.check_output(['wsl.exe','-d','Ubuntu-24.04','--','wslpath','-u',str(root)],text=True).strip(); subprocess.run(['wsl.exe','-d','Ubuntu-24.04','--','python3',wsl+'/deploy/test_server_shell.py','-v'],check=True)"
+          if errorlevel 1 exit /b 1
