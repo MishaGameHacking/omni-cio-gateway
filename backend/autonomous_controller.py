@@ -15,7 +15,7 @@ import time
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import Field, StrictBool
 
 try:
@@ -23,6 +23,8 @@ try:
     from . import volume_catalogue as catalogue, volume_market as market
     from . import portfolio_details as details, volume_purchases as purchases
     from .ai_budget import transaction, micro_rub, BudgetDenied
+    from . import server_version
+    from .schema_migrations import execute_schema
     from .ai_jobs import assert_current_owner_in
     from .ai_guarded_client import configured_route, GuardError
     from .ai_policy import AnalysisTier
@@ -37,6 +39,8 @@ except ImportError:
     import portfolio_details as details
     import volume_purchases as purchases
     from ai_budget import transaction, micro_rub, BudgetDenied
+    import server_version
+    from schema_migrations import execute_schema
     from ai_jobs import assert_current_owner_in
     from ai_guarded_client import configured_route, GuardError
     from ai_policy import AnalysisTier
@@ -94,8 +98,10 @@ def reason(code: str) -> dict:
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
-        db.executescript("""
+    # Keep all controller schema changes inside one write transaction. Startup
+    # must preserve pauses, connection history, discovery cursors and leases.
+    with transaction(backend.connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS automation_preferences (
                 user_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
                 version INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -116,7 +122,6 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS automation_events_user
                 ON automation_events(user_id,created_at DESC);
         """)
-        db.commit()
 
 
 def _preferences_in(db, user_id: int) -> dict:
@@ -529,9 +534,32 @@ def _ai_configuration() -> dict:
                 "live_inference_verified": False}
 
 
+def _collection_status(enabled, connected, scheduler_enabled, job, snapshot, full, now):
+    """Classify persisted collection state without changing any work."""
+    if not enabled:
+        return "paused", ["automation_paused"]
+    if not connected:
+        return "not_connected", ["tinvest_not_connected"]
+    if not scheduler_enabled:
+        return "disabled", ["analysis_scheduler_disabled"]
+    if job and job["state"] in {"queued", "running"} and not job["cancel_requested"]:
+        if job["state"] == "running" and (job["expires_at"] or 0) <= now:
+            return "attention", ["workspace_collection_delayed"]
+        return "collecting", []
+    if snapshot is None:
+        return "waiting", ["workspace_refresh_required"]
+    if job and job["state"] == "failed":
+        return "attention", ["workspace_collection_failed"]
+    if _age(full, now) is None or _age(full, now) >= FULL_REFRESH_SECONDS * 2:
+        return "attention", ["workspace_collection_delayed"]
+    return "current", []
+
+
 @router.get("/status")
-def status(user: Any = Depends(backend.current_user)) -> dict:
+def status(user: Any = Depends(backend.current_user), response: Response = None) -> dict:
     """Persisted status only. Do not initialize queues, expire leases or fetch data."""
+    if response is not None:
+        response.headers["Cache-Control"] = "no-store, private"
     try:
         from .autonomous_ai import SCHEDULER_ENABLED
     except ImportError:
@@ -551,27 +579,9 @@ def status(user: Any = Depends(backend.current_user)) -> dict:
     full = (snapshot or {}).get("collection", {}).get("finished_at")
     current_job = None if job is None else {"state": job["state"], "stage": job["stage"], "updated_at": _iso(job["updated_at"]),
                                            "error_code": job["error_code"], "cancel_requested": bool(job["cancel_requested"])}
-    codes = []
     connected = bool(user["tinvest_token_encrypted"])
-    if not pref["enabled"]:
-        state_name, codes = "paused", ["automation_paused"]
-    elif not connected:
-        state_name, codes = "not_connected", ["tinvest_not_connected"]
-    elif not SCHEDULER_ENABLED:
-        state_name, codes = "disabled", ["analysis_scheduler_disabled"]
-    elif job and job["state"] in {"queued", "running"} and not job["cancel_requested"]:
-        if job["state"] == "running" and (job["expires_at"] or 0) <= now:
-            state_name, codes = "attention", ["workspace_collection_delayed"]
-        else:
-            state_name = "collecting"
-    elif snapshot is None:
-        state_name, codes = "waiting", ["workspace_refresh_required"]
-    elif job and job["state"] == "failed":
-        state_name, codes = "attention", ["workspace_collection_failed"]
-    elif _age(full, now) is None or _age(full, now) >= FULL_REFRESH_SECONDS * 2:
-        state_name, codes = "attention", ["workspace_collection_delayed"]
-    else:
-        state_name = "current"
+    state_name, codes = _collection_status(pref["enabled"], connected, SCHEDULER_ENABLED,
+                                           job, snapshot, full, now)
     if connected and active is None:
         codes.append("strategy_required")
         if state_name == "current":
@@ -588,7 +598,8 @@ def status(user: Any = Depends(backend.current_user)) -> dict:
             and not dispatch["regular_price_polling_allowed"] and events.get("complete") is True
             and event_age is not None and event_age < 1200):
         state_name, codes = "waiting", ["market_price_polling_paused"]
-    return {"schema_version": 1, "enabled": pref["enabled"], "preference_version": pref["version"],
+    return {"schema_version": 1, "server_version": server_version.current(),
+            "enabled": pref["enabled"], "preference_version": pref["version"],
             "broker_connected": connected, "scheduler_enabled": SCHEDULER_ENABLED, "state": state_name,
             "blockers": [reason(code) for code in codes], "last_observation_at": observed, "last_full_collection_at": full,
             "current_job": current_job, "dispatch": dispatch,

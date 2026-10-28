@@ -11,7 +11,6 @@ from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 import hashlib
 import os
-from pathlib import Path
 import re
 import sqlite3
 import threading
@@ -22,14 +21,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
 try:
-    from . import app as backend, research_store
+    from . import app as backend, research_store, server_version, volume_presentation
 except ImportError:
     import app as backend
     import research_store
+    import server_version
+    import volume_presentation
 
 router = APIRouter(prefix="/workspace", tags=["Live data"])
+router.include_router(volume_presentation.router)
 POLL_INTERVAL = .5
 USER_TABLES = (
+    "workspace_presentation_preferences",
     "workspace_snapshots", "workspace_records", "workspace_strategy_versions",
     "workspace_events", "workspace_chat_threads", "workspace_chat_messages",
     "workspace_notification_preferences", "workspace_notification_outbox",
@@ -47,8 +50,7 @@ _waiter_lock = threading.Lock()
 
 def deployment_signature() -> str:
     digest = hashlib.sha256()
-    for source in sorted(Path(__file__).parent.glob("*.py")):
-        digest.update(source.name.encode() + b"\0" + source.read_bytes())
+    digest.update(server_version.SOURCE_REVISION.encode("ascii"))
     for name in sorted(os.environ):
         if name.startswith("AI_") and not name.endswith(("_SECRET", "_KEY", "_TOKEN")):
             digest.update(name.encode() + b"\0" + os.environ[name].encode() + b"\0")
@@ -61,6 +63,7 @@ DEPLOYMENT = deployment_signature()
 
 def initialize(connect=None) -> None:
     connect = backend.connect if connect is None else connect
+    volume_presentation.initialize(connect)
     with closing(connect()) as db:
         # Reviewed evidence already has its own durable revision.
         research_store.initialize(db)
@@ -164,3 +167,9 @@ async def live(request: Request, after: str | None = Query(default=None, pattern
                     "server_time": datetime.now(timezone.utc).isoformat()},
                     headers={"Cache-Control": "no-store", "ETag": '"' + current["revision"] + '"'})
             await asyncio.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
+
+
+@router.get("/version")
+def version(user: Any = Depends(backend.current_user)):
+    """Authenticated code identity; this read never starts background work."""
+    return JSONResponse(server_version.current(), headers={"Cache-Control": "no-store, private"})

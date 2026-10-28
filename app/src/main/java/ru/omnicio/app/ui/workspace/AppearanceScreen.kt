@@ -79,7 +79,7 @@ fun AppearanceScreen(onBack: () -> Unit) {
                 }
             } }
             item { SpectrumSecondaryButton("Вернуть оформление по умолчанию", {
-                preview(WorkspacePreferences(hideHomeBalance = draft.hideHomeBalance, homeStructure = draft.homeStructure))
+                preview(draft.resetAppearance())
             }, Modifier.fillMaxWidth()) }
             item { Text("Каждый выбор применяется автоматически. Системный размер шрифта и ограничения движения учитываются.", style = MaterialTheme.typography.bodySmall) }
         }

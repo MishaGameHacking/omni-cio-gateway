@@ -22,11 +22,13 @@ DEFAULT_TIMEZONE = 'Europe/Moscow'
 try:
     from . import app as backend
     from .ai_budget import transaction
+    from .schema_migrations import execute_schema
     from .volume_state import StrictModel, encode
     from .volume_contract import HTTP_ERRORS, now_iso
 except ImportError:
     import app as backend
     from ai_budget import transaction
+    from schema_migrations import execute_schema
     from volume_state import StrictModel, encode
     from volume_contract import HTTP_ERRORS, now_iso
 
@@ -37,8 +39,10 @@ CLOCK_PATTERN = r"^([01][0-9]|2[0-3]):[0-5][0-9]$"
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
-        db.executescript("""
+    # Preferences, outbox and due index are one schema change. Existing delivery
+    # states and client acknowledgements must survive every startup unchanged.
+    with transaction(backend.connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS workspace_notification_preferences (
                 user_id INTEGER PRIMARY KEY, version INTEGER NOT NULL,
                 payload_json TEXT NOT NULL, applied_at INTEGER NOT NULL);
@@ -50,7 +54,6 @@ def initialize() -> None:
                 acknowledged_at INTEGER, UNIQUE(user_id,source_card_id), UNIQUE(user_id,event_id));
             CREATE INDEX IF NOT EXISTS workspace_outbox_due ON workspace_notification_outbox(user_id,state,eligible_at);
         """)
-        db.commit()
 
 
 class Preferences(StrictModel):

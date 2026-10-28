@@ -197,6 +197,7 @@ def test_status_and_decisions_are_read_only_and_have_no_network_side_effects(fix
     fixture["patch"].setattr(backend, "connect", read_only)
     result = controller.status(fixture["user"])
     assert result["broker_connected"] is True
+    assert result["server_version"] == controller.server_version.current()
     assert result["execution"] == {"mode": "read_only", "real_orders_enabled": False}
     assert result["ai"]["available"] is False
     assert controller.decisions(fixture["other"])["events"] == []

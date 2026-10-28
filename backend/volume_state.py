@@ -19,12 +19,14 @@ from pydantic import BaseModel, ConfigDict, Field
 try:
     from . import app as backend, research_store
     from .ai_budget import transaction
+    from .schema_migrations import execute_schema
     from .credit_evidence import Source
     from .volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp, instrument_currency
 except ImportError:
     import app as backend
     import research_store
     from ai_budget import transaction
+    from schema_migrations import execute_schema
     from credit_evidence import Source
     from volume_contract import HTTP_ERRORS, decimal, digest, money, now_iso, require_id, source, text_number, ZERO, financial_context, timestamp, instrument_currency
 
@@ -38,8 +40,10 @@ def encode(value: Any) -> str:
 
 
 def initialize() -> None:
-    with closing(backend.connect()) as db:
-        db.executescript("""
+    # Snapshots, strategy history, previews and idempotency receipts must share
+    # a schema rollback boundary. Startup must not confirm or expire a preview.
+    with transaction(backend.connect) as db:
+        execute_schema(db, """
             CREATE TABLE IF NOT EXISTS workspace_snapshots (
                 user_id INTEGER NOT NULL, currency TEXT NOT NULL, id TEXT NOT NULL,
                 broker_key TEXT NOT NULL, payload_json TEXT NOT NULL, created_at INTEGER NOT NULL,
@@ -67,7 +71,6 @@ def initialize() -> None:
                 payload_hash TEXT NOT NULL, result_json TEXT NOT NULL, created_at INTEGER NOT NULL,
                 PRIMARY KEY(user_id,request_id));
         """)
-        db.commit()
 
 
 class StrictModel(BaseModel):

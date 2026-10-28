@@ -27,10 +27,14 @@ from pydantic import BaseModel
 
 try:
     from . import client_updates, broker_connections, client_diagnostics
+    from .ai_budget import transaction
+    from .schema_migrations import execute_schema
 except ImportError:
     import client_updates
     import broker_connections
     import client_diagnostics
+    from ai_budget import transaction
+    from schema_migrations import execute_schema
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
 TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
@@ -115,8 +119,10 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    with closing(connect()) as db:
-        db.executescript(
+    # Keep the core auth schema and legacy device backfill in one transaction.
+    # Child registries below retain their own explicit startup boundaries.
+    with transaction(connect) as db:
+        execute_schema(db,
             f"""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -162,7 +168,6 @@ def init_db() -> None:
         except ImportError:
             from volume_devices import migrate
         migrate(db)
-        db.commit()
 
     client_updates.initialize(connect)
     broker_connections.initialize(connect)
