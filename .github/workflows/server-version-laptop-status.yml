@@ -1,4 +1,4 @@
-name: Observe owner laptop source checkout progress
+name: Observe current version client compilation
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -10,21 +10,20 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
-      - name: Read only checkout file sizes for the two version-verification jobs
+      - name: Read only task names from this change's Gradle log
         shell: py -3 {0}
         run: |
-          import datetime,json,os,pathlib
+          import datetime,json,os,pathlib,re
           assert os.environ.get("COMPUTERNAME")=="LAPTOP-NPSGA016"
           rows=[]
           for runner in ("actions-runner","actions-runner-2","actions-runner-3","actions-runner-4"):
-              for run in ("40654890518","40655645566"):
-                  root=pathlib.Path("C:/")/runner/"_work/omni-cio-gateway/omni-cio-gateway"/("backend-ci-"+run+"-1")
-                  if not root.exists() or root.is_symlink():
-                      continue
-                  git=root/".git"
-                  packs=list((git/"objects/pack").glob("*"))
-                  rows.append({"runner":runner,"run_id":run,"git":git.is_dir(),
-                      "index":(git/"index").exists(),"fetch_head":(git/"FETCH_HEAD").exists(),
-                      "pack_bytes":sum(p.stat().st_size for p in packs if p.is_file()),
-                      "pack_files":len(packs)})
-          print(json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"checkouts":rows}))
+              root=pathlib.Path("C:/")/runner/"_work/_temp/server-version-client-40655645566-1"
+              path=root/"gradle.log"
+              if not path.is_file() or path.is_symlink():
+                  continue
+              raw=path.read_text(encoding="utf-8",errors="replace")
+              tasks=re.findall(r"^> Task (:[A-Za-z0-9_:]+)(?: (UP-TO-DATE|NO-SOURCE|FAILED|SKIPPED))?$",raw,re.M)
+              rows.append({"runner":runner,"bytes":path.stat().st_size,
+                  "last_tasks":tasks[-10:],"build_successful":"BUILD SUCCESSFUL" in raw,
+                  "build_failed":"BUILD FAILED" in raw})
+          print(json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"checks":rows}))
