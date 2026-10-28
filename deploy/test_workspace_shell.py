@@ -1,5 +1,7 @@
 """Synthetic publication input checks; never connects to Timeweb or a device."""
 import hashlib
+import json
+from unittest import mock
 import importlib.util
 import io
 from pathlib import Path
@@ -24,6 +26,31 @@ def package(rows):
 
 
 class PublicationInputs(unittest.TestCase):
+
+    def runtime_fixture(self):
+        raw = b"verified runtime"
+        meta = {"source_commit": "b" * 40, "test_run_id": "40799999999",
+            "runtime_source_commit": "a" * 40, "runtime_test_run_id": "40718753255",
+            "runtime_deploy_run_id": "40721312988"}
+        receipt = {"status": "deployed", "source_commit": "a" * 40,
+            "test_run_id": "40718753255", "unauthenticated_presentation": 401,
+            "installed_sha256": {"strategy_profiles.py": hashlib.sha256(raw).hexdigest()}}
+        def read(path, maximum):
+            return json.dumps(receipt).encode() if path.name == "deployment.json" else raw
+        return meta, receipt, read
+
+    def test_client_and_runtime_revisions_are_separate_verified_identities(self):
+        meta, _, read = self.runtime_fixture()
+        with mock.patch.object(release, "regular", side_effect=read):
+            release.verify_runtime(meta)
+
+    def test_unverified_runtime_identity_is_rejected(self):
+        meta, receipt, read = self.runtime_fixture()
+        receipt["source_commit"] = "c" * 40
+        with mock.patch.object(release, "regular", side_effect=read):
+            with self.assertRaisesRegex(RuntimeError, "required_runtime_not_deployed"):
+                release.verify_runtime(meta)
+
     def test_exact_three_members_are_preserved(self):
         rows = [("app-preview.apk", b"synthetic"), ("apk-verification.json", b"{}"), ("build-result.json", b"{}")]
         meta, payload = package(rows)

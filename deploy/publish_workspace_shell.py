@@ -57,8 +57,8 @@ def verify_runtime(meta):
     need(re.fullmatch("[0-9]{8,20}", run_id), "invalid_runtime_run")
     path = Path("/var/lib/analyst-ai-build/development") / ("server-runtime-" + run_id) / "deployment.json"
     receipt = json.loads(regular(path, 16384))
-    need(receipt["status"] == "deployed" and receipt["source_commit"] == meta["source_commit"]
-         and receipt["test_run_id"] == meta["test_run_id"]
+    need(receipt["status"] == "deployed" and receipt["source_commit"] == meta["runtime_source_commit"]
+         and receipt["test_run_id"] == meta["runtime_test_run_id"]
          and receipt["unauthenticated_presentation"] == 401, "required_runtime_not_deployed")
     for name, expected in receipt["installed_sha256"].items():
         need(re.fullmatch("[a-z_]+\\.py", name), "invalid_runtime_module")

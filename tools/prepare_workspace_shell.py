@@ -58,6 +58,8 @@ def main():
     payload = package.getvalue()
     (root / "server-shell-payload.zip").write_bytes(payload)
     meta = {"source_commit": os.environ["EXPECTED_SOURCE_SHA"], "test_run_id": os.environ["EXPECTED_TEST_RUN"],
+            "runtime_source_commit": os.environ["EXPECTED_RUNTIME_SOURCE_SHA"],
+            "runtime_test_run_id": os.environ["EXPECTED_RUNTIME_TEST_RUN"],
             "runtime_deploy_run_id": os.environ["EXPECTED_RUNTIME_DEPLOY_RUN"],
             "delivery_run_id": os.environ["GITHUB_RUN_ID"], "payload_sha256": digest(payload),
             "payload_bytes": len(payload), "apk_sha256": report["sha256"], "apk_bytes": report["bytes"],
