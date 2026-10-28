@@ -1,4 +1,4 @@
-name: Read shell51 native acceptance progress
+name: Read candidate52 laptop verification progress
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 5
     steps:
-      - name: Read only bounded logs of the owned synthetic native run
+      - name: Read bounded owned build diagnostics
         shell: py -3 {0}
         run: |
           import json, os, re
@@ -17,14 +17,13 @@ jobs:
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp/workspace-native-40733125027-1"
-              report = folder / "native-steps.json"
-              if report.is_file():
-                  value = json.loads(report.read_text(encoding="utf-8"))
-                  print("NATIVE_STEPS=" + json.dumps([{key:step.get(key) for key in ("label","exit_code","started_at","finished_at")} for step in value.get("steps",[])]))
-              for log in sorted(folder.glob("native-steps-*.log")):
-                  with log.open("rb") as stream:
-                      stream.seek(max(0,log.stat().st_size-20000))
-                      content = stream.read(20000).decode("utf-8",errors="replace")
-                  lines = [line for line in content.splitlines() if re.search(r"PASS|FAIL|ERROR|Error|Exception|Assertion|Traceback|CASE|STAGE|PROFILE|EMULATOR|INSTAL|UPDATE|APK|not found|not settle|not reach",line)]
-                  print("NATIVE_PROGRESS=" + log.name + "\n" + "\n".join(lines)[-12000:])
+              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40748914017-1"
+              for name in ("shell-build-steps.json", "gradle.log"):
+                  path = folder / name
+                  if not path.is_file(): continue
+                  with path.open("rb") as stream:
+                      stream.seek(max(0,path.stat().st_size-26000))
+                      value = stream.read(26000).decode("utf-8",errors="replace")
+                  if name.endswith(".json"):
+                      value = json.dumps([{"label":s.get("label"),"exit_code":s.get("exit_code")} for s in json.loads(value).get("steps",[])])
+                  print("OWNED_BUILD_PROGRESS=" + name + "\n" + value[-24000:])
