@@ -1,37 +1,32 @@
-name: Request exact server shell privacy analysis
+name: Inspect final shell quality and release the superseded build slot
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/server-quality-recheck.yml]
 permissions:
   contents: read
-  checks: write
+  checks: read
+  actions: write
 jobs:
-  request:
+  inspect:
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
-      - name: Re-request the existing Sonar suite without changing its result
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const baseline='1da6e6420b51ebe66c8196e3869a2525f0ffe69f';
-            const ref='619ddda9d5e1a02aacf7cd4408c4d48043e1f871';
-            const old=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:baseline,per_page:100});
-            const completed=old.filter(c=>c.name==='SonarCloud Code Analysis' && c.status==='completed');
-            if (completed.length!==1) throw new Error('External analyzer identity is ambiguous');
-            const suites=await github.paginate(github.rest.checks.listSuitesForRef,{...context.repo,ref,per_page:100});
-            const matching=suites.filter(s=>s.app.id===completed[0].app.id && s.head_sha===ref);
-            if(matching.length!==1) throw new Error('Exact external suite is unavailable');
-            const suite=matching[0];
-            const runs=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
-            for(const check of runs.filter(c=>c.name==='SonarCloud Code Analysis')) {
-              const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:check.id,per_page:100});
-              for(const note of notes) core.info('SONAR_FINDING='+JSON.stringify({path:note.path,line:note.start_line,title:note.title,message:note.message}));
-            }
-            if(suite.status==='queued' && suite.latest_check_runs_count===0) {
-              await github.rest.checks.rerequestSuite({...context.repo,check_suite_id:suite.id});
-              core.info('EXTERNAL_ANALYSIS_REQUESTED='+JSON.stringify({sha:ref,suite:suite.id,app:suite.app.slug}));
-            } else {
-              core.info('EXTERNAL_ANALYSIS_ALREADY_PRESENT='+JSON.stringify({sha:ref,suite:suite.id,status:suite.status}));
+            const source='2d3e08614f15cfb1d9e9428a0d3613672394a92b';
+            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/server-runtime-2026-10-28'});
+            if(branch.object.sha!==source) throw new Error('Final source changed; no cancellation performed');
+            const run_id=40674568527;
+            const {data:old}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(old.head_sha!=='619ddda9d5e1a02aacf7cd4408c4d48043e1f871'||old.path!=='.github/workflows/server-runtime.yml'||old.run_attempt!==1)
+              throw new Error('Superseded build identity changed');
+            if(['in_progress','queued','pending'].includes(old.status)) {
+              await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
+              core.info('SUPERSEDED_BUILD_CANCELLATION_REQUESTED='+run_id);
+            } else core.info('SUPERSEDED_BUILD_ALREADY_COMPLETED='+old.conclusion);
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:source,per_page:100});
+            for(const check of checks.filter(x=>/sonar/i.test(x.name))) {
+              core.info(JSON.stringify({id:check.id,head_sha:check.head_sha,name:check.name,status:check.status,conclusion:check.conclusion,summary:check.output.summary}));
             }
