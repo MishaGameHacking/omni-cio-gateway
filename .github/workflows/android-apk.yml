@@ -8,6 +8,8 @@ on:
       - "tools/**"
       - "ci-ui-driver/**"
       - "backend/installation_evidence.py"
+      - "backend/android_runtime_contract.py"
+      - "backend/automation_ui_evidence.py"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle.properties"
@@ -37,3 +39,5 @@ jobs:
       group: analyst-android-release-${{ github.ref }}
       cancel-in-progress: false
     uses: ./.github/workflows/android-ci.yml
+    secrets:
+      TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}

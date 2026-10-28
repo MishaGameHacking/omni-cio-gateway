@@ -4,7 +4,7 @@ import struct
 import sys
 import tempfile
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 import xml.etree.ElementTree as ET
 import zlib
 
@@ -99,7 +99,7 @@ class CaptureTransportTests(unittest.TestCase):
         probe = ui.ProfileProbe(Mock())
         version_tree = ET.fromstring('<hierarchy><node text="Версия 0.7.0" /></hierarchy>')
         with patch.object(probe, 'tap_resource'), patch.object(probe, 'find'), \
-                patch.object(probe, 'tap_visible'), patch.object(probe, 'horizontal_info'), \
+                patch.object(probe, 'tap_visible'), patch.object(probe, 'reveal') as reveal, \
                 patch.object(probe, 'tap_profile_content'), patch.object(probe, 'tree', return_value=version_tree), \
                 patch.object(probe, 'capture') as capture:
             probe.dialogs(capture_evidence=False)
@@ -107,12 +107,15 @@ class CaptureTransportTests(unittest.TestCase):
             probe.dialogs()
             self.assertEqual([item.args[0] for item in capture.call_args_list],
                              ['security', 'info', 'about'])
+            self.assertEqual(reveal.call_args_list, [call(ui.INFO_LABEL), call(ui.INFO_LABEL)])
 
     def test_dialog_wait_does_not_scroll_underlying_profile(self):
         probe = ui.ProfileProbe(Mock())
-        empty = ET.fromstring('<hierarchy><node package="ru.omnicio.app.debug" resource-id="profile-content" scrollable="true" bounds="[0,100][320,600]"/></hierarchy>')
-        ready = ET.fromstring('<hierarchy><node package="ru.omnicio.app.debug" text="Как в системе" bounds="[20,120][280,180]"/></hierarchy>')
-        with patch.object(probe, 'tree', side_effect=[empty, ready]), patch.object(probe, 'command') as command, patch.object(ui.time, 'sleep'):
+        metadata = 'display-width="320" display-height="640" active-window-id="7"'
+        empty = ET.fromstring(f'<hierarchy {metadata}><node package="ru.omnicio.app.debug" resource-id="profile-content" scrollable="true" enabled="true" bounds="[0,100][320,600]"/></hierarchy>')
+        ready = f'<hierarchy {metadata}><node package="ru.omnicio.app.debug" text="Как в системе" clickable="true" enabled="true" bounds="[20,120][280,180]"/></hierarchy>'
+        frames = [empty] + [ET.fromstring(ready) for _ in range(3)]
+        with patch.object(probe, 'tree', side_effect=frames), patch.object(probe, 'command') as command, patch.object(ui.time, 'sleep'):
             probe.tap_visible('Как в системе')
         command.assert_called_once_with('shell', 'input', 'tap', '150', '150')
 

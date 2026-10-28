@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+import ast
 from pathlib import Path
 
 
@@ -60,11 +61,22 @@ class AndroidReleaseConcurrencyTests(unittest.TestCase):
 
     def test_gradle_wrapper_is_verified_without_flaky_setup_action(self) -> None:
         self.assertIn("uses: ./.github/workflows/android-ci.yml", self.release)
-        for workflow in (self.ci,):
-            self.assertNotIn("gradle/actions/setup-gradle@", workflow)
-            self.assertIn("Verify pinned Gradle wrapper", workflow)
-            self.assertIn(self.WRAPPER_SHA256, workflow)
-            self.assertIn("call gradlew.bat --version", workflow)
+        self.assertNotIn("gradle/actions/setup-gradle@", self.ci)
+        self.assertIn('windows_android_ci.py" build\n', self.ci)
+        source = (self.root / ".github/scripts/windows_android_ci.py").read_text(encoding="utf-8")
+        module = ast.parse(source)
+        assignment = next(node for node in module.body if isinstance(node, ast.Assign)
+                          and any(isinstance(target, ast.Name) and target.id == "WRAPPER_SHA256" for target in node.targets))
+        self.assertEqual(ast.literal_eval(assignment.value), self.WRAPPER_SHA256)
+        verify = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "verify_machine")
+        self.assertIn('file_identity(root / "gradle/wrapper/gradle-wrapper.jar")["sha256"] == WRAPPER_SHA256',
+                      ast.get_source_segment(source, verify))
+        build = next(node for node in module.body if isinstance(node, ast.FunctionDef) and node.name == "build_worker")
+        calls = [node for node in ast.walk(build) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                 and node.func.attr == "run" and node.args and isinstance(node.args[0], ast.Constant)
+                 and node.args[0].value == "gradle-version"]
+        self.assertEqual(len(calls), 1)
+        self.assertIn("--version", [node.value for node in ast.walk(calls[0]) if isinstance(node, ast.Constant)])
 
 
 if __name__ == "__main__":

@@ -14,7 +14,15 @@ SCROLL_AXES = {
     "education-content": "vertical",
     "portfolio-content": "vertical",
     "workspace-content": "vertical",
+    "assistant-composer": "vertical",
+    "navigation-panel-content": "vertical",
+    "navigation-row-main": "horizontal",
+    "navigation-row-portfolio": "horizontal",
+    "navigation-row-research": "horizontal",
+    "navigation-row-personal": "horizontal",
     "profile-tabs": "horizontal",
+    "dossier-tabs": "horizontal",
+    "quotes-intervals": "horizontal",
 }
 LIST_IDS = frozenset(SCROLL_AXES)
 
@@ -83,6 +91,28 @@ def tappable_resource(tree: ET.Element, target_id: str, list_id: str) -> ET.Elem
     return clipped
 
 
+def fully_visible_resource(tree: ET.Element, target_id: str, list_id: str,
+                           minimum_size: tuple[float, float] = (0, 0)) -> ET.Element | None:
+    """Require the whole evidence target inside its current list viewport.
+
+    A Compose node can retain logical bounds and visible-to-user=true after
+    scrolling behind a sticky header. Such bounds cannot identify captured pixels.
+    """
+    target = visible_resource(tree, target_id)
+    # Content may fit entirely in a wide viewport. Visibility does not
+    # require a scroll range; gesture authorization still does.
+    viewport = _list_area(tree, list_id, require_scrollable=False)
+    if target is None or viewport is None:
+        return None
+    left, top, right, bottom = _bounds(target)
+    x1, y1, x2, y2 = viewport
+    # UiAutomator may return an ALREADY clipped rectangle. Containment alone
+    # cannot prove the whole target is visible; use the fixture's declared size.
+    if right - left < minimum_size[0] or bottom - top < minimum_size[1]:
+        return None
+    return target if x1 <= left < right <= x2 and y1 <= top < bottom <= y2 else None
+
+
 def settled_resource(read_tree, target_id: str, list_id: str, max_frames: int = 20):
     """Require three equal fresh rectangles after an asynchronous scroll."""
     if list_id not in LIST_IDS or not 3 <= max_frames <= 30:
@@ -144,6 +174,7 @@ def _reveal_target(
     max_swipes: int,
     direction: str,
     layout_timeout: float,
+    reveal_partial: Callable[[ET.Element], bool] | None = None,
 ) -> ET.Element | None:
     _validate_request(resource_id, direction, max_swipes, layout_timeout)
     deadline = time.monotonic() + layout_timeout
@@ -162,7 +193,10 @@ def _reveal_target(
         if attempt == max_swipes or expired:
             _layout_diagnostic(tree, resource_id, attempt)
             raise AssertionError("List target not reachable: " + target_description)
-        swipe(*gesture)
+        # A full-page action can split a small button across both page edges.
+        # Align that observed target before another page can skip past it.
+        if reveal_partial is None or not reveal_partial(tree):
+            swipe(*gesture)
         if layout_timeout > 0:
             time.sleep(min(0.2, max(0, deadline - time.monotonic())))
     raise AssertionError("List scroll did not finish")
@@ -223,18 +257,26 @@ def reveal_in_list(
     max_swipes: int = 10,
     direction: str = "end",
     layout_timeout: float = 0,
+    for_tap: bool = False,
 ) -> ET.Element | None:
     """Return the visible exact label or fail after a bounded number of gestures.
 
     None means this particular list is not visible; no other list or system
     window is scrolled. A positive layout_timeout waits for this exact list
     within one overall deadline without resetting the swipe budget.
-    Header/dialog labels may be found without any gesture.
+    Header/dialog labels may be found without any gesture. A tap requires the
+    native action's visible geometry, not an offscreen logical text child.
     """
+    find_target = lambda tree: visible_label(tree, text)
+    if for_tap:
+        from native_label_target import label_target
+
+        find_target = lambda tree: label_target(tree, text, require_enabled=False)
+
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: visible_label(tree, text),
+        find_target,
         text,
         resource_id=resource_id,
         max_swipes=max_swipes,
@@ -253,18 +295,40 @@ def reveal_resource_in_list(
     direction: str = "end",
     layout_timeout: float = 0,
     for_tap: bool = False,
+    for_capture: bool = False,
+    minimum_size: tuple[float, float] = (0, 0),
+    show_on_screen: Callable[[str, str], bool] | None = None,
 ) -> ET.Element | None:
     """Reveal an exact Compose testTag without depending on merged label text."""
+    def find(tree):
+        if for_capture:
+            return fully_visible_resource(tree, target_resource_id, resource_id, minimum_size)
+        if for_tap:
+            return tappable_resource(tree, target_resource_id, resource_id)
+        return visible_resource(tree, target_resource_id)
+    def align_partial(tree):
+        target = visible_resource(tree, target_resource_id)
+        viewport = _scroll_area(tree, resource_id)
+        if target is None or viewport is None or target.get("enabled") == "false":
+            return False
+        left, top, right, bottom = _bounds(target)
+        x1, y1, x2, y2 = viewport
+        if min(right, x2) <= max(left, x1) or min(bottom, y2) <= max(top, y1):
+            return False
+        if not show_on_screen(resource_id, target_resource_id):
+            raise AssertionError("Native target could not be brought into view: " + target_resource_id)
+        return True
+
     return _reveal_target(
         read_tree,
         swipe,
-        lambda tree: tappable_resource(tree, target_resource_id, resource_id)
-        if for_tap else visible_resource(tree, target_resource_id),
+        find,
         target_resource_id,
         resource_id=resource_id,
         max_swipes=max_swipes,
         direction=direction,
         layout_timeout=layout_timeout,
+        reveal_partial=align_partial if for_tap and show_on_screen is not None else None,
     )
 
 

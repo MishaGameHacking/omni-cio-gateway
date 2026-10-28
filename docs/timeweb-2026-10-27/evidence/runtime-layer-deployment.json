@@ -1,0 +1,131 @@
+{
+  "schema": 1,
+  "server_id": 9417611,
+  "change_id": "runtime-layer-20261027-40473816699",
+  "github_sha": "efe5ff91bb5e736a982ae59e9ae555416b5d9540",
+  "source_directory": "/var/lib/analyst-ai-build/development/candidate-runtime-hardened-40472430619",
+  "checked_source_manifest_sha256": "757605b0d8f59b150e481a2d96186d1ae17f74269ce745a2385ed5f2f21bebd8",
+  "test_run": 40472430619,
+  "test_receipt_sha256": "3c40b314a367b98a2f0b678143c6388a61e0814b8f6f9e161010d0d5fc1b649c",
+  "full_backend": {
+    "tests": 3573,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "targeted": {
+    "tests": 59,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "files": {
+    "volume_market.py": {
+      "old": {
+        "sha256": "5254e7eef732a28db8e3e3ed63b73a65b29ccdb983b78da686ce0bb3500ea87e",
+        "bytes": 33034
+      },
+      "new": {
+        "sha256": "9c1536cfaddacc2e9bed9a21b24e868ba1a95267f38cf2bb362ec606fd26096c",
+        "bytes": 33085
+      }
+    },
+    "volume_workspace.py": {
+      "old": {
+        "sha256": "f555bd502addede8ade3068231322e7ad5c702f83da7d37ee5821a0cb14b2452",
+        "bytes": 41425
+      },
+      "new": {
+        "sha256": "e650c0542d5a1752f186f9ce0e08dbddc3ba71a214e52356bef2b53c93587803",
+        "bytes": 42407
+      }
+    },
+    "portfolio_accounting.py": {
+      "old": null,
+      "new": {
+        "sha256": "719b349fe033e354b560d44234579ea5dd9826ec3a13c66c7739cf8d8e63ceef",
+        "bytes": 13415
+      }
+    },
+    "paper_execution.py": {
+      "old": null,
+      "new": {
+        "sha256": "c219c230ab1783c1d5a4242017dd2320fc9341cbdfc8d368445646cc4cd86414",
+        "bytes": 28296
+      }
+    },
+    "source_observability.py": {
+      "old": null,
+      "new": {
+        "sha256": "2aeacae6cbb082f2592b67494b8bf3b5b4ed2c13761c5dc9b13524194f3874c6",
+        "bytes": 10906
+      }
+    },
+    "application_hierarchy.py": {
+      "old": null,
+      "new": {
+        "sha256": "cabb4e0c1607e9a5d76ff4ef82d1eb1ba2f218435c4c43283a2ca6e96a79b424",
+        "bytes": 6850
+      }
+    },
+    "workspace_readiness.py": {
+      "old": null,
+      "new": {
+        "sha256": "9e1cdd9b97dcca318a5ce899f73299e252deb5d035cd06b5fef2d72155824e7c",
+        "bytes": 7340
+      }
+    }
+  },
+  "rollback_directory": "/opt/analyst-ai/.backend-deployments/runtime-layer-20261027-40473816699",
+  "database_opened_by_deployer": false,
+  "real_orders_requested": false,
+  "paid_ai_requested": false,
+  "new_resources_created": false,
+  "apk_changed": false,
+  "native_android_acceptance_passed": false,
+  "sonar_passed": false,
+  "started_at_utc": "2026-10-27T08:30:07.102562+00:00",
+  "phase": "deployed",
+  "status": "passed",
+  "health": {
+    "local_health_http": 200,
+    "public_health_http": 200,
+    "/workspace": {
+      "noauth_local_http": 401,
+      "noauth_public_http": 401
+    },
+    "/workspace/system-readiness": {
+      "noauth_local_http": 401,
+      "noauth_public_http": 401
+    },
+    "/workspace/public-sources": {
+      "noauth_local_http": 401,
+      "noauth_public_http": 401
+    },
+    "/workspace/cash-ledger": {
+      "noauth_local_http": 401,
+      "noauth_public_http": 401
+    }
+  },
+  "channel": {
+    "bytes": 29937843,
+    "sha256": "9940c994d3e6695708fe65d64e378c6d998c8891ae69bbaa1c20df17008dbb6e",
+    "full_https_download_verified": true,
+    "certificate_policy_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "new_apk_published": false
+  },
+  "update_version_code": 49,
+  "update_version_name": "0.14.2-preview",
+  "min_sdk": 37,
+  "environment_unchanged": true,
+  "service_units_unchanged": true,
+  "updater_pid_unchanged": true,
+  "owner_service": {
+    "MainPID": "57404",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running"
+  },
+  "rollback_performed": false,
+  "finished_at_utc": "2026-10-27T08:30:09.810491+00:00"
+}

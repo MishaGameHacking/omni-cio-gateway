@@ -1,0 +1,82 @@
+{
+  "changed_sources": [],
+  "complete_source_sha256": "743a71819ec89d97467ce72189374a8070dd0fc3c6611710029b48f4feae8c23",
+  "dependency_mode": "isolated_test_venv",
+  "evidence_directory": "/var/lib/analyst-ai-build/development/source49-check-20261027T055218Z-20765533/evidence",
+  "finished_at_utc": "2026-10-27T05:54:04.311058+00:00",
+  "junit_sha256": "115709052b6f8ab091ac7c8ae3f9240914b20c38b2f59b3900dfdca0711164d0",
+  "live_source_changed": false,
+  "schema": 1,
+  "server_id": 9417611,
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "source_code_executed_on_timeweb": true,
+  "source_directory": "/var/lib/analyst-ai-build/development/source49",
+  "source_sha256": "8e4dc044ec6b700469a597cf8fc3a23aae96e57e5b5413e378dbf3986e2cef60",
+  "status": "passed",
+  "steps": [
+    {
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "test-venv",
+      "network_allowed": false,
+      "seconds": 4.434
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "eb251a248a1cbd1aa659d1478a680e864a25a22bcfce9f707636aad73a2fd896",
+      "name": "requirements",
+      "network_allowed": true,
+      "seconds": 8.902
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09",
+      "name": "dependencies",
+      "network_allowed": false,
+      "seconds": 0.669
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "3d5f971047786d444c80fe7f41d2f0686fd69da01d52fc902788b1c00087b379",
+      "name": "dependency-versions",
+      "network_allowed": false,
+      "seconds": 0.52
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "validate-deploy-script",
+      "network_allowed": false,
+      "seconds": 0.065
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "compile-backend",
+      "network_allowed": false,
+      "seconds": 0.567
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "80220c35e9343eb2eb9b6ccd7daf9e964c005a7dc7915ffdd2afff1e179a51c9",
+      "name": "backend-full-suite",
+      "network_allowed": false,
+      "seconds": 89.536
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "1d751b58d5ede0c661c60a3cc265ca0b684fa7e3bd930781f158422af6f2d189",
+      "name": "health-openapi",
+      "network_allowed": false,
+      "seconds": 1.37
+    }
+  ],
+  "synthetic_test_environment": true,
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 3323
+  },
+  "trading_or_ai_enabled": false
+}

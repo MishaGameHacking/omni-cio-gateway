@@ -88,6 +88,15 @@ STANDARD_DAILY_LIMIT = max(0, int(os.getenv("ANALYSIS_STANDARD_DAILY_LIMIT", "3"
 PREMIUM_DAILY_LIMIT = max(0, int(os.getenv("ANALYSIS_PREMIUM_DAILY_LIMIT", "1")))
 MAX_FEED_LIMIT = 100
 
+
+def _automation():
+    # Import after the FastAPI composition root exists; no work at import time.
+    try:
+        from . import autonomous_controller
+    except ImportError:
+        import autonomous_controller
+    return autonomous_controller
+
 _scheduler_task: asyncio.Task[None] | None = None
 _scheduler_owner = f"pid-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
@@ -229,6 +238,13 @@ def init_autonomous_db() -> None:
         db.commit()
     AnalysisQueue(backend.connect).initialize()
     MoneyLedger(backend.connect).initialize()
+    try:
+        from .volume import initialize as initialize_workspace
+    except ImportError:
+        from volume import initialize as initialize_workspace
+    # Controller tables must exist before workspace installs live triggers.
+    _automation().initialize()
+    initialize_workspace()
 
 
 def _profile_from_row(row: sqlite3.Row | None) -> dict[str, Any]:
@@ -329,6 +345,8 @@ def _snapshot_features(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "cash": sorted(cash, key=lambda item: item["id"]),
         "allocations": sorted(allocations, key=lambda item: item["title"]),
         "total_bucket": round(_money_value(snapshot.get("totalValue")) / 100.0) * 100,
+        "verified_risk_fingerprint": snapshot.get("_volume_risk_fingerprint"),
+        "verified_news_fingerprint": snapshot.get("_volume_news_fingerprint"),
     }
 
 
@@ -451,15 +469,16 @@ def _has_reason_today(user_id: int, reason: AnalysisReason, now: datetime) -> bo
 def _schedule_flags(user_id: int, now: datetime, notify_briefs: bool) -> tuple[bool, bool]:
     if not notify_briefs:
         return False, False
-    local = now.astimezone(MOSCOW)
-    if local.weekday() >= 5:
-        return False, False
-    minute = local.hour * 60 + local.minute
-    morning_window = 8 * 60 + 45 <= minute <= 11 * 60 + 30
-    evening_window = 18 * 60 + 45 <= minute <= 22 * 60 + 30
-    morning = morning_window and not _has_reason_today(user_id, AnalysisReason.MORNING_BRIEF, now)
-    evening = evening_window and not _has_reason_today(user_id, AnalysisReason.EVENING_BRIEF, now)
-    return morning, evening
+    try:
+        from .volume_notifications import due_flags
+    except ImportError:
+        from volume_notifications import due_flags
+    def already_run(slot, local):
+        reason = AnalysisReason.MORNING_BRIEF if slot == "morning" else AnalysisReason.EVENING_BRIEF
+        start = int(local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        with closing(backend.connect()) as db:
+            return db.execute("SELECT 1 FROM analysis_runs WHERE user_id=? AND reason=? AND created_at>=? LIMIT 1", (user_id, reason.value, start)).fetchone() is not None
+    return due_flags(user_id, now, already_run)
 
 
 def _allocation_map(snapshot: Mapping[str, Any]) -> dict[str, float]:
@@ -531,6 +550,8 @@ def _signals(
         and previous_features.get("cash") != current_features.get("cash")
     )
     critical, risk_message = _critical_risk(snapshot, profile)
+    if snapshot.get("_volume_critical_risk"):
+        critical, risk_message = True, snapshot.get("_volume_risk_message")
     last = _last_analysis(user_id)
     minutes_since = None
     if last is not None:
@@ -551,7 +572,7 @@ def _signals(
             critical_risk=(critical and bool(profile["notify_critical"]) and not recent_same_risk),
             market_regime_changed=False,
             data_recovered=previous_row is not None and previous_row["status"] != "ready",
-            digest_changed=material_changed or morning or evening,
+            digest_changed=material_changed,
             minutes_since_last_analysis=minutes_since,
         ),
         risk_message,
@@ -566,6 +587,8 @@ def _context(
 ) -> dict[str, Any]:
     as_of = now.astimezone(UTC).isoformat()
     source_id = f"tinvest:portfolio:{int(now.timestamp())}"
+    credit_sources = list({ref["id"]: {**ref, "as_of": ref["observed_at"], "fresh": datetime.fromisoformat(ref["expires_at"]) > now}
+                           for item in snapshot.get("_volume_verified_credit", []) for ref in item.get("sources", [])}.values())
     return {
         "portfolio": snapshot,
         "profile": dict(profile),
@@ -580,7 +603,7 @@ def _context(
                 "as_of": as_of,
                 "fresh": True,
             }
-        ],
+        ] + credit_sources,
     }
 
 
@@ -600,11 +623,11 @@ def _fallback_report(
     evidence_fact = f"Стоимость портфеля: {total:,.2f} {currency}".replace(",", " ")
 
     if decision.reason is AnalysisReason.RISK_EVENT:
-        title = "Обнаружен риск в структуре портфеля"
+        title = "Нужна проверка риска портфеля"
         summary = risk_message or "Алгоритмический контроль обнаружил превышение порога риска."
         severity = "critical"
         actions = (
-            "Проверьте долю крупнейшей позиции и допустимый риск в профиле.",
+            "Проверьте подтверждённые лимиты и первичные источники риска в досье.",
             "Не принимайте решение только по одному предупреждению — проверьте актуальность данных.",
         )
     elif decision.reason is AnalysisReason.PORTFOLIO_CHANGED:
@@ -630,16 +653,17 @@ def _fallback_report(
 
     if top is not None:
         evidence_fact += f"; крупнейший класс — {top[0]} ({top[1]:.1f}%)"
+    evidence = [AnalysisEvidence(fact=evidence_fact, source_id=f"tinvest:portfolio:{int(now.timestamp())}", as_of=as_of)]
+    for item in snapshot.get("_volume_verified_credit", []):
+        for row in item.get("data", {}).get("items", []):
+            evidence.append(AnalysisEvidence(fact=f"{row['agency']}: {row['grade']}; объект {row['subject_kind']}; прогноз {row['outlook']}",
+                source_id=row["source"]["id"], as_of=row["source"]["checked_at"]))
     return AnalysisReport(
         severity=severity,
         headline=title,
         summary=summary,
         actions=actions,
-        evidence=(AnalysisEvidence(
-            fact=evidence_fact,
-            source_id=f"tinvest:portfolio:{int(now.timestamp())}",
-            as_of=as_of,
-        ),),
+        evidence=tuple(evidence),
         uncertainties=(
             "Расширенный модельный комментарий недоступен; показан детерминированный вывод алгоритмов.",
         ),
@@ -748,6 +772,15 @@ def _insert_card(
             """,
             (user_id, user_id),
         )
+        try:
+            from .volume_notifications import enqueue_in
+            from .volume_analysis import capture_in
+        except ImportError:
+            from volume_notifications import enqueue_in
+            from volume_analysis import capture_in
+        enqueue_in(db, user_id, kind=kind, title=report.headline, body=report.summary,
+                   source_card_id=card_id, at=int(now.timestamp()))
+        capture_in(db, user_id, card_id)
         db.commit()
     return card_id
 
@@ -763,6 +796,8 @@ def run_user_analysis(
         user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if user is None:
         raise HTTPException(status_code=404, detail="analysis_user_not_found")
+    if not _automation().preferences(user_id)["enabled"]:
+        return {"state": "paused", "reason": "automation_paused", "tier": "none", "card_id": None}
     if user["tinvest_token_encrypted"] is None:
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
 
@@ -775,6 +810,16 @@ def _run_connected_analysis(
 ) -> dict[str, Any]:
     # Android readiness gates interactive API access, never server monitoring.
     assert_monitoring_access(backend.connect)
+    try:
+        from .background_dispatch import automatic_analysis_gate
+        from .volume_monitor import record_check
+    except ImportError:
+        from background_dispatch import automatic_analysis_gate
+        from volume_monitor import record_check
+    waiting = automatic_analysis_gate(user, CURRENT_JOB.get(), current_time)
+    if waiting is not None:
+        record_check(user_id, current_time, status="waiting", reason=waiting["reason"], tier="none")
+        return {"state": "waiting", "reason": waiting["reason"], "tier": "none", "card_id": None}
     previous, previous_row = _latest_snapshot(user_id)
     try:
         snapshot = get_tinvest_portfolio(currency="RUB", user=user)
@@ -794,6 +839,20 @@ def _run_connected_analysis(
     except ImportError:
         from portfolio_details import record_history
     record_history(user_id, snapshot.get("accounts", []), current_time.astimezone(UTC).isoformat())
+    try:
+        from .volume_monitor import ingest, record_check, trigger_evidence
+    except ImportError:
+        from volume_monitor import ingest, record_check, trigger_evidence
+    workspace_observation = ingest(user, snapshot, current_time)
+    # A first observation is recorded as such, without inventing a transaction
+    # or requiring a paid model. Discovery is separate from trade execution.
+    _automation().observe_and_discover(user, workspace_observation["snapshot"], current_time)
+    snapshot = {**snapshot, "_volume_risk_fingerprint": workspace_observation["risk_fingerprint"],
+                "_volume_news_fingerprint": workspace_observation["news_fingerprint"],
+                "_volume_critical_risk": workspace_observation["critical_risk"],
+                "_volume_risk_message": workspace_observation["risk_message"],
+                "_volume_verified_credit": workspace_observation["credit_evidence"],
+                "_volume_credit_coverage": workspace_observation["credit_coverage"]}
     digest, material_digest = _save_snapshot(user_id, snapshot)
     profile = get_profile(user_id)
     signals, risk_message = _signals(
@@ -807,10 +866,12 @@ def _run_connected_analysis(
     )
     budget = _budget(user_id, current_time)
     decision = decide_analysis(signals, budget)
+    trigger = trigger_evidence(user, snapshot, previous, previous_row, workspace_observation, signals, current_time)
     if decision.tier is AnalysisTier.NONE and signals.critical_risk:
         # Safety messages do not depend on a paid-model quota.
         decision = AnalysisDecision(AnalysisTier.NONE, AnalysisReason.RISK_EVENT, True, 0)
     elif decision.tier is AnalysisTier.NONE:
+        record_check(user_id, current_time, status="skipped", reason=decision.reason.value, tier=decision.tier.value, trigger=trigger)
         return {
             "state": "skipped",
             "reason": decision.reason.value,
@@ -818,6 +879,7 @@ def _run_connected_analysis(
             "card_id": None,
         }
 
+    record_check(user_id, current_time, status="analysis_required", reason=decision.reason.value, tier=decision.tier.value, trigger=trigger)
     context = _context(snapshot, profile, current_time, risk_message)
     source_id = context["sources"][0]["id"]
     report: AnalysisReport | None = None
@@ -831,7 +893,11 @@ def _run_connected_analysis(
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
         assert_monitoring_access(backend.connect)
-        guarded_client = GuardedAIClient(user_id, backend.connect)
+        guarded_client = GuardedAIClient(
+            user_id, backend.connect,
+            budget_guard=lambda db: _automation().assert_enabled_in(db, user_id),
+            before_send=lambda: _automation().assert_enabled(user_id),
+        )
         guarded_client.check_ready(decision.tier)
         if not _reserve_budget(user_id, current_time, decision.tier):
             raise TimewebAIConfigurationError("analysis_budget_exhausted")
@@ -857,7 +923,8 @@ def _run_connected_analysis(
     if current_job:
         AnalysisQueue(backend.connect).assert_owner(*current_job)
     assert_monitoring_access(backend.connect)
-    _record_run(
+    _automation().assert_enabled(user_id)
+    run_id = _record_run(
         user_id=user_id,
         decision=decision,
         digest=digest,
@@ -876,6 +943,8 @@ def _run_connected_analysis(
             now=current_time,
             source_id=source_id,
         )
+    record_check(user_id, current_time, status=state, reason=decision.reason.value, tier=decision.tier.value,
+                 card_id=card_id, run_id=run_id, error_code=error_code, trigger=trigger)
     return {
         "state": state,
         "reason": decision.reason.value,
@@ -912,10 +981,27 @@ def _acquire_lease(name: str, ttl_seconds: int) -> bool:
 def run_scheduler_cycle() -> dict[str, int]:
     init_autonomous_db()
     queue = AnalysisQueue(backend.connect)
+    try:
+        from .background_dispatch import enqueue_cycle
+    except ImportError:
+        from background_dispatch import enqueue_cycle
     with closing(backend.connect()) as db:
-        users = db.execute("SELECT id FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
+        users = db.execute("SELECT * FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
     for user in users:
-        queue.enqueue(int(user['id']))
+        user_id = int(user["id"])
+        if not _automation().preferences(user_id)["enabled"]:
+            continue
+        try:
+            enqueue_cycle(user)
+        except HTTPException:
+            # A concurrent pause/reconnect or a full interactive queue must not
+            # prevent deterministic monitoring of the other eligible users.
+            logger.warning("Automatic workspace collection was not queued")
+    try:
+        from .volume_jobs import drain as drain_workspace
+    except ImportError:
+        from volume_jobs import drain as drain_workspace
+    drain_workspace(limit=5)
     return drain(queue, run_user_analysis)
 
 
@@ -985,11 +1071,24 @@ def read_profile(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str,
     return get_profile(int(user["id"]))
 
 
-@router.put("/profile", responses={400: {"description": "At least one allowed market is required."}})
+@router.put("/profile", responses={
+    400: {"description": "At least one allowed market is required."},
+    409: {"description": "Confirmed strategy rules require a fresh preview and explicit confirmation."},
+})
 def update_profile(
     payload: ProfileUpdate,
     user: sqlite3.Row = Depends(backend.current_user),
 ) -> dict[str, Any]:
+    try:
+        from .volume_state import active_strategy
+    except ImportError:
+        from volume_state import active_strategy
+    active = active_strategy(int(user["id"]))
+    if active is not None:
+        current = get_profile(int(user["id"]))
+        if any(getattr(payload, key) != current[key] for key in
+               ("risk_level", "horizon", "max_position_percent", "min_cash_percent")) or sorted(payload.allowed_markets) != sorted(current["allowed_markets"]):
+            raise HTTPException(status_code=409, detail="strategy_preview_confirmation_required")
     markets = []
     for raw in payload.allowed_markets:
         value = raw.strip().upper()
@@ -1029,6 +1128,11 @@ def update_profile(
                 now,
             ),
         )
+        try:
+            from .volume_notifications import sync_legacy_preferences_in
+        except ImportError:
+            from volume_notifications import sync_legacy_preferences_in
+        sync_legacy_preferences_in(db, int(user["id"]), critical=payload.notify_critical, briefs=payload.notify_briefs, now=now)
         db.commit()
     return get_profile(int(user["id"]))
 
@@ -1101,7 +1205,11 @@ def refresh(
         raise HTTPException(status_code=409, detail="tinvest_not_connected")
     queue = AnalysisQueue(backend.connect)
     queue.initialize()
-    return {**queue.enqueue(int(user['id'])), 'reason': 'queued_recheck',
+    try:
+        from .background_dispatch import enqueue_manual_analysis
+    except ImportError:
+        from background_dispatch import enqueue_manual_analysis
+    return {**enqueue_manual_analysis(user), 'reason': 'queued_recheck',
             'tier': 'none', 'card_id': None, 'model': None, 'error_code': None}
 
 

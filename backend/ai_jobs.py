@@ -17,8 +17,10 @@ from typing import Callable
 
 try:
     from .ai_budget import Connect, transaction
+    from .schema_migrations import execute_schema
 except ImportError:
     from ai_budget import Connect, transaction
+    from schema_migrations import execute_schema
 
 CURRENT_JOB: ContextVar[tuple[str, str] | None] = ContextVar('analyst_current_job', default=None)
 MAX_ATTEMPTS = 3
@@ -34,8 +36,8 @@ class AnalysisQueue:
         self.connect = connect
 
     def initialize(self) -> None:
-        with closing(self.connect()) as db:
-            db.executescript('''
+        with transaction(self.connect) as db:
+            execute_schema(db, '''
                 CREATE TABLE IF NOT EXISTS ai_work_jobs (
                     id TEXT PRIMARY KEY,
                     user_id INTEGER NOT NULL,
@@ -49,13 +51,19 @@ class AnalysisQueue:
                     error_code TEXT,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL,
+                    cancel_requested_at INTEGER,
                     UNIQUE(user_id,bucket)
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS ai_work_one_outstanding_user
                     ON ai_work_jobs(user_id) WHERE status IN ('queued','running');
                 CREATE INDEX IF NOT EXISTS ai_work_due ON ai_work_jobs(status,due_at);
             ''')
-            db.commit()
+            # The same write reservation covers both DDL and the legacy upgrade.
+            # A failed ALTER must also roll back newly created indexes; another
+            # initializer must not inspect columns outside this transaction.
+            columns = {row[1] for row in db.execute('PRAGMA table_info(ai_work_jobs)')}
+            if 'cancel_requested_at' not in columns:
+                db.execute('ALTER TABLE ai_work_jobs ADD COLUMN cancel_requested_at INTEGER')
 
     @staticmethod
     def _expire(db: sqlite3.Connection, now: int) -> None:
@@ -67,16 +75,37 @@ class AnalysisQueue:
             raise ValueError('invalid_job_user')
         now = int(time.time()) if at is None else at
         with transaction(self.connect) as db:
-            self._expire(db, now)
-            row = db.execute("SELECT id,status FROM ai_work_jobs WHERE user_id=? AND "
-                             "(status IN ('queued','running') OR bucket=?) ORDER BY created_at DESC LIMIT 1",
-                             (user_id, now // 300)).fetchone()
-            if row:
-                return {'job_id': row[0], 'state': row[1], 'coalesced': True}
-            identifier = uuid.uuid4().hex
-            db.execute("INSERT INTO ai_work_jobs(id,user_id,bucket,status,due_at,created_at,updated_at) VALUES (?,?,?,'queued',?,?,?)",
-                       (identifier, user_id, now // 300, now, now, now))
+            return self.enqueue_in(db, user_id, now=now)
+
+    def enqueue_in(self, db, user_id: int, *, now: int | None = None) -> dict:
+        """Bind a client request and an analysis job in the same transaction."""
+        now = int(time.time()) if now is None else now
+        self._expire(db, now)
+        row = db.execute("SELECT id,status FROM ai_work_jobs WHERE user_id=? AND "
+                         "(status IN ('queued','running') OR bucket=?) ORDER BY created_at DESC LIMIT 1",
+                         (user_id, now // 300)).fetchone()
+        if row:
+            return {'job_id': row[0], 'state': row[1], 'coalesced': True}
+        identifier = uuid.uuid4().hex
+        db.execute("INSERT INTO ai_work_jobs(id,user_id,bucket,status,due_at,created_at,updated_at) VALUES (?,?,?,'queued',?,?,?)",
+                   (identifier, user_id, now // 300, now, now, now))
         return {'job_id': identifier, 'state': 'queued', 'coalesced': False}
+
+    def cancel(self, user_id: int, identifier: str) -> None:
+        now = int(time.time())
+        with transaction(self.connect) as db:
+            db.execute("UPDATE ai_work_jobs SET status='failed',error_code='analysis_cancelled',cancel_requested_at=?,updated_at=? WHERE id=? AND user_id=? AND status='queued'",
+                       (now, now, identifier, user_id))
+            db.execute("UPDATE ai_work_jobs SET cancel_requested_at=?,updated_at=? WHERE id=? AND user_id=? AND status='running'", (now, now, identifier, user_id))
+
+    def acknowledge_cancel(self, job: dict) -> None:
+        with transaction(self.connect) as db:
+            row = db.execute("SELECT user_id,created_at FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND cancel_requested_at IS NOT NULL", (job['id'], job['owner'])).fetchone()
+            if row is None:
+                return
+            unresolved = db.execute("SELECT 1 FROM ai_money_reservations WHERE user_id=? AND created_at>=? AND state IN ('reserved','uncertain')", (row['user_id'], row['created_at'])).fetchone()
+            db.execute("UPDATE ai_work_jobs SET status=?,error_code=?,updated_at=? WHERE id=? AND owner=?",
+                       ('uncertain' if unresolved else 'failed', 'analysis_paid_outcome_unknown' if unresolved else 'analysis_cancelled', int(time.time()), job['id'], job['owner']))
 
     def claim(self, *, at: int | None = None) -> dict | None:
         now = int(time.time()) if at is None else at
@@ -93,7 +122,7 @@ class AnalysisQueue:
     def assert_owner(self, identifier: str, owner: str, *, at: int | None = None) -> None:
         now = int(time.time()) if at is None else at
         with closing(self.connect()) as db:
-            row = db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND expires_at>?",
+            row = db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND cancel_requested_at IS NULL AND expires_at>?",
                              (identifier, owner, now)).fetchone()
         if row is None:
             raise LeaseLost('analysis_worker_lease_lost')
@@ -104,7 +133,7 @@ class AnalysisQueue:
         safe = {key: result.get(key) for key in ('state','reason','tier','card_id','error_code')}
         with transaction(self.connect) as db:
             cursor = db.execute("UPDATE ai_work_jobs SET status='completed',result_json=?,updated_at=? "
-                                "WHERE id=? AND owner=? AND status='running' AND expires_at>?",
+                                "WHERE id=? AND owner=? AND status='running' AND cancel_requested_at IS NULL AND expires_at>?",
                                 (json.dumps(safe), now, job['id'], job['owner'], now))
             if cursor.rowcount != 1:
                 raise LeaseLost('analysis_worker_lease_lost')
@@ -115,7 +144,7 @@ class AnalysisQueue:
         delay = min(60 * 2 ** (job['attempts'] - 1), 600)
         with transaction(self.connect) as db:
             cursor = db.execute("UPDATE ai_work_jobs SET status=?,due_at=?,error_code=?,updated_at=? "
-                                "WHERE id=? AND owner=? AND status='running' AND expires_at>?",
+                                "WHERE id=? AND owner=? AND status='running' AND cancel_requested_at IS NULL AND expires_at>?",
                                 ('queued' if retry else 'failed', now + delay,
                                  'collection_temporary_failure' if retryable else 'analysis_failed', now,
                                  job['id'], job['owner'], now))
@@ -149,6 +178,7 @@ def drain(queue: AnalysisQueue, run: Callable[[int], dict], *, limit: int = 20) 
             queue.finish(job, result)
             counts['processed'] += 1
         except LeaseLost:
+            queue.acknowledge_cancel(job)
             counts['failed'] += 1
         except Exception as error:
             # run_user_analysis contains/categorizes paid failures. Escaping HTTP
@@ -157,7 +187,7 @@ def drain(queue: AnalysisQueue, run: Callable[[int], dict], *, limit: int = 20) 
             try:
                 queue.fail(job, retryable=retryable)
             except LeaseLost:
-                pass
+                queue.acknowledge_cancel(job)
             counts['failed'] += 1
         finally:
             CURRENT_JOB.reset(token)
@@ -170,7 +200,7 @@ def assert_current_owner_in(db: sqlite3.Connection) -> None:
     job = CURRENT_JOB.get()
     if job is None:
         return
-    row = db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND expires_at>?",
+    row = db.execute("SELECT 1 FROM ai_work_jobs WHERE id=? AND owner=? AND status='running' AND cancel_requested_at IS NULL AND expires_at>?",
                      (*job, int(time.time()))).fetchone()
     if row is None:
         raise LeaseLost('analysis_worker_lease_lost')

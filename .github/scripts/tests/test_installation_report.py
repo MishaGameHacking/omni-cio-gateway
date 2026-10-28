@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+import sys
 import unittest
 
 MODULE = Path(__file__).resolve().parents[1] / "installation_report.py"
+sys.path.insert(0, str(MODULE.parent))
 spec = importlib.util.spec_from_file_location("installation_report", MODULE)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -116,6 +118,28 @@ class InstallationReportTests(unittest.TestCase):
 
     def test_report_order_is_irrelevant(self):
         self.validate(list(reversed(report(module.BASE_TESTS))))
+
+    def test_current_matrix_requires_actual_kernel_measurement(self):
+        from kernel_page_size import measured_record
+        from backend.tests.android_runtime_fixtures import ui_receipt
+        for api, size in ((37, 16384), (37, 4096)):
+            rows = report(module.BASE_TESTS, module.UPGRADE_TESTS, module.PROFILE_TESTS)
+            with self.assertRaises(ValueError):
+                module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=api, page_size_bytes=size)
+            rows.append(measured_record(api, str(size), "a" * 64, page_size_bytes=size))
+            next(row for row in rows if row["test"] == "debug_ui_fixture_install")["apk_sha256"] = "c" * 64
+            next(row for row in rows if row["test"] == "profile_ui").update(ui_receipt())
+            module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=api, page_size_bytes=size)
+            rows[-1]["page_size_bytes"] = 4096 if size == 16384 else 16384
+            with self.assertRaises(ValueError):
+                module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=api, page_size_bytes=size)
+
+    def test_current_kernel_does_not_substitute_for_complete_business_ui(self):
+        from kernel_page_size import measured_record
+        rows = report(module.BASE_TESTS, module.UPGRADE_TESTS, module.PROFILE_TESTS)
+        rows.append(measured_record(37, "16384", "a" * 64, page_size_bytes=16384))
+        with self.assertRaises(ValueError):
+            module.validate_results(rows, upgrade_required=True, profile_required=True, android_api=37, page_size_bytes=16384)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,12 @@
 """Protocol, isolation and failure-preservation tests; no Android pass is inferred."""
 import importlib.util
 from pathlib import Path
+import re
+import shutil
 import struct
+import subprocess
 import sys
+import tempfile
 from contextlib import contextmanager
 import unittest
 from unittest.mock import Mock, patch
@@ -36,6 +40,18 @@ def packet(sequence=1, status=1, payload=XML):
 
 
 class FrameProtocolTests(unittest.TestCase):
+    def test_native_fold_state_is_preserved_separately_from_duplicate_labels(self):
+        tree = ET.Element("hierarchy")
+        ET.SubElement(tree, "node", {"text": "Основания (1)", "resource-id": "answer-sources",
+                                    "state-description": "Свёрнуто"})
+        ET.SubElement(tree, "node", {"text": "Основания (1)", "resource-id": "channel-sources",
+                                    "state-description": "Развёрнуто & <проверено>"})
+        reader = frames.FrameReader(Stream(packet(payload=ET.tostring(tree, encoding="utf-8"))))
+        observed = list(reader.ready_tree().iter("node"))
+        self.assertEqual(observed[0].get("state-description"), "Свёрнуто")
+        self.assertEqual(observed[1].get("state-description"), "Развёрнуто & <проверено>")
+        self.assertEqual(observed[1].get("resource-id"), "channel-sources")
+
     def test_partial_reads_and_monotonic_fresh_requests(self):
         stream = Stream(packet() + packet(2, payload=XML.replace(b'"A"', b'"B"')))
         reader = frames.FrameReader(stream)
@@ -95,10 +111,19 @@ class FrameProtocolTests(unittest.TestCase):
             self.assertFalse(any("install" in call.args for call in device.call_args_list))
 
     def test_disposable_check_accepts_owned_supported_api(self):
-        for api in ("35", "36"):
-            device = Mock(side_effect=[Mock(returncode=0, stdout=v) for v in ("analyst-install-123-2\nOK", "1", api)])
-            frames.assert_disposable(device)
+        values = ("analyst-install-123-2\nOK", "1", "37")
+        device = Mock(side_effect=[Mock(returncode=0, stdout=value) for value in values])
+        frames.assert_disposable(device)
+        self.assertEqual(device.call_count, 3)
+
+    def test_other_guest_versions_cannot_reuse_current_runtime_evidence(self):
+        for api in ("35", "36", "38", "37.0", "", "unknown"):
+            values = ("analyst-install-123-2\nOK", "1", api)
+            device = Mock(side_effect=[Mock(returncode=0, stdout=value) for value in values])
+            with self.subTest(api=api), self.assertRaises(ValueError):
+                frames.assert_disposable(device)
             self.assertEqual(device.call_count, 3)
+            self.assertFalse(any("install" in call.args for call in device.call_args_list))
 
     def test_checked_preserves_both_output_streams_and_code(self):
         device = Mock(return_value=Mock(returncode=7, stdout="stdout error", stderr="stderr error"))
@@ -293,17 +318,105 @@ class DriverSourceTests(unittest.TestCase):
         self.assertIn('android:testOnly="true"', manifest)
         self.assertIn('android:targetPackage="ru.omnicio.ciframe"', manifest)
         self.assertNotIn("uses-permission", manifest)
-        self.assertIn("minSdk = 35", build)
+        self.assertIn("minSdk = 37", build)
         self.assertIn("it.enable = false", build)
         self.assertIn("isMinifyEnabled = true", build)
         self.assertIn("isShrinkResources = true", build)
         self.assertEqual(java.count("getUiAutomation("), 1)
         self.assertIn("automation.clearCache()", java)
         self.assertIn("getRootInActiveWindow()", java)
+        self.assertEqual(java.count("automation.getWindows()"), 1)
         self.assertIn("MessageDigest.isEqual", java)
         self.assertNotIn("waitForIdle", java)
         self.assertNotIn("executeShellCommand", java)
         self.assertNotIn("getDeclared", java)
+
+    def test_real_java_ime_observation_preserves_visibility_beyond_diagnostic_cap(self):
+        javac, java = shutil.which("javac"), shutil.which("java")
+        if javac is None or java is None:
+            self.skipTest("JDK required for the host IME-observation regression")
+        source = (SCRIPTS.parents[1] / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text()
+        # Compile the production observer verbatim with narrow public-API value
+        # stubs. This checks its data handling, not Android's window enumeration.
+        observer = source[source.index("    private record WindowObservation"):source.index("    private static void writeNode")]
+        constant = re.search(r"private static final int MAX_IME_WINDOWS = \d+;", source).group()
+        harness = """
+import java.util.ArrayList;
+import java.util.List;
+public class ImeObservationTest {
+    static final class Rect {
+        int left, top, right, bottom;
+        Rect() {}
+        Rect(int l, int t, int r, int b) { left=l; top=t; right=r; bottom=b; }
+        boolean isEmpty() { return left >= right || top >= bottom; }
+        static boolean intersects(Rect a, Rect b) {
+            return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        }
+    }
+    static final class AccessibilityWindowInfo {
+        static final int TYPE_INPUT_METHOD = 2;
+        final int id, type, displayId;
+        final Rect bounds;
+        final boolean active, focused;
+        int boundsReads;
+        AccessibilityWindowInfo(int i, int t, int d, Rect b, boolean a, boolean f) {
+            id=i; type=t; displayId=d; bounds=b; active=a; focused=f;
+        }
+        int getId() { return id; }
+        int getType() { return type; }
+        int getDisplayId() { return displayId; }
+        boolean isActive() { return active; }
+        boolean isFocused() { return focused; }
+        void getBoundsInScreen(Rect out) {
+            boundsReads++;
+            out.left=bounds.left; out.top=bounds.top; out.right=bounds.right; out.bottom=bounds.bottom;
+        }
+    }
+    static void require(boolean value, String message) {
+        if (!value) throw new AssertionError(message);
+    }
+    public static void main(String[] args) {
+        Rect display = new Rect(0, 0, 640, 320);
+        AccessibilityWindowInfo app = new AccessibilityWindowInfo(73, 1, 0, display, true, true);
+        AccessibilityWindowInfo ime = new AccessibilityWindowInfo(74, 2, 0, new Rect(0, 180, 640, 320), false, false);
+        WindowObservation present = observeWindows(List.of(app, ime), display, 73);
+        require(present.keyboardVisible(), "unfocused IME remains visible");
+        require(present.rootPresent() && present.rootFocused(), "app window facts retained");
+        require(present.windowCount() == 2 && present.imeCount() == 1, "separate total and IME counts");
+        require(present.imeWindows().equals("[[74,0,2,0,180,640,320,false,false,true]]"), "exact bounded geometry metadata");
+        require(ime.boundsReads == 1, "visibility and metadata use the same bounds read");
+        require(app.boundsReads == 0, "non-IME bounds do not control keyboard visibility");
+
+        AccessibilityWindowInfo outside = new AccessibilityWindowInfo(75, 2, 0, new Rect(640, 0, 740, 320), true, true);
+        AccessibilityWindowInfo empty = new AccessibilityWindowInfo(76, 2, 0, new Rect(0, 0, 0, 320), true, true);
+        WindowObservation absent = observeWindows(List.of(app, outside, empty), display, 73);
+        require(!absent.keyboardVisible() && absent.imeCount() == 2, "outside and empty IME are observed but invisible");
+        AccessibilityWindowInfo partial = new AccessibilityWindowInfo(77, 2, 9, new Rect(-10, -10, 1, 1), false, false);
+        require(observeWindows(List.of(partial), display, 73).keyboardVisible(), "unchanged intersection-only predicate");
+
+        List<AccessibilityWindowInfo> many = new ArrayList<>();
+        for (int i=0; i<8; i++) many.add(new AccessibilityWindowInfo(100+i, 2, 0, new Rect(0, 320, 640, 400), false, false));
+        many.add(ime);
+        WindowObservation capped = observeWindows(many, display, 73);
+        require(capped.keyboardVisible() && capped.imeCount() == 9, "ninth IME still controls visibility");
+        require(!capped.rootPresent() && !capped.rootFocused(), "absent root is explicit");
+        require(capped.imeWindows().split("\\\\[", -1).length == 10, "only eight window records retained");
+        require(!capped.imeWindows().contains("[74,"), "ninth metadata omitted without hiding IME");
+        WindowObservation none = observeWindows(List.of(), display, 73);
+        require(!none.keyboardVisible() && none.imeCount() == 0 && none.imeWindows().equals("[]"), "no invented IME");
+        System.out.println("IME_OBSERVATION_CASES=6");
+    }
+""" + constant + "\n" + observer + "\n}\n"
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ImeObservationTest.java"
+            path.write_text(harness)
+            built = subprocess.run([javac, "--release", "17", "-d", directory, str(path)],
+                                   capture_output=True, text=True, timeout=30, check=False)
+            self.assertEqual(built.returncode, 0, built.stdout + built.stderr)
+            result = subprocess.run([java, "-cp", directory, "ImeObservationTest"],
+                                    capture_output=True, text=True, timeout=10, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertIn("IME_OBSERVATION_CASES=6", result.stdout)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,527 @@
+EMULATOR_HOST_LEASE=waiting
+EMULATOR_HOST_LEASE=acquired
+PRIVATE_ADB_SERVER_PORT=60887
+EMULATOR_STORAGE={"initial_layout": "data-directory", "initial_image_bytes": 68549, "data_partition_bytes": 4294967296, "free_bytes": 10966622208, "required_with_headroom_bytes": 6442450944}
+EMULATOR_NAVIGATION_CONFIG={"hw.mainKeys": "no"}
+EMULATOR_ACCELERATION=accel:
+3
+KVM requires a CPU that supports vmx or svm
+accel
+EMULATOR_GRAPHICS_IDENTITY=unavailable
+EMULATOR_GRAPHICS_DIAGNOSTIC=shader-main-system
+
+EMULATOR_RUNTIME_FAILURE=logcat -d -b crash -v threadtime
+
+EMULATOR_RUNTIME_FAILURE=shell dumpsys activity exit-info ru.omnicio.app.debug
+
+EMULATOR_RUNTIME_FAILURE=logcat -d -b events -v threadtime am_kill:I am_proc_died:I am_crash:I am_anr:I *:S
+
+EMULATOR_RUNTIME_FAILURE=shell dumpsys meminfo
+
+EMULATOR_RUNTIME_FAILURE=shell dumpsys activity top
+
+EMULATOR_DIAGNOSTIC=200
+_MESSAGE (0x20)
+10-25 08:03:20.993     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:21.823     0     0 I logd    : logdr: UID=2000 GID=2000 PID=1242 n tail=0 logMask=9 pid=0 start=0ns deadline=0ns
+10-25 08:03:21.953   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:22.017     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:21.997   275  1246 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:22.033     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:22.040     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:22.269   303   314 W keystore2: system/security/keystore2/watchdog/src/lib.rs:142 - ### Keystore Watchdog report - BEGIN ###
+10-25 08:03:22.269   303   314 W keystore2: system/security/keystore2/watchdog/src/lib.rs:151 - When extracting from a bug report, please include this header
+10-25 08:03:22.269   303   314 W keystore2: system/security/keystore2/watchdog/src/lib.rs:152 - and all 1 records below.
+10-25 08:03:22.269   303   314 W keystore2: system/security/keystore2/watchdog/src/lib.rs:193 - ThreadId(3) await_boot_completed Started: 10-25 07:54:08.013 UTC Pending: 554.255877976s Overdue 254.255983489s
+10-25 08:03:22.269   303   314 W keystore2: system/security/keystore2/watchdog/src/lib.rs:205 - ### Keystore Watchdog report - END ###
+10-25 08:03:23.040     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:23.000   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:23.032   275  1247 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:23.066     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:23.076     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:23.606   504   504 I adbd    : adbd service requested 'shell,v2:export ANDROID_LOG_TAGS=''; exec logcat '-d' '-b' 'crash' '-v' 'threadtime''
+10-25 08:03:24.013   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:24.052     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:24.083     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:24.092     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:24.054   275  1250 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:25.032   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:25.096     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:25.151     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:25.120   275  1251 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:25.176     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:25.594     0     0 I logd    : logdr: UID=2000 GID=2000 PID=1248 n tail=0 logMask=10 pid=0 start=0ns deadline=0ns
+10-25 08:03:25.662   504   504 I adbd    : adbd service requested 'shell,v2,raw:dumpsys activity exit-info ru.omnicio.app.debug'
+10-25 08:03:26.093   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:26.143     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:26.180     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:26.230     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:26.151   275  1255 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:27.130   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:27.184     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:27.225     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:27.252     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:27.213   275  1256 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:28.207   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:28.252     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:28.301     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:28.266   275  1259 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:28.305     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:28.486   504   504 I adbd    : adbd service requested 'shell,v2:export ANDROID_LOG_TAGS=''; exec logcat '-d' '-b' 'events' '-v' 'threadtime' 'am_kill:I' 'am_proc_died:I' 'am_crash:I' 'am_anr:I' '*:S''
+10-25 08:03:29.273   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:29.315     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:29.329     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:29.352     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:29.313   275  1262 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:30.321     0     0 I logd    : logdr: UID=2000 GID=2000 PID=1260 n tail=0 logMask=4 pid=0 start=0ns deadline=0ns
+10-25 08:03:30.312   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:30.341   275  1264 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:30.354     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:30.360     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:30.379     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:30.454   504   504 I adbd    : adbd service requested 'shell,v2,raw:dumpsys meminfo'
+10-25 08:03:31.337   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:31.378     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:31.402     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:31.368   275  1267 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:31.427     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:31.905   504   504 I adbd    : adbd service requested 'shell,v2,raw:dumpsys activity top'
+10-25 08:03:32.390   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:32.445     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:32.487   275  1272 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:32.519     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:32.533     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:33.432   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:33.493     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:33.493   275  1273 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:33.521     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:33.546     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:33.798   504   504 I adbd    : adbd service requested 'shell,v2:export ANDROID_LOG_TAGS=''; exec logcat '-d' '-t' '200''
+10-25 08:03:34.477   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:34.529     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:34.553     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:34.531   275  1278 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:34.572     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:35.554   498   498 W libbinder.ServiceManagerCppClient: Waited one second for activity (is service started? Number of threads started in the threadpool: 16. Are binder threads started and available?)
+10-25 08:03:35.606     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Since 'activity' could not be found trying to start it as a lazy AIDL service. (if it's not configured to be a lazy service, it may be stuck starting or still starting).
+10-25 08:03:35.594   275  1279 W libc    : Unable to set property "ctl.interface_start" to "aidl/activity": PROP_ERROR_HANDLE_CONTROL_MESSAGE (0x20)
+10-25 08:03:35.631     0     0 E init    : Control message: Could not find 'aidl/activity' for ctl.interface_start from pid: 275 (/system/bin/servicemanager)
+10-25 08:03:35.632     0     0 I servicemanager: Caller(pid=498,uid=1041,sid=u:r:audioserver:s0) Tried to start aidl service activity as a lazy service, but was unable to. Usually this happens when a service is not installed, but if the service is intended to be used as a lazy service, then it may be configured incorrectly.
+10-25 08:03:35.756     0     0 I logd    : logdr: UID=2000 GID=2000 PID=1276 n tail=200 logMask=99 pid=0 start=0ns deadline=0ns
+
+EMULATOR_DIAGNOSTIC=SurfaceFlinger
+ratch]
+    skia/gpu_resources/resource_174: size[384.00 bytes] purgeable_size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_505: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_200: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_141: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_97: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_526: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_85: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_180: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_159: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_177: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_194: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_378: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_18: size[32.00 KB] purgeable_size[32.00 KB] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_150: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_211: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_371: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_57: size[6.25 KB] type[Surface] label[ImageGpu_MakeWithVolatileSrc] category[Scratch]
+    skia/gpu_resources/resource_431: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_10: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_191: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_94: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_232: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_43: size[25.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]
+    skia/gpu_resources/resource_673: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_16: size[128.00 bytes] type[Surface] label[ProxyProvider_CreateNonMippedProxyFromBitmap] category[Scratch]
+    skia/gpu_resources/resource_621: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_614: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_11: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_476: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_116: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_88: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_79: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_584: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_503: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_593: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_519: size[512.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_607: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_45: size[100.00 KB] type[Surface] label[ResourceAllocatorRegister] category[Scratch]
+    skia/gpu_resources/resource_381: size[384.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+    skia/gpu_resources/resource_577: size[768.00 bytes] type[Buffer Object] label[MakeVkBuffer] category[Scratch]
+Skia's wrapped objects (context):
+  Other: 132.81 KB (4 entries)
+    skia/gpu_resources/resource_36: size[1.56 KB]
+    skia/gpu_resources/resource_34: size[6.25 KB]
+    skia/gpu_resources/resource_32: size[25.00 KB]
+    skia/gpu_resources/resource_30: size[100.00 KB]
+
+RenderEngine chosen blur algorithm: KawaseDualFilterV2
+RenderEngine LinearEffects (RuntimeEffects): 20
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__SRGB__true__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = true,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// UNKNOWN__SRGB__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .outputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__DISPLAY_P3__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::DISPLAY_P3, // DCI-P3 sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// SRGB__DISPLAY_P3__true__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::SRGB, // (deprecated) sRGB sRGB Full range
+    .outputDataspace = ui::Dataspace::DISPLAY_P3, // DCI-P3 sRGB Full range
+    .undoPremultipliedAlpha = true,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// V0_SRGB__V0_SRGB__true__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::V0_SRGB, // BT709 sRGB Full range
+    .outputDataspace = ui::Dataspace::V0_SRGB, // BT709 sRGB Full range
+    .undoPremultipliedAlpha = true,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// BT2020_HLG__UNKNOWN__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::BT2020_HLG, // BT2020 STD-B67 Full range
+    .outputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// BT2020_ITU_PQ__BT2020__false__UNKNOWN__Shader
+{
+    .inputDataspace = ui::Dataspace::BT2020_ITU_PQ, // BT2020 SMPTE 2084 Limited range
+    .outputDataspace = ui::Dataspace::BT2020, // BT2020 SMPTE_170M Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = ui::Dataspace::UNKNOWN, // Default
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// 0x188a0000__V0_SRGB__true__0x9010000__Shader
+{
+    .inputDataspace = static_cast<ui::Dataspace>(0x188a0000), // DCI-P3 sRGB Extended range
+    .outputDataspace = ui::Dataspace::V0_SRGB, // BT709 sRGB Full range
+    .undoPremultipliedAlpha = true,
+    .fakeOutputDataspace = static_cast<ui::Dataspace>(0x9010000), // BT709 gamma 2.2 Full range
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+// 0x188a0000__DISPLAY_P3__false__0x90a0000__Shader
+{
+    .inputDataspace = static_cast<ui::Dataspace>(0x188a0000), // DCI-P3 sRGB Extended range
+    .outputDataspace = ui::Dataspace::DISPLAY_P3, // DCI-P3 sRGB Full range
+    .undoPremultipliedAlpha = false,
+    .fakeOutputDataspace = static_cast<ui::Dataspace>(0x90a0000), // DCI-P3 gamma 2.2 Full range
+    .type = shaders::LinearEffect::SkSLType::Shader,
+},
+
+RenderEngine tracked buffers: 0
+Dumping buffer ids...
+RenderEngine AHB/BackendTexture cache size: 0
+Dumping buffer ids...
+
+ClientCache state:
+  Region undefinedRegion (this=0x738bf7618928, count=1)
+    [  0,   0,   0,   0]
+  orientation=ROTATION_0, isPoweredOn=1
+  transaction-flags         : 00000000
+  peak-refresh-rate         : 60.00 Hz
+  x-dpi                     : 160.00
+  y-dpi                     : 160.00
+  transaction time: 0.000000 us
+
+Transaction tracing: enabled
+  queued transactions=0 created layers=0 states=0
+  number of entries: 0 (0.00MB / 0.50MB) duration: 0ms
+
+Planner is disabled
+h/w composer state:
+  h/w composer enabled
+android.hardware.graphics.composer3.IComposer version:5 hash:07c2ff93a65553c0f274ab0f688fd55f42402facTODOOverlayProperties:
+OverlayProperties{combinations: [], supportMixedColorSpaces: false, lutProperties: (null)}
+GraphicBufferAllocator buffers:
+            Handle |         Size |     W (Stride) x H | Layers |   Format |      Usage | Requestor
+    0x738b4760b6f0 |      unknown |  160 (   0) x  160 |      1 |        1 | 0x     300 | KawaseBlurDualFilterV2
+    0x738b4760bb50 |      unknown |   80 (   0) x   80 |      1 |        1 | 0x     300 | KawaseBlurDualFilterV2
+    0x738b4760bfb0 |      unknown |   40 (   0) x   40 |      1 |        1 | 0x     300 | KawaseBlurDualFilterV2
+    0x738b4760c6b0 |      unknown |   20 (   0) x   20 |      1 |        1 | 0x     300 | KawaseBlurDualFilterV2
+    0x738b4760cb80 |      unknown |  320 (   0) x  640 |      1 |        1 | 0x    1a00 | LegacyFramebufferSurface
+    0x738b4760cbf0 |      unknown |  320 (   0) x  640 |      1 |        1 | 0x    1a00 | LegacyFramebufferSurface
+Total allocated by GraphicBufferAllocator (estimate): 0.00 KB
+Imported gralloc buffers:
++ name:KawaseBlurDualFilterV2, id:8, size:16.56KiB, w/h:40x40, usage: 0x300, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
++ name:KawaseBlurDualFilterV2, id:7, size:35.31KiB, w/h:80x80, usage: 0x300, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
++ name:KawaseBlurDualFilterV2, id:9, size:11.88KiB, w/h:20x20, usage: 0x300, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
++ name:KawaseBlurDualFilterV2, id:6, size:110.31KiB, w/h:160x160, usage: 0x300, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
++ name:LegacyFramebufferSurface, id:5, size:810.31KiB, w/h:320x640, usage: 0x1a00, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
++ name:LegacyFramebufferSurface, id:4, size:810.31KiB, w/h:320x640, usage: 0x1a00, req fmt:1, fourcc/mod:875708993/0, dataspace: 0x0, compressed: false
+Total imported by gralloc: 1794.69KiB
+FlagManager values: 
+debug.sf.disable_sched_fifo_sf: false
+debug.sf.disable_sched_fifo_sf_binder: false
+debug.sf.disable_sched_fifo_sf_sched: false
+debug.sf.disable_sched_fifo_re: false
+debug.sf.disable_sched_fifo_composer: false
+debug.sf.disable_sched_fifo_composer_callback: false
+debug.sf.force_agtm_without_luts: false
+debug.sf.invalid_hdr_type_for_force_sdr_optin: false
+debug.sf.productionize_readback_screenshot: false
+debug.sf.stable_edid_ids_for_external_displays_optin: false
+test_flag: in progress (still booting)
+use_adpf_cpu_hint: in progress (still booting)
+use_skia_tracing: in progress (still booting)
+adpf_gpu_sf: true
+align_adpf_with_sf_opt_policy: true
+bugfix_virtual_display_refresh_rate: true
+color_transform_translation: true
+color_transform_box_shadows_and_border: false
+configure_work_duration: true
+debug_gpu_present_times: false
+disable_transparent_region_hint: true
+enable_color_correction_bugfix: false
+force_sdr_invalid_hdr_type: false
+frontend_caching_v0: false
+frametimeline_boottime_in_lambda: true
+get_display_known_vsync_sample_enabled: true
+graphite_renderengine_preview_rollout: false
+graphite_renderengine_preview2_rollout: false
+graphite_renderengine_desktop_rollout: true
+hwc_buffer_override_skip: false
+luts_api: true
+md_degrade_hdr: true
+mirror_uid_filtering: false
+mirror_with_crop: false
+monitor_buffer_fences: false
+mrr_full_frame_rate_list: false
+offload_gpu_composition: true
+readback_screenshot: true
+re_powered_off_displays_inform_cache_budgets: true
+refresh_rate_overlay_on_external_display: true
+set_power_mode_async: false
+use_content_priority_for_jank_classification: true
+use_experimental_jank_classification: true
+use_last_vsync_predict: false
+vd_aware_scheduler: false
+bugfix_layer_caching_color_inversion_flickering: true
+bugfix_resize_virtual_display_surfaces: false
+cache_when_source_crop_layer_only_moved: false
+connected_display_hdr_v2: false
+connected_display_hdr_v3: true
+correct_dpi_with_display_size: true
+display_command_modeset: true
+enable_user_preferred_hdr_mode: true
+fence_handling: false
+follower_arbitrary_refresh_rate_selection: false
+follower_arbitrary_refresh_rate_selection_platform: true
+follower_display_backpressure: false
+follower_display_backpressure_platform: true
+force_slower_follower_gpu_composition: false
+force_slower_follower_gpu_composition_platform: true
+frame_rate_category_mrr: false
+graphite_renderengine: false
+local_tonemap_screenshots: true
+modeset_multi_display: false
+modeset_state_machine: true
+no_vsyncs_on_screen_off: false
+parse_edid_version_and_input_type_v2: true
+protected_if_client: true
+renderable_buffer_usage: false
+restore_blur_step: true
+shader_disk_cache: true
+small_blur_region_improvements: false
+skip_invisible_windows_in_input: false
+stable_edid_ids: true
+synced_resolution_switch: true
+true_hdr_screenshots: true
+virtual_display_content_filtering: false
+vulkan_renderengine: false
+wb_framebuffersurface2: false
+wb_virtualdisplay2: false
+window_blur_kawase2_preallocate_buffers: true
+TimeStats miniDump:
+Number of layers currently being tracked is 0
+Number of layers in the stats pool is 0
+
+
+EMULATOR_LOG_TAIL=d=
+INFO         |   androidboot.hardware.gltransport=pipe
+INFO         |   androidboot.hardware.vulkan=ranchu
+INFO         |   androidboot.hardwareegl=angle
+INFO         |   androidboot.logcat=*:V
+INFO         |   androidboot.opengles.version=196609
+INFO         |   androidboot.qemu=1
+INFO         |   androidboot.qemu.adb.pubkey=QAAAAJ1PAZ5LURFqAUifgXJGxN2rokHlzgjXDg1YUBH59u1zULf74JlmZ6OOMNgB7fkLWGzSYe+lYJryzmT+jVxZaqTNTMWBWzFwwBhJVijJzPlgCzM1pDTCbicKu7TKa+q2WRP+UQba9pu0Ckh9r5zd495wj98Jh3RjP9D6aYCt4C0+TGMX5g1VOieOT7oWJTNjroeUtsRn0Ao0A2XIjUePt87WBDZDF2hLFJBZuwtbYaeuOS8qvWzzmxT/Ttxr4g3zkXCyxy8YbK+iLVadSvUHAJpd0Laiut257D+8XjNpd99V/N6mOnjhIMUmqjcWlN+V9hHR5tNfBXomaSt53HKoVa7P6FaqsxfwKfHDMVVznAml1neQe9Hkkq/JLKSfFJJxWETP4Lvgq0mBO6gYiFavj7SXyMfpODa+XSxSL+nSNK/25iHra6EQ4n378IS2hOtH5PBsbVtlzGRCyeJHG4VAFaO1vNA9xBg63dM0q8Dn3aDMwyB6xcZufNJy9IsLhZgqZq7a0fjO7rs9rz+VjQ+ISAAHgU1N1WmEZGIslFVEYunQ33L9CTaURs7nI2MLfbrNwvvilzUu4mrFZh89/+DmuN4X+gTshLDSUQvmoxDklpi5r7YDEfhjqJXENY/8dFw0Hg6GGWbRQd9GTlLgeVDSMa5slmEZrjyJvM/dXQETr+mqLf2TFQEAAQA= analyst-build@unknown
+INFO         |   androidboot.qemu.avd_name=analyst-install-8881-1
+INFO         |   androidboot.qemu.camera_hq_edge_processing=0
+INFO         |   androidboot.qemu.camera_protocol_ver=1
+INFO         |   androidboot.qemu.cpuvulkan.version=4210688
+INFO         |   androidboot.qemu.gltransport.drawFlushInterval=800
+INFO         |   androidboot.qemu.gltransport.name=pipe
+INFO         |   androidboot.qemu.hwcodec.avcdec=2
+INFO         |   androidboot.qemu.hwcodec.hevcdec=2
+INFO         |   androidboot.qemu.hwcodec.vpxdec=2
+INFO         |   androidboot.qemu.settings.system.screen_off_timeout=2147483647
+INFO         |   androidboot.qemu.skin=320x640
+INFO         |   androidboot.qemu.virtiowifi=1
+INFO         |   androidboot.qemu.vsync=60
+INFO         |   androidboot.serialno=EMULATOR37X2X12X0
+INFO         |   androidboot.vbmeta.digest=b486c947d336ef3fcf9dd40bb66aa55c11e4f3a512918e5df104b5d805430ffd
+INFO         |   androidboot.vbmeta.hash_alg=sha256
+INFO         |   androidboot.vbmeta.size=6848
+INFO         |   androidboot.veritymode=enforcing
+TCG doesn't support requested feature: CPUID.01H:ECX.avx [bit 28]
+TCG doesn't support requested feature: CPUID.01H:ECX.f16c [bit 29]
+TCG doesn't support requested feature: CPUID.01H:ECX.avx [bit 28]
+TCG doesn't support requested feature: CPUID.01H:ECX.f16c [bit 29]
+WARNING: cannnot unmap ptr 0x7449cb401000 as it is in the protected range from 0x7448cb400000 to 0x7449cb600000
+pc_memory_init: above 4g size: 40000000
+INFO         | Monitoring duration of emulator setup.
+WARNING      | Requested adb port (5601) is outside the recommended range [5555,5586]. ADB may not function properly for the emulator. See -help-port for details.
+INFO         | Successfully initialized netsim WiFi
+INFO         | Activated packet streamer for uwb emulation
+INFO         | Activated packet streamer for bluetooth emulation
+INFO         | Setting display: 0 configuration to: 320x640, dpi: 160x160 
+INFO         | setDisplayActiveConfig: id:0, 320x640
+INFO         | emulatorSetupEnvironment: Environment scene is not required
+USER_INFO    | Emulator is performing a full startup. This may take upto two minutes, or more.
+INFO         | Created VkInstance:0x5f216e2b4000 for application:'surfaceflinger' engine:'android platform'.
+INFO         | Created VkDevice:0x5f216bfd5000 for application:'surfaceflinger' instance:0x5f216e2b4000. ASTC emulation:on CPU decoding:off. Protected memory:off
+INFO         | Created VkInstance:0x5f216d7a0000 for application:'surfaceflinger' engine:'android platform'.
+INFO         | Created VkInstance:0x5f216e968800 for application:'surfaceflinger' engine:'ANGLE'.
+INFO         | Created VkDevice:0x5f21781ca000 for application:'surfaceflinger' instance:0x5f216e968800. ASTC emulation:on CPU decoding:off. Protected memory:off
+INFO         | Destroyed VkDevice:0x5f21781ca000
+INFO         | Destroyed VkInstance:0x5f216e968800 for application:'surfaceflinger' engine:'ANGLE'.
+INFO         | Wait for emulator (pid 8961) 20 seconds to shutdown gracefully before kill;you can set environment variable ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL(in seconds) to change the default value (20 seconds)
+
+USER_INFO    | Snapshots have been disabled by the user, save request is ignored.
+INFO         | Saving snapshot 'default_boot' took 0 ms
+ERROR        | stop: Not implemented
+WARNING      | Emulator client has not yet been configured.. Call configure me first!
+INFO         | removeAll
+INFO         | Destroyed VkInstance:0x5f216d7a0000 for application:'surfaceflinger' engine:'android platform'.
+INFO         | Destroyed VkDevice:0x5f216bfd5000
+INFO         | Destroyed VkInstance:0x5f216e2b4000 for application:'surfaceflinger' engine:'android platform'.
+WARNING      | Netsim Wifi dns:///localhost:35693 is gone due to CANCELLED
+INFO         | ipv6:%5B::1%5D:35693: Got goaway [2] err=UNAVAILABLE:GOAWAY received; Error code: 2; Debug Text: Cancelling all calls {http2_error:2}
+
+EMULATOR_STORAGE_CLEANED=owned-stopped-attempt
+Traceback (most recent call last):
+  File "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py", line 727, in <module>
+    main()
+  File "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py", line 720, in main
+    run_with_transport_retry(execute)
+  File "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py", line 256, in run_with_transport_retry
+    return execute(attempt)
+           ^^^^^^^^^^^^^^^^
+  File "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py", line 698, in execute
+    results = run_attempt(
+              ^^^^^^^^^^^^
+  File "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py", line 564, in run_attempt
+    raise TimeoutError("Emulator boot deadline exceeded")
+TimeoutError: Emulator boot deadline exceeded

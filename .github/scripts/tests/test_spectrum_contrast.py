@@ -1,7 +1,22 @@
-"""Small deterministic WCAG contrast checks for committed Spectrum text tokens."""
+"""Numerical checks of actual committed token declarations and their component use."""
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+import re
+
+ROOT = Path(__file__).resolve().parents[3]
+UI = ROOT / 'app/src/main/java/ru/omnicio/app/ui'
+
+
+def _production():
+    source = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
+    result = {}
+    for name in ('Dark',):
+        material = source.split('private val ' + name + 'Colors = ' + name.lower() + 'ColorScheme(', 1)[1].split('\n)', 1)[0]
+        semantic = source.split('private val ' + name + 'Semantic = AnalystSemanticColors(', 1)[1].split('\n)', 1)[0]
+        result[name] = dict(re.findall(r'\b(\w+)\s*=\s*Color\(0xFF([0-9A-Fa-f]{6})\)', material + '\n' + semantic))
+    return result
 
 
 def _rgb(value: str) -> tuple[float, float, float]:
@@ -33,25 +48,33 @@ def _composite(foreground: str, background: str, alpha: float) -> str:
 
 class SpectrumContrastTests(unittest.TestCase):
     def test_badge_text_has_normal_text_contrast_in_dark_and_light_palettes(self):
-        palettes = (
-            ('F4F7FF', '121D2B', ('70E0D2', '4C8DFF', '8A5CFF', 'FF4FA3', '19E6A2', 'FFC857')),
-            ('101722', 'FFFFFF', ('007C91', '205FCF', '6E43C8', 'A92A70', '007D63', '8A5A00')),
-        )
-        for text, card, accents in palettes:
-            for accent in accents:
-                with self.subTest(text=text, accent=accent):
-                    badge = _composite(accent, card, 0.14)
-                    self.assertGreaterEqual(_contrast(text, badge), 4.5)
+        source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
+        badge = source.split('fun SpectrumBadge(', 1)[1].split('\n@Composable', 1)[0]
+        self.assertIn('val fill = palette.containerFor(accent)', badge)
+        self.assertIn('color = palette.foregroundFor(fill)', badge)
+        self.assertNotIn('lerp(', badge)
+        for mode, tokens in _production().items():
+            for family in ('Primary', 'Secondary', 'Tertiary', 'Success', 'Warning', 'Error'):
+                with self.subTest(mode=mode, family=family):
+                    role = family[0].lower() + family[1:]
+                    self.assertGreaterEqual(_contrast(tokens['on' + family + 'Container'], tokens[role + 'Container']), 4.5)
 
     def test_primary_actions_meet_normal_text_contrast(self):
-        pairs = (
-            ('FFFFFF', '3158D5'),
-            ('FFFFFF', '5036DA'),
-            ('FFFFFF', '7136BF'),
-        )
-        for text, background in pairs:
-            with self.subTest(text=text, background=background):
-                self.assertGreaterEqual(_contrast(text, background), 4.5)
+        for mode, tokens in _production().items():
+            for family in ('Primary', 'Secondary', 'Tertiary'):
+                with self.subTest(mode=mode, family=family):
+                    role = family[0].lower() + family[1:]
+                    ink, fill = tokens['on' + family], tokens[role]
+                    self.assertGreaterEqual(_contrast(ink, fill), 4.5)
+                    self.assertGreaterEqual(_contrast(ink, _composite(ink, fill, .08)), 4.5)
+
+    def test_functional_canvas_uses_roles_instead_of_an_independent_literal_palette(self):
+        artwork = (UI / 'spatial/FlatArtwork.kt').read_text(encoding='utf-8')
+        self.assertNotRegex(artwork, r'Color\(0x[0-9A-Fa-f]+\)')
+        self.assertNotIn('Color.White', artwork)
+        self.assertIn('flatArtworkColors(palette, item.color, item.colorMode, item.state)', artwork)
+        scene = (UI / 'spatial/SpatialScene.kt').read_text(encoding='utf-8')
+        self.assertIn('drawFlatPrimitive(it, if (it.motionAllowed) progress else 0f, palette)', scene)
 
 
 if __name__ == '__main__':

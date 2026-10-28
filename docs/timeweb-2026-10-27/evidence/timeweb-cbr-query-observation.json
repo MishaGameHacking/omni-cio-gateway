@@ -1,0 +1,189 @@
+{
+  "application_imported": false,
+  "captcha_requested_or_solved": false,
+  "checked_at_utc": "2026-10-27T06:23:14.253518+00:00",
+  "cookies_used": false,
+  "credentials_sent": false,
+  "disclaimer_accepted": false,
+  "fixed_public_isin": "RU000A105A95",
+  "javascript_executed": false,
+  "public_form_query": {
+    "body_complete": true,
+    "body_sha256": "05b9ed483e41563c95c6fe9ea05884cdf6c2e05607673ea5e0b2c7967f08a6be",
+    "bytes_observed": 152748,
+    "challenge_observed": false,
+    "headers": {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Date": "Tue, 27 Oct 2026 06:23:14 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 524288,
+    "public_page": {
+      "captcha_elements": [],
+      "fields": [
+        {
+          "name": "formSearh",
+          "required": false,
+          "type": "radio"
+        },
+        {
+          "name": "ratingName",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "inn",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "isin",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "koNumber",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "country_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "country",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "typeGroup_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "typeGroup",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "kraName_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "kraName",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingScale_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingScale",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingGroup_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingGroup",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingAction_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingAction",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingStatus_check_all",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "ratingStatus",
+          "required": false,
+          "type": "checkbox"
+        },
+        {
+          "name": "dateFrom",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "dateTo",
+          "required": false,
+          "type": "text"
+        },
+        {
+          "name": "disclaimer",
+          "required": false,
+          "type": "hidden"
+        }
+      ],
+      "forms": [
+        {
+          "action": "https://ratings.cbr.ru/",
+          "method": "get"
+        }
+      ],
+      "hidden_values_returned": false,
+      "inline_scripts_executed": false,
+      "pagination_links": [],
+      "script_count": 15,
+      "table_rows": [
+        [
+          "Значение кредитного рейтинга",
+          "Наименование КРА",
+          "Дата публикации кредитного рейтинга"
+        ]
+      ],
+      "disclaimer_summary": "Data accuracy and liability notice; verify uncertain information with the original rating agency."
+    },
+    "state": "public_response_observed",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/?formSearh=quick&isin=RU000A105A95"
+  },
+  "published_script": {
+    "body_complete": true,
+    "body_sha256": "bbec9549847fa59c90c71359938f77aefbe9d3d0f865c01e373cea2bf29e05de",
+    "bytes_observed": 77954,
+    "challenge_observed": false,
+    "complete_static_source_returned": true,
+    "credential_literals_redacted": 0,
+    "headers": {
+      "Cache-Control": "max-age=2592000",
+      "Content-Length": "77954",
+      "Content-Type": "application/javascript",
+      "Date": "Wed, 21 Oct 2026 06:06:07 GMT",
+      "ETag": "W/\"69f20b7b-13082\"",
+      "Last-Modified": "Wed, 29 Apr 2026 13:45:31 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 131072,
+    "state": "public_response_observed",
+    "static_source_bytes": 77954,
+    "static_source_encoding": "zlib+base64",
+    "static_source_sha256": "bbec9549847fa59c90c71359938f77aefbe9d3d0f865c01e373cea2bf29e05de",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/bitrix/cache/js/s1/prr/template_d5e856dff306e0713eef5b0a3c8fec4d/template_d5e856dff306e0713eef5b0a3c8fec4d_v1.js?177747033177954"
+  },
+  "redirects_followed": false,
+  "response_schema_verified": false,
+  "schema": 1,
+  "server_id": 9417611,
+  "workarounds_attempted": false,
+  "internal_static_source_omitted_from_public_copy": true
+}

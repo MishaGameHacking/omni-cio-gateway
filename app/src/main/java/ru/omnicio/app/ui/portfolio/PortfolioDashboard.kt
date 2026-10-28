@@ -41,7 +41,7 @@ internal fun PortfolioDashboard(
     onOpenSection: (Int) -> Unit,
     onPositionClick: (String, PortfolioPosition) -> Unit,
     modifier: Modifier = Modifier,
-    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null,
+    assetQuery: String = "", assetSector: String? = null, assetKind: String? = null, assetAccountId: String? = null,
 ) {
     val openWorkspace = LocalWorkspaceNavigator.current
     val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
@@ -70,7 +70,7 @@ internal fun PortfolioDashboard(
         if (selectedSection == 2 && snapshot != null && snapshot.accounts.isNotEmpty()) {
             PortfolioHistorySection(snapshot.accounts, accessToken, Modifier.weight(1f))
         } else if (selectedSection == 1 && snapshot != null) {
-            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind)
+            PortfolioAssetBrowser(snapshot, onPositionClick, Modifier.weight(1f), assetQuery, assetSector, assetKind, assetAccountId)
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth().testTag("portfolio-content"),
@@ -85,9 +85,6 @@ internal fun PortfolioDashboard(
                         PortfolioBalanceCard(snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis, onOpenSection)
                     }
                     if (selectedSection == 0) {
-                        item(key = "sectors") { WorkspaceLink("Отрасли и классы", "Состав ваших вложений", SpectrumSymbol.Market) {
-                            openWorkspace(WorkspaceRoute.Market)
-                        } }
                         item(key = "allocation") {
                             SpectrumCard {
                                 SectionHeading("Баланс активов")
@@ -144,7 +141,9 @@ private fun PortfolioBalanceCard(
             SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
             Notice("Текущий результат брокера")
         }
+        DetailFold("Валюта и действия") {
         CurrencyChoice(selectedCurrency.name)
+        BalanceVisibilityButton()
         val waiting = refreshing && snapshot.totalValue.currency != selectedCurrency.name
         Notice(if (waiting) "Получаем оценку в ${selectedCurrency.name}…" else "Оценка брокера в ${selectedCurrency.name}")
         BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -161,12 +160,11 @@ private fun PortfolioBalanceCard(
                 }
             }
         }
-        val observed = snapshot.asOf ?: lastUpdatedMillis?.let { java.time.Instant.ofEpochMilli(it).toString() }
+        }
         if (error != null) {
             SpectrumBadge("Не удалось обновить", accent = MaterialTheme.colorScheme.error)
             Notice(error)
         }
-        Notice("Данные: ${dateText(observed)}" + if (refreshing) " · обновляем" else " · автообновление")
     }
 }
 
@@ -191,7 +189,7 @@ private fun PortfolioConnectionCard(state: PortfolioUiState, onProfile: () -> Un
         SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(64.dp), selected = true, tile = true)
         when (state) {
             PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> {
-                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(Modifier.size(32.dp), description = "Получаем портфель")
                 SectionHeading("Собираем ваш портфель")
                 Notice("Загружаем счета и позиции из подключённого T‑Invest API.")
             }

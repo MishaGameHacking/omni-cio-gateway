@@ -44,30 +44,30 @@ def _require_supported_installation(report: dict, *, sha256: str) -> dict:
     tested = report.get('installation_evidence')
     if not isinstance(tested, dict) or tested.get('apk_sha256') != sha256:
         raise ReleaseUnavailable('installation_evidence_missing')
-    checks = tested.get('36')
-    required_checks = ('clean_install', 'upgrade', 'upgrade_launch', 'launch')
-    if not isinstance(checks, dict) or any(checks.get(key) is not True for key in required_checks):
+    if type(tested.get('schema_version')) is not int or tested['schema_version'] != 2:
         raise ReleaseUnavailable('installation_evidence_incomplete')
-    if report.get('min_sdk') == 35:
-        android15 = tested.get('35')
-        if not isinstance(android15, dict) or any(android15.get(key) is not True for key in ('clean_install', 'launch')):
-            raise ReleaseUnavailable('android_15_evidence_incomplete')
-        if 'installation_tests' not in report:
-            raise ReleaseUnavailable('android_15_transcript_required')
+    runtimes = tested.get('runtimes')
+    if not isinstance(runtimes, dict) or set(runtimes) != {'api37-4096', 'api37-16384'}:
+        raise ReleaseUnavailable('installation_evidence_incomplete')
+    required_checks = ('clean_install', 'upgrade', 'upgrade_launch', 'launch')
+    for checks in runtimes.values():
+        if not isinstance(checks, dict) or any(checks.get(key) is not True for key in required_checks):
+            raise ReleaseUnavailable('installation_evidence_incomplete')
     return tested
 
 
 def _require_android_floor(report: dict) -> None:
-    minimum_sdk = report.get('min_sdk')
-    if type(minimum_sdk) is not int or minimum_sdk < 35:
-        raise ReleaseUnavailable('unsupported_android_floor')
+    for field in ('min_sdk', 'target_sdk'):
+        if type(report.get(field)) is not int or report[field] != 37:
+            raise ReleaseUnavailable('unsupported_android_floor')
 
 
 def _require_transcript_match(report: dict, tested: dict, *, sha256: str) -> None:
     if 'installation_tests' not in report:
-        return
+        raise ReleaseUnavailable('runtime_installation_transcript_required')
     try:
-        derived = from_ci_reports(report['installation_tests'], sha256)
+        derived = from_ci_reports(report['installation_tests'], sha256,
+                                  version_code=report.get('version_code'))
     except InstallationEvidenceError as error:
         raise ReleaseUnavailable('installation_transcript_invalid') from error
     if tested != derived:

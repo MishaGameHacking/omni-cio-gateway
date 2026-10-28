@@ -15,7 +15,7 @@ import ci_apk_archive as apk_archive
 class ArchiveTests(unittest.TestCase):
     def test_archive_binds_exact_head_and_rejects_extra_members_before_writing(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder)
+            root = Path(folder).resolve(strict=True)
             source, target = root / "source", root / "target"
             source.mkdir()
             target.mkdir()

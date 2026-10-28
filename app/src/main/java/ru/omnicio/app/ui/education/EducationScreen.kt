@@ -1,6 +1,6 @@
 package ru.omnicio.app.ui.education
 
-import androidx.activity.compose.BackHandler
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -8,11 +8,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilterChip
+import ru.omnicio.app.ui.spectrum.SpectrumChoiceChip as FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -235,7 +235,7 @@ private fun LessonCard(
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 SpectrumBadge(
                     lesson.category.title,
-                    accent = if (lesson.category == EducationCategory.NEWS) palette.rose else palette.blue,
+                    accent = if (lesson.category == EducationCategory.NEWS) palette.violet else palette.blue,
                 )
                 Text(
                     "${lesson.minutes} мин",

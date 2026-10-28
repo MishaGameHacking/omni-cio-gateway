@@ -1,6 +1,13 @@
 package ru.omnicio.app
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.runtime.*
+import kotlinx.coroutines.CancellationException
+import org.json.JSONObject
+import org.json.JSONArray
+import ru.omnicio.app.data.workspace.EncryptedWorkspaceStore
+import ru.omnicio.app.data.workspace.OfflinePortfolioStore
+import ru.omnicio.app.ui.spectrum.*
 import androidx.compose.animation.*
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
@@ -31,21 +38,27 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import ru.omnicio.app.data.diagnostics.ClientDiagnostics
+import ru.omnicio.app.data.diagnostics.DiagnosticStage
 import ru.omnicio.app.data.backend.AnalystBackendClient
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
+import ru.omnicio.app.data.backend.SessionTransitions
+import ru.omnicio.app.data.market.optionalText
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
-import ru.omnicio.app.ui.LocalWideNavigation
-import ru.omnicio.app.ui.AnalystSideRail
+import ru.omnicio.app.ui.AnalystNavigationPanels
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.AnalystTab
+import ru.omnicio.app.ui.analystDestination
+import ru.omnicio.app.ui.sectionBackStack
+import ru.omnicio.app.ui.LocalAnalystSectionNavigator
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
 import ru.omnicio.app.ui.analysis.AnalysisProfileSettingsScreen
 import ru.omnicio.app.ui.analysis.IdeasScreen
@@ -76,6 +89,7 @@ private enum class AppScreen {
     Strategies,
     Market,
     NotificationSettings,
+    Discovery, Library, Devices, ActivityHistory, Goals, NewFeatures, AnalysisTimeline, Reports,
 }
 
 private fun nextBackStack(current: AppScreen, destination: AppScreen, history: List<String>): ArrayList<String> {
@@ -98,6 +112,7 @@ private sealed interface AuthUiState {
 
 class MainActivity : ComponentActivity() {
     private lateinit var settingsStore: AppSettingsStore
+    private val pendingNotificationId = mutableStateOf<String?>(null)
     private val pendingAuthCode = mutableStateOf<String?>(null)
     private val pendingAuthError = mutableStateOf<String?>(null)
     private var redirectReceivedForCurrentLogin = false
@@ -128,10 +143,13 @@ class MainActivity : ComponentActivity() {
         val initialScreenshotsBlocked = settingsStore.screenshotsBlocked()
         applyScreenshotPolicy(initialScreenshotsBlocked)
         captureTelegramCallback(intent)
+        captureNotification(intent)
 
         setContent {
-            MandatoryUpdateHost(blockedContent = { state, actions -> RequiredUpdateScreen(state, actions) }) {
+            MandatoryUpdateHost(blockedContent = { state, actions -> RequiredUpdateScreen(state, actions, extraContent = { OfflineSnapshotAccess(state) }) }) {
                 AnalystAiApp(
+                    notificationId = pendingNotificationId.value,
+                    onNotificationConsumed = { pendingNotificationId.value = null },
                     authCode = pendingAuthCode.value,
                     authError = pendingAuthError.value,
                     onStartTelegramLogin = ::launchTelegramLogin,
@@ -152,6 +170,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         captureTelegramCallback(intent)
+        captureNotification(intent)
+    }
+
+    private fun captureNotification(incoming: Intent?) {
+        incoming?.getStringExtra("workspace_event_id")?.takeIf { it.isNotBlank() && it.length <= 160 }?.let { pendingNotificationId.value = it }
+        incoming?.removeExtra("workspace_event_id")
     }
 
     private fun captureTelegramCallback(incoming: Intent?) {
@@ -227,6 +251,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun AnalystAiApp(
+    notificationId: String?,
+    onNotificationConsumed: () -> Unit,
     authCode: String?,
     authError: String?,
     onStartTelegramLogin: () -> Unit,
@@ -243,9 +269,15 @@ private fun AnalystAiApp(
     var initialSessionChecked by remember { mutableStateOf(false) }
     var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     var backStack by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
-    BackHandler(screenName != AppScreen.Home.name) {
+    var backProgress by remember { mutableFloatStateOf(0f) }
+    val goBack: () -> Unit = {
         screenName = backStack.lastOrNull() ?: AppScreen.Home.name
         backStack = ArrayList(backStack.dropLast(1))
+    }
+    PredictiveBackHandler(authState is AuthUiState.SignedIn && screenName != AppScreen.Home.name) { events ->
+        try { events.collect { backProgress = it.progress }; goBack() }
+        catch (_: CancellationException) { /* A cancelled gesture keeps the exact destination. */ }
+        finally { backProgress = 0f }
     }
     val screen = remember(screenName) {
         runCatching { AppScreen.valueOf(screenName) }.getOrDefault(AppScreen.Home)
@@ -268,74 +300,58 @@ private fun AnalystAiApp(
         if (code != null) {
             initialSessionChecked = true
             authState = AuthUiState.Loading("Подтверждаем вход через Telegram…")
-            when (val result = withContext(Dispatchers.IO) {
-                backend.exchangeTelegramCode(code)
-            }) {
-                is BackendResult.Success -> {
-                    val saved = withContext(Dispatchers.IO) {
-                        runCatching { sessionStore.save(result.value) }.isSuccess
-                    }
-                    authState = if (saved) {
-                        AuthUiState.SignedIn(
-                            accessToken = result.value.accessToken,
-                            user = result.value.user,
-                        )
-                    } else {
-                        AuthUiState.SignedOut(
-                            errorMessage = "Не удалось сохранить вход на устройстве. Попробуйте ещё раз.",
-                        )
-                    }
-                }
-                is BackendResult.Failure -> {
-                    authState = AuthUiState.SignedOut(
-                        errorMessage = result.message,
-                    )
-                }
-            }
+            authState = exchangeTelegramSession(backend, sessionStore, context, code)
             onAuthCodeConsumed()
         } else if (!initialSessionChecked) {
-            val storedToken = withContext(Dispatchers.IO) {
-                sessionStore.loadAccessToken()
-            }
-            authState = if (storedToken == null) {
-                AuthUiState.SignedOut()
-            } else {
-                when (val result = withContext(Dispatchers.IO) {
-                    backend.fetchMe(storedToken)
-                }) {
-                    is BackendResult.Success -> {
-                        AuthUiState.SignedIn(
-                            accessToken = storedToken,
-                            user = result.value,
-                        )
-                    }
-                    is BackendResult.Failure -> {
-                        if (result.retryable) {
-                            val cachedUser = withContext(Dispatchers.IO) {
-                                sessionStore.loadCachedUser()
-                            }
-                            if (cachedUser != null) {
-                                AuthUiState.SignedIn(
-                                    accessToken = storedToken,
-                                    user = cachedUser,
-                                )
-                            } else {
-                                AuthUiState.SignedOut(errorMessage = result.message)
-                            }
-                        } else {
-                            backStack = arrayListOf()
-                            screenName = AppScreen.Home.name
-                            withContext(Dispatchers.IO) { sessionStore.clear() }
-                            AuthUiState.SignedOut()
-                        }
-                    }
-                }
-            }
+            authState = restoreAnalystSession(backend, sessionStore, context)
             initialSessionChecked = true
         }
     }
 
     val signedIn = authState as? AuthUiState.SignedIn
+    val appForeground = workspaceForeground()
+    LaunchedEffect(signedIn?.accessToken, appForeground) {
+        if (!appForeground) return@LaunchedEffect
+        val token = signedIn?.accessToken
+        if (token == null) ClientDiagnostics.stage(DiagnosticStage.LOGIN)
+        else {
+            ClientDiagnostics.stage(DiagnosticStage.WORKSPACE)
+            withContext(Dispatchers.IO) { ClientDiagnostics.uploadPending(context.applicationContext, token) }
+        }
+    }
+    val workspaceStore = remember(context) { EncryptedWorkspaceStore(context) }
+    var knownUser by rememberSaveable { mutableStateOf<String?>(null) }
+    var navigationRestored by remember(signedIn?.user?.telegramId) { mutableStateOf(false) }
+    var recentNames by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
+    val reauthenticate: () -> Unit = {
+        if (authState is AuthUiState.SignedIn) {
+            authState = AuthUiState.SignedOut("Подтвердите вход через Telegram. После входа в тот же аккаунт вы вернётесь к своему разделу.")
+            tApiConfigured = false; brokerConnection = BrokerConnectionState.Checking
+            SessionTransitions.submit { signedIn?.user?.telegramId?.let { workspaceStore.deactivateUser(it) }; sessionStore.clear() }
+            ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
+        }
+    }
+    LaunchedEffect(signedIn?.user?.telegramId) {
+        val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
+        val saved = withContext(Dispatchers.IO) { workspaceStore.readJson(id, "navigation") }
+        if (saved?.optInt("schema_version", 0) != 2) {
+            // Start the redesigned flow once; account data and editor drafts stay in their own records.
+            screenName = AppScreen.Home.name
+            backStack = arrayListOf()
+            recentNames = arrayListOf()
+        } else if (knownUser != id) {
+            screenName = saved.optString("screen").takeIf { name -> AppScreen.entries.any { it.name == name } } ?: AppScreen.Home.name
+            backStack = ArrayList(saved?.optJSONArray("back")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
+            recentNames = ArrayList(saved?.optJSONArray("recent")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
+        }
+        knownUser = id; navigationRestored = true
+    }
+    LaunchedEffect(signedIn?.user?.telegramId, screenName, backStack, recentNames, navigationRestored) {
+        val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
+        if (navigationRestored) withContext(Dispatchers.IO) {
+            workspaceStore.saveJson(id, "navigation", JSONObject().put("schema_version", 2).put("screen", screenName).put("back", JSONArray(backStack)).put("recent", JSONArray(recentNames)))
+        }
+    }
     LaunchedEffect(signedIn?.accessToken) {
         val session = signedIn ?: return@LaunchedEffect
         brokerConnection = BrokerConnectionState.Checking
@@ -345,69 +361,85 @@ private fun AnalystAiApp(
     }
 
     val livePortfolio = rememberLivePortfolio(
-        signedIn?.accessToken,
-        tApiConfigured,
-        portfolioCurrency,
+        signedIn?.accessToken, tApiConfigured, portfolioCurrency, userId = signedIn?.user?.telegramId,
+        allowCachedOffline = brokerConnection == BrokerConnectionState.Unknown || brokerConnection == BrokerConnectionState.Checking,
+        enabled = screen !in setOf(AppScreen.Recommendations, AppScreen.Profile),
+        onSessionExpired = reauthenticate,
     )
-
-    AnalystTheme {
-        CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides {
-            screenName = backStack.lastOrNull() ?: AppScreen.Home.name
-            backStack = ArrayList(backStack.dropLast(1))
-        }) {
-        AnalystAppContent(
-            authState = authState,
-            authError = authError,
-            onStartTelegramLogin = onStartTelegramLogin,
-            screen = screen,
-            portfolioState = when (brokerConnection) {
-                BrokerConnectionState.Checking -> PortfolioUiState.Loading
-                BrokerConnectionState.Unknown -> PortfolioUiState.Error("Не удалось проверить подключение. Откройте подключение в профиле и повторите проверку.")
-                else -> livePortfolio.state
-            },
-            portfolioRefreshing = livePortfolio.refreshing,
-            portfolioError = livePortfolio.error,
-            portfolioLastSuccessMillis = livePortfolio.lastSuccessMillis,
-            portfolioCurrency = portfolioCurrency,
-            tApiConfigured = tApiConfigured,
-            screenshotsBlocked = screenshotsBlocked,
-            onScreenChange = { destination ->
-                if (destination != screen) {
-                    backStack = nextBackStack(screen, destination, backStack)
-                    screenName = destination.name
-                }
-            },
-            onCurrencyChange = { currency ->
-                portfolioCurrencyName = currency.name
-            },
-            onTApiConfiguredChange = { configured ->
-                tApiConfigured = configured
-                brokerConnection = if (configured) BrokerConnectionState.Connected else BrokerConnectionState.Missing
-            },
-            onScreenshotsBlockedChange = { blocked ->
-                screenshotsBlocked = blocked
-                onScreenshotsBlockedChange(blocked)
-            },
-            onLogout = {
-                backStack = arrayListOf()
-                sessionStore.clear()
-                screenName = AppScreen.Home.name
-                tApiConfigured = false
-                authState = AuthUiState.SignedOut()
-            },
-        )
+    val visiblePortfolio = if (livePortfolio.state is PortfolioUiState.Ready) livePortfolio.state else when (brokerConnection) {
+        BrokerConnectionState.Checking -> PortfolioUiState.Loading
+        BrokerConnectionState.Unknown -> PortfolioUiState.Error("Подключение пока не подтверждено. Если снимок уже сохранён, он будет показан с датой получения.")
+        else -> livePortfolio.state
+    }
+    val navigate: (AppScreen) -> Unit = { destination ->
+        if (destination != screen) {
+            backStack = nextBackStack(screen, destination, backStack)
+            recentNames = ArrayList((listOf(screen.name) + recentNames.filter { it != screen.name && it != destination.name }).take(8))
+            screenName = destination.name
+        }
+    }
+    val selectSection: (String) -> Unit = { id ->
+        val destination = AppScreen.entries.firstOrNull { it.name == id }
+        val parentStack = sectionBackStack(id)
+        if (destination != null && parentStack != null && destination != screen) {
+            navigate(destination)
+            backStack = ArrayList(parentStack)
+        }
+    }
+    CompositionLocalProvider(LocalAnalystSectionNavigator provides selectSection,
+        LocalWorkspaceBackProgress provides backProgress, LocalReauthenticate provides reauthenticate,
+        LocalPortfolioSnapshot provides (visiblePortfolio as? PortfolioUiState.Ready)?.snapshot,
+        LocalWorkspaceHistory provides WorkspaceHistory(recentNames.map { RecentDestination(it, screenTitle(it)) }, { name ->
+            AppScreen.entries.firstOrNull { it.name == name }?.let(navigate)
+        })) {
+        AnalystTheme {
+            CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides goBack) {
+                AnalystAppContent(
+                    authState = authState, authError = authError, onStartTelegramLogin = onStartTelegramLogin,
+                    notificationId = notificationId, onNotificationConsumed = onNotificationConsumed,
+                    screen = screen, portfolioState = visiblePortfolio, portfolioRefreshing = livePortfolio.refreshing,
+                    onPortfolioRefresh = livePortfolio.refresh, portfolioError = livePortfolio.error,
+                    portfolioLastSuccessMillis = livePortfolio.lastSuccessMillis, portfolioCurrency = portfolioCurrency,
+                    tApiConfigured = tApiConfigured, screenshotsBlocked = screenshotsBlocked, onScreenChange = navigate,
+                    onCurrencyChange = { portfolioCurrencyName = it.name },
+                    onTApiConfiguredChange = { configured ->
+                        tApiConfigured = configured
+                        brokerConnection = if (configured) BrokerConnectionState.Connected else BrokerConnectionState.Missing
+                    },
+                    onScreenshotsBlockedChange = { blocked -> screenshotsBlocked = blocked; onScreenshotsBlockedChange(blocked) },
+                    onLogout = {
+                        val userId = signedIn?.user?.telegramId
+                        val appContext = context.applicationContext
+                        SessionTransitions.submit {
+                            if (userId != null) workspaceStore.deactivateUser(userId)
+                            sessionStore.clear()
+                            if (userId != null) {
+                                OfflinePortfolioStore(appContext).clearSnapshots(userId)
+                                workspaceStore.remove(userId, "navigation")
+                                workspaceStore.remove(userId, "navigation_detail")
+                            }
+                        }
+                        ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
+                        backStack = arrayListOf(); recentNames = arrayListOf(); knownUser = null
+                        screenName = AppScreen.Home.name; tApiConfigured = false; authState = AuthUiState.SignedOut()
+                    },
+                )
+            }
         }
     }
 }
 
 @Composable
 private fun AnalystAppContent(
+    notificationId: String?,
+    onNotificationConsumed: () -> Unit,
     authState: AuthUiState,
     authError: String?,
     onStartTelegramLogin: () -> Unit,
     screen: AppScreen,
     portfolioState: PortfolioUiState,
     portfolioRefreshing: Boolean,
+    onPortfolioRefresh: () -> Unit,
     portfolioError: String?,
     portfolioLastSuccessMillis: Long?,
     portfolioCurrency: PortfolioCurrency,
@@ -419,6 +451,7 @@ private fun AnalystAppContent(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
+    val userState = rememberUserWorkspaceState()
     when (val current = authState) {
         is AuthUiState.Loading -> {
             TelegramLoginScreen(
@@ -438,11 +471,13 @@ private fun AnalystAppContent(
         }
 
         is AuthUiState.SignedIn -> {
-            SignedInAppContent(
+            userState.Content(current.user.telegramId) { SignedInAppContent(
+                notificationId = notificationId, onNotificationConsumed = onNotificationConsumed,
                 session = current,
                 screen = screen,
                 portfolioState = portfolioState,
                 portfolioRefreshing = portfolioRefreshing,
+                onPortfolioRefresh = onPortfolioRefresh,
                 portfolioError = portfolioError,
                 portfolioLastSuccessMillis = portfolioLastSuccessMillis,
                 portfolioCurrency = portfolioCurrency,
@@ -452,18 +487,21 @@ private fun AnalystAppContent(
                 onCurrencyChange = onCurrencyChange,
                 onTApiConfiguredChange = onTApiConfiguredChange,
                 onScreenshotsBlockedChange = onScreenshotsBlockedChange,
-                onLogout = onLogout,
-            )
+                onLogout = { userState.forget(); onLogout() },
+            ) }
         }
     }
 }
 
 @Composable
 private fun SignedInAppContent(
+    notificationId: String?,
+    onNotificationConsumed: () -> Unit,
     session: AuthUiState.SignedIn,
     screen: AppScreen,
     portfolioState: PortfolioUiState,
     portfolioRefreshing: Boolean,
+    onPortfolioRefresh: () -> Unit,
     portfolioError: String?,
     portfolioLastSuccessMillis: Long?,
     portfolioCurrency: PortfolioCurrency,
@@ -475,172 +513,173 @@ private fun SignedInAppContent(
     onScreenshotsBlockedChange: (Boolean) -> Unit,
     onLogout: () -> Unit,
 ) {
-    var currencyPicker by remember { mutableStateOf(false) }
-    var portfolioDestination by remember { mutableStateOf<PortfolioDestination?>(null) }
-    val navigateToTab: (AnalystTab) -> Unit = { tab ->
-        onScreenChange(tab.toAppScreen())
+    var portfolioDestination by rememberSaveable(session.user.telegramId, stateSaver = PortfolioDestinationSaver) {
+        mutableStateOf<PortfolioDestination?>(null)
     }
+    var historyDate by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyStart by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyEnd by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var historyResolution by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var libraryId by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var reportId by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var chatJson by rememberSaveable(session.user.telegramId) { mutableStateOf(ChatContext().json().toString()) }
+    var chatTitle by rememberSaveable(session.user.telegramId) { mutableStateOf("Мой портфель") }
+    val json = remember(chatJson) { JSONObject(chatJson) }
+    val chatContext = ChatContext(json.text("mode", "portfolio"), json.optString("instrument_uid").takeIf { it.isNotBlank() && it != "null" }, chatTitle,
+        json.optString("account_id").takeIf { it.isNotBlank() && it != "null" }, json.optString("start").takeIf { it.isNotBlank() && it != "null" }, json.optString("end").takeIf { it.isNotBlank() && it != "null" },
+        json.optString("event_id").takeIf { it.isNotBlank() && it != "null" })
+    val reauthenticate = LocalReauthenticate.current
+    val workspace = rememberWorkspaceRuntime(WorkspaceSession(session.accessToken, session.user.telegramId), tApiConfigured, portfolioCurrency, reauthenticate)
+    val liveSync = rememberWorkspaceLiveSync(
+        WorkspaceSession(session.accessToken, session.user.telegramId),
+        onChanged = workspace.invalidate,
+        onBrokerChanged = { configured -> onTApiConfiguredChange(configured); onPortfolioRefresh() },
+        onExpired = reauthenticate,
+    )
+    val refresh: () -> Unit = { onPortfolioRefresh(); workspace.refresh() }
+    val selectSection = LocalAnalystSectionNavigator.current
+    val navigateToTab: (AnalystTab) -> Unit = { selectSection(it.toAppScreen().name) }
     val goBack = LocalWorkspaceBack.current
     val openPortfolio = { onScreenChange(AppScreen.Portfolio) }
     val openProfile = { onScreenChange(AppScreen.Profile) }
-
-    val navigateWorkspace: (WorkspaceRoute) -> Unit = { route -> onScreenChange(AppScreen.valueOf(route.name)) }
+    val navigateWorkspace: (WorkspaceRoute) -> Unit = { route ->
+        if (route == WorkspaceRoute.Reports) reportId = null
+        onScreenChange(AppScreen.valueOf(route.name))
+    }
     val holder = rememberSaveableStateHolder()
     val motion = LocalSpectrumMotionPreference.current.enabled && android.animation.ValueAnimator.areAnimatorsEnabled()
+    val appContext = LocalContext.current
+    val storage = remember(appContext) { EncryptedWorkspaceStore(appContext) }
+    var lastTargetJson by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    var restored by rememberSaveable(session.user.telegramId) { mutableStateOf(false) }
+    LaunchedEffect(session.user.telegramId) {
+        if (restored) return@LaunchedEffect
+        val saved = withContext(Dispatchers.IO) { storage.readJson(session.user.telegramId, "navigation_detail") }
+        if (saved != null) {
+            saved.optJSONObject("portfolio")?.let { target ->
+                portfolioDestination = PortfolioDestination(target.optInt("section", 1), target.optString("account_id").takeIf { it.isNotBlank() }, target.optString("query", ""),
+                    sector = target.optionalText("sector"), kind = target.optionalText("kind"),
+                    operationId = target.text("operation_id", "").takeIf(String::isNotBlank),
+                    operationDate = target.text("operation_date", "").takeIf(String::isNotBlank))
+                historyDate = target.optString("date").takeIf { it.isNotBlank() && it != "null" }
+                historyStart = target.text("start", "").takeIf(String::isNotBlank)
+                historyEnd = target.text("end", "").takeIf(String::isNotBlank)
+                historyResolution = target.text("resolution", "").takeIf(String::isNotBlank)
+                lastTargetJson = target.toString()
+            }
+            saved.optJSONObject("chat")?.let { chatJson = it.toString() }
+            chatTitle = saved.text("chat_title", "Мой портфель")
+        }
+        restored = true
+    }
+    LaunchedEffect(lastTargetJson, chatJson, chatTitle, restored) {
+        if (restored) withContext(Dispatchers.IO) { storage.saveJson(session.user.telegramId, "navigation_detail", JSONObject()
+            .put("portfolio", lastTargetJson?.let(::JSONObject) ?: JSONObject.NULL).put("chat", JSONObject(chatJson)).put("chat_title", chatTitle)) }
+    }
+    val toPortfolio: (PortfolioDestination) -> Unit = { target ->
+        portfolioDestination = target
+        lastTargetJson = JSONObject().put("section", target.section).put("account_id", target.accountId ?: "").put("query", target.query).put("date", historyDate ?: "")
+            .put("sector", target.sector ?: JSONObject.NULL).put("kind", target.kind ?: JSONObject.NULL)
+            .put("start", historyStart ?: "").put("end", historyEnd ?: "").put("resolution", historyResolution ?: "")
+            .put("operation_id", target.operationId ?: "").put("operation_date", target.operationDate ?: "").toString()
+        openPortfolio()
+    }
+    val evidenceNavigator: (EvidenceTarget) -> Unit = { target ->
+        when (target.section) {
+            "capital" -> onScreenChange(AppScreen.Home)
+            "risk" -> onScreenChange(AppScreen.Risk)
+            "research" -> { libraryId = target.id; onScreenChange(AppScreen.Library) }
+            "history" -> {
+                historyDate = target.date; historyStart = target.start; historyEnd = target.end; historyResolution = target.resolution
+                toPortfolio(PortfolioDestination(section = 3, accountId = target.accountId))
+            }
+            "operation", "operations" -> toPortfolio(PortfolioDestination(section = 1, accountId = target.accountId,
+                operationId = target.id.takeIf(String::isNotBlank), operationDate = target.date))
+            else -> toPortfolio(PortfolioDestination(section = 1, accountId = target.accountId, query = target.id))
+        }
+    }
     CompositionLocalProvider(LocalAnalystTabNavigator provides navigateToTab,
-        LocalWorkspaceNavigator provides navigateWorkspace,
-        LocalWorkspaceSession provides WorkspaceSession(session.accessToken, session.user.telegramId),
-        LocalCurrencyChoice provides onCurrencyChange,
-        LocalPortfolioDestination provides { target -> portfolioDestination = target; openPortfolio() }) {
+        LocalWorkspaceNavigator provides navigateWorkspace, LocalWorkspaceSession provides WorkspaceSession(session.accessToken, session.user.telegramId),
+        LocalCurrencyChoice provides onCurrencyChange, LocalPortfolioDestination provides toPortfolio,
+        LocalPortfolioRefresh provides refresh, LocalWorkspaceRefresh provides workspace.refresh,
+        LocalWorkspaceInvalidate provides workspace.invalidate,
+        LocalWorkspaceRefreshKey provides (workspace.revision + liveSync.revision), LocalWorkspaceSnapshot provides workspace.data,
+        LocalWorkspaceLiveSync provides liveSync,
+        LocalChatContext provides chatContext, LocalAskAnalyst provides { target ->
+            chatJson = target.json().toString(); chatTitle = target.title; onScreenChange(AppScreen.Assistant)
+        }, LocalEvidenceNavigator provides evidenceNavigator,
+        LocalOpenAnalysisReport provides { id -> reportId = id; onScreenChange(AppScreen.Reports) }) {
+        SessionExpiryObserver(session.accessToken, reauthenticate)
+        NotificationDeliveryRuntime()
         BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        CompositionLocalProvider(LocalWideNavigation provides wide) {
-        Row(Modifier.fillMaxSize()) {
-        if (wide) AnalystSideRail(when (screen) {
-            AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market -> AnalystTab.Portfolio
-            AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
-            else -> AnalystTab.Profile
-        }, navigateToTab)
-        Box(Modifier.weight(1f).fillMaxHeight()) {
-        AnimatedContent(screen, transitionSpec = {
-            workspaceTransition(initialState, targetState, motion)
-        }, label = "workspace-navigation") { destination ->
-        holder.SaveableStateProvider(destination.name) {
-        when (destination) {
-            AppScreen.Home -> {
-                HomeScreen(
-                    user = session.user,
-                    state = portfolioState,
-                    refreshing = portfolioRefreshing,
-                    refreshError = portfolioError,
-                    lastUpdatedMillis = portfolioLastSuccessMillis,
-                    selectedCurrency = portfolioCurrency,
-                    onCurrencyClick = {
-                        currencyPicker = true
-                    },
-                    onOpenPortfolio = openPortfolio,
-                    onOpenRecommendations = {
-                        onScreenChange(AppScreen.Recommendations)
-                    },
-                    onOpenRisk = {
-                        onScreenChange(AppScreen.Risk)
-                    },
-                    onOpenMessages = {
-                        onScreenChange(AppScreen.Messages)
-                    },
-                    onOpenProfile = openProfile,
-                    onConnect = { onScreenChange(AppScreen.TApi) },
-                    onOpenPayments = { portfolioDestination = PortfolioDestination(section = 4); openPortfolio() },
-                )
-            }
-
-            AppScreen.Portfolio -> {
-                PortfolioScreen(
-                    state = portfolioState,
-                    accessToken = session.accessToken,
-                    refreshing = portfolioRefreshing,
-                    refreshError = portfolioError,
-                    lastUpdatedMillis = portfolioLastSuccessMillis,
-                    selectedCurrency = portfolioCurrency,
-                    onProfileClick = openProfile,
-                    onConnect = { onScreenChange(AppScreen.TApi) },
-                    destination = portfolioDestination,
-                    onDestinationConsumed = { portfolioDestination = null },
-                )
-            }
-
-            AppScreen.Recommendations -> {
-                IdeasScreen(
-                    accessToken = session.accessToken,
-                    onPortfolioClick = openPortfolio,
-                    onProfileClick = openProfile,
-                    onOpenProfileSettings = {
-                        onScreenChange(AppScreen.Strategies)
-                    },
-                )
-            }
-
-            AppScreen.Risk -> {
-                PulseScreen(
-                    accessToken = session.accessToken,
-                    onPortfolioClick = openPortfolio,
-                    onProfileClick = openProfile,
-                )
-            }
-
-            AppScreen.Messages -> {
-                InsightFeedScreen(
-                    accessToken = session.accessToken,
-                    onPortfolioClick = openPortfolio,
-                    onProfileClick = openProfile,
-                )
-            }
-
-            AppScreen.Profile -> {
-                ProfileScreen(
-                    user = session.user,
-                    tApiConfigured = tApiConfigured,
-                    screenshotsBlocked = screenshotsBlocked,
-                    onScreenshotsBlockedChange = onScreenshotsBlockedChange,
-                    onPortfolioClick = openPortfolio,
-                    onOpenTApi = {
-                        onScreenChange(AppScreen.TApi)
-                    },
-                    onOpenEducation = {
-                        onScreenChange(AppScreen.Education)
-                    },
-                    onLogout = onLogout,
-                )
-            }
-
-            AppScreen.Education -> {
-                EducationScreen(
-                    onBack = goBack,
-                    onPortfolioClick = openPortfolio,
-                    onProfileClick = openProfile,
-                )
-            }
-
-            AppScreen.AnalysisSettings -> {
-                AnalysisProfileSettingsScreen(
-                    accessToken = session.accessToken,
-                    onBack = goBack,
-                    onPortfolioClick = openPortfolio,
-                    onProfileClick = openProfile,
-                )
-            }
-
-            AppScreen.NotificationSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack,
-                openPortfolio, openProfile, initialSection = 1)
-            AppScreen.Appearance -> AppearanceScreen(goBack)
-            AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio,
-                { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.Strategies) })
-            AppScreen.Strategies -> StrategyWorkspaceScreen(session.user.telegramId, goBack,
-                { onScreenChange(AppScreen.AnalysisSettings) })
-            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
-
-            AppScreen.TApi -> {
-                TApiScreen(
-                    accessToken = session.accessToken,
-                    tApiConfigured = tApiConfigured,
-                    onBack = goBack,
-                    onConnectionChanged = onTApiConfiguredChange,
-                    onOpenPortfolio = openPortfolio,
-                )
+            val wide = maxWidth >= 840.dp
+            AnalystNavigationPanels(
+                selected = when (screen) {
+                    AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market, AppScreen.Discovery -> AnalystTab.Portfolio
+                    AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
+                    else -> AnalystTab.Profile
+                },
+                selectedWorkspace = WorkspaceRoute.entries.firstOrNull { it.name == screen.name },
+                wide = wide, navigateTab = navigateToTab, navigateWorkspace = { route ->
+                    if (route == WorkspaceRoute.Reports) reportId = null
+                    selectSection(route.name)
+                },
+            ) {
+                AnimatedContent(screen, transitionSpec = { workspaceTransition(initialState, targetState, motion) }, label = "workspace-navigation") { destination ->
+                    holder.SaveableStateProvider(destination.name) {
+                        when (destination) {
+                            AppScreen.Home -> HomeScreen(user = session.user, state = portfolioState, refreshing = portfolioRefreshing || workspace.busy,
+                                refreshError = portfolioError ?: workspace.error, lastUpdatedMillis = portfolioLastSuccessMillis, selectedCurrency = portfolioCurrency,
+                                onCurrencyClick = { onCurrencyChange(portfolioCurrency.next()) }, onOpenPortfolio = openPortfolio,
+                                onOpenRecommendations = { onScreenChange(AppScreen.Recommendations) }, onOpenRisk = { onScreenChange(AppScreen.Risk) },
+                                onOpenMessages = { onScreenChange(AppScreen.Messages) }, onOpenProfile = openProfile,
+                                onConnect = { onScreenChange(AppScreen.TApi) }, onOpenPayments = { toPortfolio(PortfolioDestination(section = 4)) })
+                            AppScreen.Portfolio -> PortfolioScreen(state = portfolioState, accessToken = session.accessToken,
+                                refreshing = portfolioRefreshing, refreshError = portfolioError, lastUpdatedMillis = portfolioLastSuccessMillis,
+                                selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
+                                destination = portfolioDestination, initialHistoryDate = historyDate, initialHistoryStart = historyStart,
+                                initialHistoryEnd = historyEnd, initialHistoryResolution = historyResolution, onDestinationConsumed = { portfolioDestination = null })
+                            AppScreen.Recommendations -> PrimaryWorkspaceShell(AnalystTab.Actions, openPortfolio, openProfile) { AutonomousDecisionsScreen(goBack) }
+                            AppScreen.Risk -> PrimaryWorkspaceShell(AnalystTab.Risk, openPortfolio, openProfile) { RiskWorkspaceScreen(goBack) }
+                            AppScreen.Messages -> NotificationEventsScreen(goBack)
+                            AppScreen.Reports -> InsightFeedScreen(session.accessToken, openPortfolio, openProfile, initialCardId = reportId)
+                            AppScreen.Profile -> ProfileScreen(user = session.user, tApiConfigured = tApiConfigured, screenshotsBlocked = screenshotsBlocked,
+                                onScreenshotsBlockedChange = onScreenshotsBlockedChange, onPortfolioClick = openPortfolio,
+                                onOpenTApi = { onScreenChange(AppScreen.TApi) }, onOpenEducation = { onScreenChange(AppScreen.Education) }, onLogout = onLogout)
+                            AppScreen.Education -> EducationScreen(goBack, openPortfolio, openProfile)
+                            AppScreen.AnalysisSettings -> AnalysisProfileSettingsScreen(session.accessToken, goBack, openPortfolio, openProfile)
+                            AppScreen.NotificationSettings -> NotificationSettingsScreen(goBack)
+                            AppScreen.Appearance -> AppearanceScreen(goBack)
+                            AppScreen.Assistant -> AssistantWorkspaceScreen(goBack, openPortfolio, { onScreenChange(AppScreen.Recommendations) }, { onScreenChange(AppScreen.Strategies) })
+                            AppScreen.Strategies -> LiveStrategyScreen(session.user.telegramId, goBack)
+                            AppScreen.Market -> MarketWorkspaceScreen(portfolioState, goBack, openPortfolio)
+                            AppScreen.Discovery -> DiscoveryWorkspaceScreen(portfolioState, goBack)
+                            AppScreen.Library -> ResearchLibraryScreen(portfolioState, goBack, libraryId)
+                            AppScreen.Devices -> DevicesWorkspaceScreen(goBack)
+                            AppScreen.ActivityHistory -> RecentWorkspaceScreen(goBack)
+                            AppScreen.Goals -> GoalsWorkspaceScreen(goBack)
+                            AppScreen.NewFeatures -> NewFeaturesWorkspaceScreen(goBack)
+                            AppScreen.AnalysisTimeline -> AnalysisTimelineScreen(goBack)
+                            AppScreen.TApi -> TApiScreen(accessToken = session.accessToken, tApiConfigured = tApiConfigured,
+                                onBack = goBack, onConnectionChanged = onTApiConfiguredChange, onOpenPortfolio = openPortfolio)
+                        }
+                    }
+                }
             }
         }
-        }
-        }
-        }
-        }
-        }
-        }
-        if (currencyPicker) AlertDialog(onDismissRequest = { currencyPicker = false }, title = { Text("Валюта оценки") },
-            text = { Column { PortfolioCurrency.entries.forEach { choice ->
-                TextButton(onClick = { onCurrencyChange(choice); currencyPicker = false }) { Text(choice.name) }
-            } } }, confirmButton = { TextButton(onClick = { currencyPicker = false }) { Text("Закрыть") } })
+        notificationId?.let { id -> NotificationEventOverlay(id, onNotificationConsumed) }
     }
 }
+
+@Composable
+private fun PrimaryWorkspaceShell(selected: AnalystTab, portfolio: () -> Unit, profile: () -> Unit, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f)) { content() }
+        ru.omnicio.app.ui.AnalystBottomBar(selected, portfolio, profile)
+    }
+}
+
+private fun screenTitle(name: String): String = analystDestination(name)?.title ?: "Analyst AI"
 
 private fun AnalystTab.toAppScreen(): AppScreen = when (this) {
     AnalystTab.Actions -> AppScreen.Recommendations
@@ -701,4 +740,58 @@ private fun workspaceTransition(initialState: AppScreen, targetState: AppScreen,
                 (slideInHorizontally(tween(duration)) { it / 8 * direction } + fadeIn(tween(duration))) togetherWith
                     (slideOutHorizontally(tween(duration)) { -it / 8 * direction } + fadeOut(tween(duration)))
             }
+}
+
+private suspend fun exchangeTelegramSession(
+    backend: AnalystBackendClient,
+    sessionStore: AuthSessionStore,
+    context: android.content.Context,
+    code: String,
+): AuthUiState = SessionTransitions.run {
+    when (val result = backend.exchangeTelegramCode(code)) {
+        is BackendResult.Success -> {
+            val saved =
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        sessionStore.save(result.value)
+                        EncryptedWorkspaceStore(context).activateUser(result.value.user.telegramId)
+                    }
+                        .isSuccess
+                }
+            if (saved) AuthUiState.SignedIn(result.value.accessToken, result.value.user)
+            else
+                AuthUiState.SignedOut(
+                    errorMessage = "Не удалось сохранить вход на устройстве. Попробуйте ещё раз."
+                )
+        }
+        is BackendResult.Failure -> AuthUiState.SignedOut(errorMessage = result.message)
+    }
+}
+
+private suspend fun restoreAnalystSession(
+    backend: AnalystBackendClient,
+    sessionStore: AuthSessionStore,
+    context: android.content.Context,
+): AuthUiState = SessionTransitions.run {
+    val storedToken =
+        withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
+            ?: return@run AuthUiState.SignedOut()
+    when (val result = backend.fetchMe(storedToken)) {
+        is BackendResult.Success -> {
+            withContext(Dispatchers.IO) {
+                EncryptedWorkspaceStore(context).activateUser(result.value.telegramId)
+            }
+            AuthUiState.SignedIn(storedToken, result.value)
+        }
+        is BackendResult.Failure -> {
+            if (result.retryable) {
+                val cachedUser = withContext(Dispatchers.IO) { sessionStore.loadCachedUser() }
+                if (cachedUser != null) AuthUiState.SignedIn(storedToken, cachedUser)
+                else AuthUiState.SignedOut(errorMessage = result.message)
+            } else {
+                withContext(Dispatchers.IO) { sessionStore.clear() }
+                AuthUiState.SignedOut()
+            }
+        }
+    }
 }

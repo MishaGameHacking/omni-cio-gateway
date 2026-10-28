@@ -1,0 +1,898 @@
+{
+  "application_imported": false,
+  "checked_at_utc": "2026-10-27T06:16:12.503787+00:00",
+  "cookies_used": false,
+  "credentials_sent": false,
+  "form_page": {
+    "body_complete": true,
+    "body_sha256": "3f861b7fcde83fd57e85026403bd1e434a850051878fa646e59e423481e31c15",
+    "bytes_observed": 152727,
+    "challenge_observed": false,
+    "headers": {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Date": "Tue, 27 Oct 2026 06:16:13 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 524288,
+    "state": "public_response_observed",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/"
+  },
+  "javascript_executed": false,
+  "machine_response_schema_verified": false,
+  "new_endpoints_called": false,
+  "previously_observed_script_urls_only": true,
+  "public_form_contract": {
+    "fields": [
+      {
+        "maxlength": "",
+        "name": "formSearh",
+        "type": "radio"
+      },
+      {
+        "maxlength": "",
+        "name": "formSearh",
+        "type": "radio"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingName",
+        "type": "text"
+      },
+      {
+        "maxlength": "",
+        "name": "inn",
+        "type": "text"
+      },
+      {
+        "maxlength": "",
+        "name": "isin",
+        "type": "text"
+      },
+      {
+        "maxlength": "",
+        "name": "koNumber",
+        "type": "text"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "country",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "typeGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "kraName",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "kraName",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "kraName",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "kraName",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingScale",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingGroup",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      },
+      {
+        "maxlength": "",
+        "name": "ratingAction",
+        "type": "checkbox"
+      }
+    ],
+    "forms": [
+      {
+        "action": "https://ratings.cbr.ru/",
+        "method": "get"
+      }
+    ],
+    "hidden_values_returned": false,
+    "radio_checkbox_choice_count": 160,
+    "select_names": []
+  },
+  "redirects_followed": false,
+  "schema": 1,
+  "scripts": [
+    {
+      "body_complete": true,
+      "body_sha256": "bbec9549847fa59c90c71359938f77aefbe9d3d0f865c01e373cea2bf29e05de",
+      "bytes_observed": 77954,
+      "challenge_observed": false,
+      "headers": {
+        "Cache-Control": "max-age=2592000",
+        "Content-Length": "77954",
+        "Content-Type": "application/javascript",
+        "Date": "Wed, 21 Oct 2026 06:06:07 GMT",
+        "ETag": "W/\"69f20b7b-13082\"",
+        "Last-Modified": "Wed, 29 Apr 2026 13:45:31 GMT"
+      },
+      "http_status": 200,
+      "maximum_bytes": 131072,
+      "public_code": {
+        "characters": 75047,
+        "complete_source_returned": false,
+        "javascript_executed": false,
+        "relevant_match_count": 126,
+        "snippet_count": 28
+      },
+      "state": "public_response_observed",
+      "timeout_seconds": 10,
+      "url": "https://ratings.cbr.ru/bitrix/cache/js/s1/prr/template_d5e856dff306e0713eef5b0a3c8fec4d/template_d5e856dff306e0713eef5b0a3c8fec4d_v1.js?177747033177954"
+    },
+    {
+      "body_complete": true,
+      "body_sha256": "6b38fab1f7d98af7e3207045943c4ff8e7d13e84dc5783b4b6f5586ff5268f74",
+      "bytes_observed": 51365,
+      "challenge_observed": false,
+      "headers": {
+        "Cache-Control": "max-age=2592000",
+        "Content-Length": "51365",
+        "Content-Type": "application/javascript",
+        "Date": "Sun, 25 Oct 2026 10:06:07 GMT",
+        "ETag": "W/\"67cb15b1-c8a5\"",
+        "Last-Modified": "Fri, 07 Mar 2025 15:50:09 GMT"
+      },
+      "http_status": 200,
+      "maximum_bytes": 131072,
+      "public_code": {
+        "characters": 51156,
+        "complete_source_returned": false,
+        "javascript_executed": false,
+        "relevant_match_count": 6,
+        "snippet_count": 6
+      },
+      "state": "public_response_observed",
+      "timeout_seconds": 10,
+      "url": "https://ratings.cbr.ru/bitrix/cache/js/s1/prr/page_663478a8de3c5fae83b3205277e818fe/page_663478a8de3c5fae83b3205277e818fe_v1.js?174136260951365"
+    }
+  ],
+  "server_id": 9417611,
+  "workarounds_attempted": false,
+  "internal_static_source_omitted_from_public_copy": true
+}

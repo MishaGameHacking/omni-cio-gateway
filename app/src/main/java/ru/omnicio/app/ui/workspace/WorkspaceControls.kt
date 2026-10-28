@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.spatial.*
 
 @Composable
 fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick: () -> Unit) {
@@ -23,37 +24,38 @@ fun WorkspaceLink(title: String, detail: String, symbol: SpectrumSymbol, onClick
                 if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text("›", style = MaterialTheme.typography.titleLarge, color = LocalSpectrumPalette.current.cyan)
+            SpatialIcon("arrow", Modifier.size(22.dp), motionAllowed = false)
         }
     }
 }
 
 @Composable
-fun WorkspaceToggle(title: String, detail: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
-        .toggleable(checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
+fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange).padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked, onCheckedChange = null)
+        SpatialToggleVisual(checked, Modifier.size(width = 52.dp, height = 32.dp), enabled = enabled)
     }
 }
 
 @Composable
-fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Column(Modifier.selectableGroup()) {
             choices.forEachIndexed { index, choice ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .selectable(selected == index, role = Role.RadioButton, onClick = { onSelect(index) })
+                    .selectable(selected == index, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
                     .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    RadioButton(selected == index, onClick = null)
-                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                    SpatialChoiceVisual(selected == index, Modifier.size(24.dp), enabled = enabled)
+                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge,
+                        color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk)
                 }
             }
         }

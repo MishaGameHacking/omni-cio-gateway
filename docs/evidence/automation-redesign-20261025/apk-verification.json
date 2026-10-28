@@ -1,0 +1,629 @@
+{
+  "abis": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86",
+    "x86_64"
+  ],
+  "dex_versions": [
+    "039"
+  ],
+  "native_alignment": {
+    "artifact": "app-preview.apk",
+    "sha256": "d57ea8c55642aaf1b18703cf0170fdd78b5d73912d57b3415d34c563fcab9649",
+    "bytes": 29754870,
+    "page_bytes": 16384,
+    "elf_16kb": true,
+    "relro_16kb": true,
+    "zip_16kb": true,
+    "runtime_16kb_test": "not_performed_by_static_checker",
+    "libraries": [
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 7232,
+            "memory_size": 7232,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 7232,
+            "virtual_address": 23616,
+            "file_size": 912,
+            "memory_size": 912,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 8144,
+            "virtual_address": 40912,
+            "file_size": 0,
+            "memory_size": 16,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 7232,
+            "virtual_address": 23616,
+            "file_size": 912,
+            "memory_size": 960,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/arm64-v8a/libandroidx.graphics.path.so",
+        "abi": "arm64-v8a",
+        "bytes": 10096,
+        "stored": true,
+        "zip_data_offset": 3407872,
+        "zip_16kb": true
+      },
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3012848,
+            "memory_size": 3012848,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3012848,
+            "virtual_address": 3029232,
+            "file_size": 43192,
+            "memory_size": 46864,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3056040,
+            "virtual_address": 3088808,
+            "file_size": 520,
+            "memory_size": 11544,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3012848,
+            "virtual_address": 3029232,
+            "file_size": 43192,
+            "memory_size": 46864,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/arm64-v8a/libfilament-jni.so",
+        "abi": "arm64-v8a",
+        "bytes": 3059048,
+        "stored": true,
+        "zip_data_offset": 3424256,
+        "zip_16kb": true
+      },
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3067664,
+            "memory_size": 3067664,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3067664,
+            "virtual_address": 3084048,
+            "file_size": 25760,
+            "memory_size": 28912,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3093424,
+            "virtual_address": 3126192,
+            "file_size": 272,
+            "memory_size": 637064,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3067664,
+            "virtual_address": 3084048,
+            "file_size": 25760,
+            "memory_size": 28912,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": true,
+            "layout": "page_boundary"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/arm64-v8a/libgltfio-jni.so",
+        "abi": "arm64-v8a",
+        "bytes": 3096104,
+        "stored": true,
+        "zip_data_offset": 6488064,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 5312,
+            "memory_size": 5312,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 5312,
+            "virtual_address": 21696,
+            "file_size": 460,
+            "memory_size": 460,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 5772,
+            "virtual_address": 38540,
+            "file_size": 0,
+            "memory_size": 8,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 5312,
+            "virtual_address": 21696,
+            "file_size": 460,
+            "memory_size": 2880,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/armeabi-v7a/libandroidx.graphics.path.so",
+        "abi": "armeabi-v7a",
+        "bytes": 7252,
+        "stored": true,
+        "zip_data_offset": 9584640,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 2280864,
+            "memory_size": 2280864,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 2280864,
+            "virtual_address": 2297248,
+            "file_size": 22112,
+            "memory_size": 25184,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 2302976,
+            "virtual_address": 2335744,
+            "file_size": 232,
+            "memory_size": 4797,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 2280864,
+            "virtual_address": 2297248,
+            "file_size": 22112,
+            "memory_size": 25184,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/armeabi-v7a/libfilament-jni.so",
+        "abi": "armeabi-v7a",
+        "bytes": 2305100,
+        "stored": true,
+        "zip_data_offset": 9601024,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 2431904,
+            "memory_size": 2431904,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 2431904,
+            "virtual_address": 2448288,
+            "file_size": 13512,
+            "memory_size": 17504,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 2445416,
+            "virtual_address": 2478184,
+            "file_size": 116,
+            "memory_size": 418284,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 2431904,
+            "virtual_address": 2448288,
+            "file_size": 13512,
+            "memory_size": 17504,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/armeabi-v7a/libgltfio-jni.so",
+        "abi": "armeabi-v7a",
+        "bytes": 2447316,
+        "stored": true,
+        "zip_data_offset": 11911168,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 7456,
+            "memory_size": 7456,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 7456,
+            "virtual_address": 23840,
+            "file_size": 456,
+            "memory_size": 456,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 7912,
+            "virtual_address": 40680,
+            "file_size": 0,
+            "memory_size": 8,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 7456,
+            "virtual_address": 23840,
+            "file_size": 456,
+            "memory_size": 736,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86/libandroidx.graphics.path.so",
+        "abi": "x86",
+        "bytes": 9284,
+        "stored": true,
+        "zip_data_offset": 14368768,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3421008,
+            "memory_size": 3421008,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3421008,
+            "virtual_address": 3437392,
+            "file_size": 22124,
+            "memory_size": 23728,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3443132,
+            "virtual_address": 3475900,
+            "file_size": 260,
+            "memory_size": 6000,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3421008,
+            "virtual_address": 3437392,
+            "file_size": 22124,
+            "memory_size": 23728,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86/libfilament-jni.so",
+        "abi": "x86",
+        "bytes": 3445176,
+        "stored": true,
+        "zip_data_offset": 14385152,
+        "zip_16kb": true
+      },
+      {
+        "bits": 32,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3292192,
+            "memory_size": 3292192,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3292192,
+            "virtual_address": 3308576,
+            "file_size": 13624,
+            "memory_size": 17376,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3305816,
+            "virtual_address": 3338584,
+            "file_size": 124,
+            "memory_size": 419532,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3292192,
+            "virtual_address": 3308576,
+            "file_size": 13624,
+            "memory_size": 17376,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": true,
+            "layout": "page_boundary"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86/libgltfio-jni.so",
+        "abi": "x86",
+        "bytes": 3307668,
+        "stored": true,
+        "zip_data_offset": 17842176,
+        "zip_16kb": true
+      },
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 7872,
+            "memory_size": 7872,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 7872,
+            "virtual_address": 24256,
+            "file_size": 936,
+            "memory_size": 936,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 8808,
+            "virtual_address": 41576,
+            "file_size": 0,
+            "memory_size": 16,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 7872,
+            "virtual_address": 24256,
+            "file_size": 936,
+            "memory_size": 4416,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86_64/libandroidx.graphics.path.so",
+        "abi": "x86_64",
+        "bytes": 10760,
+        "stored": true,
+        "zip_data_offset": 21151744,
+        "zip_16kb": true
+      },
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3295936,
+            "memory_size": 3295936,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3295936,
+            "virtual_address": 3312320,
+            "file_size": 41768,
+            "memory_size": 42304,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3337712,
+            "virtual_address": 3370480,
+            "file_size": 520,
+            "memory_size": 11536,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3295936,
+            "virtual_address": 3312320,
+            "file_size": 41768,
+            "memory_size": 42304,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86_64/libfilament-jni.so",
+        "abi": "x86_64",
+        "bytes": 3340720,
+        "stored": true,
+        "zip_data_offset": 21168128,
+        "zip_16kb": true
+      },
+      {
+        "bits": 64,
+        "load_segments": [
+          {
+            "offset": 0,
+            "virtual_address": 0,
+            "file_size": 3252288,
+            "memory_size": 3252288,
+            "alignment": 16384,
+            "flags": 5
+          },
+          {
+            "offset": 3252288,
+            "virtual_address": 3268672,
+            "file_size": 25648,
+            "memory_size": 28608,
+            "alignment": 16384,
+            "flags": 6
+          },
+          {
+            "offset": 3277936,
+            "virtual_address": 3310704,
+            "file_size": 264,
+            "memory_size": 637104,
+            "alignment": 16384,
+            "flags": 6
+          }
+        ],
+        "relro_segments": [
+          {
+            "offset": 3252288,
+            "virtual_address": 3268672,
+            "file_size": 25648,
+            "memory_size": 28608,
+            "alignment": 1,
+            "flags": 4,
+            "end_aligned_16kb": false,
+            "layout": "own_load_segment"
+          }
+        ],
+        "elf_16kb": true,
+        "relro_16kb": true,
+        "path": "lib/x86_64/libgltfio-jni.so",
+        "abi": "x86_64",
+        "bytes": 3280608,
+        "stored": true,
+        "zip_data_offset": 24510464,
+        "zip_16kb": true
+      }
+    ]
+  },
+  "package": "ru.omnicio.app.debug",
+  "version_code": 38,
+  "version_name": "0.13.0-preview",
+  "min_sdk": 37,
+  "target_sdk": 37,
+  "debuggable": false,
+  "test_only": false,
+  "phone_orientation": "portrait",
+  "portrait_activities": [
+    "ru.omnicio.app.BootstrapActivity",
+    "ru.omnicio.app.MainActivity"
+  ],
+  "sha256": "d57ea8c55642aaf1b18703cf0170fdd78b5d73912d57b3415d34c563fcab9649",
+  "bytes": 29754870,
+  "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+  "zipalign_16kb": true,
+  "signature_v2": true,
+  "device_install_test": "separate_required_check"
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodic bounded Analyst AI resource measurements
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=20s
+Persistent=true
+[Install]
+WantedBy=timers.target

@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 
 internal fun existingInstallBlocksNewAttempt(committed: Boolean, active: Boolean): Boolean = committed || active
 
-/** Only called after an explicit Update tap and APK identity/signature validation. */
+/** Shared explicit and automatic update path with APK identity/signature validation. */
 object UpdateInstaller {
     const val ACTION = "ru.omnicio.app.UPDATE_INSTALL_RESULT"
     const val PREFS = "analyst_update_install"
@@ -111,9 +111,11 @@ object UpdateInstaller {
             val nonce = UUID.randomUUID().toString()
             submitInstallSession(
                 open = {
-                    register(prefs, id, nonce)
-                    clearNotification(context)
-                    installer.openSession(id)
+                    synchronized(sessionGuard) {
+                        register(prefs, id, nonce)
+                        clearNotification(context)
+                        installer.openSession(id)
+                    }
                 },
                 stage = { session -> writeArchive(session, file, release) { ensureActive() } },
                 commit = { session ->

@@ -1,13 +1,16 @@
 package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -17,43 +20,89 @@ import ru.omnicio.app.ui.instruments.BrokerInstrumentActions
 import ru.omnicio.app.ui.research.PortfolioResearchPanel
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.*
+import ru.omnicio.app.ui.spatial.SpatialWindow
 
 /** Uses a current position resolved by account and id; no stale detail snapshot. */
 @Composable
-internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit, accountName: String? = null) {
+internal fun InstrumentDetailsScreen(position: PortfolioPosition, close: () -> Unit, accountName: String? = null,
+    embedded: Boolean = false, sharedKey: String = position.id, accountId: String? = null) {
     var section by rememberSaveable(position.id) { mutableIntStateOf(0) }
     val labels = instrumentDetailLabels(position.instrumentType, position.currentNkd != null)
-    val session = LocalWorkspaceSession.current
-    Dialog(onDismissRequest = close,
-        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    val askAnalyst = LocalAskAnalyst.current
+    val discuss = {
+        close()
+        askAnalyst(ChatContext(mode = "instrument", instrumentUid = position.id,
+            title = position.ticker ?: position.title, accountId = accountId))
+    }
+    val content: @Composable () -> Unit = {
         SpectrumBackground(Modifier.fillMaxSize()) {
-            Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
-                topBar = { WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close) },
-                bottomBar = { Surface(color = MaterialTheme.colorScheme.background) {
-                    Box(Modifier.navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp)) {
-                        BrokerInstrumentActions(position.instrumentType, position.ticker, position.isin, compact = true)
-                    }
-                } }) { insets ->
-                BoxWithConstraints(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
-                val wide = maxWidth >= 840.dp
+            BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                val compact = maxHeight < 240.dp * LocalDensity.current.fontScale
                 Row(Modifier.fillMaxSize()) {
-                    if (wide) Column(Modifier.width(300.dp).padding(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                        Text(position.title, style = MaterialTheme.typography.headlineSmall)
-                        Text(accountName ?: "Ваша позиция")
-                        Text(position.currentValue.moneyText(), style = MaterialTheme.typography.headlineMedium)
-                        Text("Сводка остаётся рядом с подробностями.", style = MaterialTheme.typography.bodyMedium)
+                    if (compact) Box(Modifier.width(56.dp).fillMaxHeight().padding(top = 4.dp),
+                        contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+                        SpectrumIconButton(SpectrumSymbol.Back, "Назад", close)
                     }
-                Column(Modifier.weight(1f).fillMaxHeight()) {
-                    SpectrumTabs(listOf("Позиция", "Исследование", "Паспорт"), section, { section = it }, Modifier.padding(horizontal = 20.dp))
-                    LazyColumn(Modifier.fillMaxWidth().weight(1f), contentPadding = PaddingValues(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                        instrumentSections(position, section, session.token)
+                    Scaffold(Modifier.weight(1f).fillMaxHeight(),
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                        topBar = {
+                            if (!compact) WorkspaceHeader(position.ticker ?: labels.type, accountName ?: "Ваша позиция", close)
+                        },
+                        bottomBar = {
+                            ru.omnicio.app.ui.spatial.SpatialSurface(
+                                kind = ru.omnicio.app.ui.spatial.SpatialSurfaceKind.Dock,
+                                color = MaterialTheme.colorScheme.background) {
+                                Box(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+                                    InstrumentContextActions(position, accountId) { section = 2 }
+                                }
+                            }
+                        }) { insets ->
+                        BoxWithConstraints(Modifier.fillMaxSize().padding(insets).consumeWindowInsets(insets)) {
+                            val wide = !compact && maxWidth >= 840.dp
+                            Row(Modifier.fillMaxSize()) {
+                                if (wide) Column(Modifier.width(300.dp).padding(20.dp),
+                                    verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+                                    Text(position.title, style = MaterialTheme.typography.headlineSmall)
+                                    Text(accountName ?: "Ваша позиция")
+                                    Text(position.currentValue.moneyText(), style = MaterialTheme.typography.headlineMedium)
+                                    Text("Сводка остаётся рядом с подробностями.", style = MaterialTheme.typography.bodyMedium)
+                                }
+                                Column(Modifier.weight(1f).fillMaxHeight()) {
+                                    if (!compact) Row(
+                                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        ru.omnicio.app.ui.spatial.SpatialObject(sharedKey) {
+                                            SpectrumAssetMark(position.instrumentType, position.company ?: position.title,
+                                                instrumentSharedModifier(sharedKey).size(64.dp))
+                                        }
+                                        Column(Modifier.weight(1f)) {
+                                            Text(position.title, style = MaterialTheme.typography.titleMedium)
+                                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    SpectrumTabs(listOf("Позиция", "Котировки", "Досье", "Исследование", "Паспорт"),
+                                        section, { section = it }, Modifier.padding(horizontal = 20.dp))
+                                    val contextHeader: (@Composable () -> Unit)? = if (compact) {
+                                        {
+                                            Text(accountName ?: "Ваша позиция", style = MaterialTheme.typography.bodyMedium)
+                                            Text(position.title, style = MaterialTheme.typography.titleMedium)
+                                            Text(position.ticker ?: labels.type, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    } else null
+                                    InstrumentDetailBody(position, accountId, section, { section = it },
+                                        close, discuss, contextHeader)
+                                }
+                            }
+                        }
                     }
-                }
-                }
                 }
             }
         }
+    }
+    if (embedded) content() else Dialog(onDismissRequest = close,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        SpatialWindow(Modifier.fillMaxSize()) { content() }
     }
 }
 
@@ -96,28 +145,115 @@ private fun InstrumentPassport(position: PortfolioPosition) {
                             }
 }
 
-
-private fun LazyListScope.instrumentSections(position: PortfolioPosition, section: Int, token: String) {
-    if (position.blocked) item(key = "restriction") { SpectrumCard(emphasized = true) {
-        Text("Есть ограничения у брокера", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-        Text("Возможность сделки уточните в Т‑Инвестициях.")
-        DataRow("Заблокировано", position.blockedQuantity.quantityText())
-    } }
-    if (section == 0) {
-        item(key = "position-summary") { InstrumentPositionSummary(position) }
-        item(key = "strategy-check") { WorkspaceEmpty("Соответствие стратегии",
-            "Проверка действующих правил для этой бумаги ещё не подключена. Заключение не получено.") }
-        if (position.instrumentType == "bond") item { DetailFold("Погашение и ближайший купон") {
-            Text("Условия выпуска не получены. Календарь опубликованных выплат доступен в вашем счёте.")
-        } }
-        if (position.instrumentType == "share") item { DetailFold("Корпоративные события") {
-            Text("Проверенные события показаны в исследовании, если источник их предоставил.")
-        } }
+@Composable
+private fun ColumnScope.InstrumentDetailBody(
+    position: PortfolioPosition,
+    accountId: String?,
+    section: Int,
+    onSection: (Int) -> Unit,
+    close: () -> Unit,
+    discuss: () -> Unit,
+    contextHeader: (@Composable () -> Unit)? = null,
+) {
+    val session = LocalWorkspaceSession.current
+    val navigate = LocalWorkspaceNavigator.current
+    val openPortfolio = LocalPortfolioDestination.current
+    LazyColumn(
+        Modifier.fillMaxWidth()
+            .weight(1f)
+            .semantics { testTagsAsResourceId = true }
+            .testTag("workspace-content"),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(workspaceGap),
+    ) {
+        contextHeader?.let { header ->
+            item(key = "instrument-context") {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) { header() }
+            }
+        }
+        if (position.blocked)
+            item(key = "restriction") {
+                SpectrumCard(emphasized = true) {
+                    Text(
+                        "Есть ограничения у брокера",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Text("Возможность сделки уточните в Т‑Инвестициях.")
+                    DataRow("Заблокировано", position.blockedQuantity.quantityText())
+                }
+            }
+        if (section == 0) {
+            item(key = "position-summary") { InstrumentPositionSummary(position) }
+            item(key = "watch-position") { WatchPositionAction(position) }
+            item(key = "position-actions") {
+                SpectrumCard {
+                    Text("Разобраться в позиции", style = MaterialTheme.typography.titleLarge)
+                    SpectrumPrimaryButton(
+                        "Обсудить с аналитиком",
+                        discuss,
+                        Modifier.fillMaxWidth(),
+                        enabled = session.token.isNotBlank(),
+                    )
+                    SpectrumSecondaryButton(
+                        "Проверить мои правила и стратегию",
+                        {
+                            close()
+                            navigate(WorkspaceRoute.Strategies)
+                        },
+                        Modifier.fillMaxWidth(),
+                    )
+                    SpectrumSecondaryButton(
+                        "События и отчётность этой бумаги",
+                        { onSection(2) },
+                        Modifier.fillMaxWidth(),
+                    )
+                    if (accountId != null)
+                        SpectrumSecondaryButton(
+                            "Календарь выплат счёта",
+                            {
+                                close()
+                                openPortfolio(
+                                    PortfolioDestination(section = 4, accountId = accountId)
+                                )
+                            },
+                            Modifier.fillMaxWidth(),
+                        )
+                }
+            }
+        }
+        if (section == 1)
+            item {
+                if (
+                    position.instrumentType in setOf("cash", "currency") &&
+                        position.id.startsWith("cash:")
+                )
+                    Text(
+                        "Денежный остаток не является торгуемым инструментом. История его стоимости входит в динамику счёта."
+                    )
+                else InstrumentQuotesPanel(position, accountId, close)
+            }
+        if (section == 2) item { InstrumentDossierPanel(position, close) }
+        if (section == 3)
+            item {
+                if (session.token.isBlank())
+                    WorkspaceEmpty(
+                        "Исследование недоступно",
+                        "Нужен действующий сеанс и сведения из источников.",
+                    )
+                else
+                    PortfolioResearchPanel(
+                        session.token,
+                        instrumentId = position.id,
+                        showRefresh = false,
+                    )
+                SpectrumSecondaryButton(
+                    "Обсудить эту бумагу",
+                    discuss,
+                    Modifier.fillMaxWidth(),
+                    enabled = session.token.isNotBlank(),
+                )
+            }
+        if (section == 4) item(key = "instrument-identifiers") { InstrumentPassport(position) }
     }
-    if (section == 1) item {
-        if (token.isBlank()) WorkspaceEmpty("Исследование недоступно", "Нужен действующий сеанс и сведения из источников.")
-        else PortfolioResearchPanel(token, instrumentId = position.id, showRefresh = false)
-        ContextQuestion(position.id)
-    }
-    if (section == 2) item(key = "instrument-identifiers") { InstrumentPassport(position) }
 }

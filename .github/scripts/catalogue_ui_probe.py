@@ -1,0 +1,62 @@
+"""Actual new-asset search and purchase-check UI, with synthetic network inputs."""
+from native_input_evidence import active_window_id, append_native_text
+from native_window_evidence import wait_for_new_app_window
+from profile_ui_probe import button_label, matching_node
+
+PURCHASE_ACTION = "Проверить ограничения"
+PURCHASE_DIALOG = "Проверить покупку"
+
+
+def exercise_catalogue(case):
+    probe, scenario = case.probe, case.scenario
+    area = "workspace-content"
+    if scenario == "empty":
+        probe.reveal("Найдено: 0 · Данные: 2026-10-18T10:00:00Z", area)
+        case.checks.append("empty-catalogue-does-not-invent-assets")
+        return
+    probe.tap_resource("catalogue-query", area)
+    append_native_text(probe, "", "new1")
+    probe.dismiss_keyboard()
+    # Closing the IME can widen and reflow the form above the current viewport.
+    # Return toward the edited form; retain the ordinary settled native tap.
+    probe.tap("Найти", area, direction="start")
+    probe.reveal("СИНТЕТИЧЕСКИЙ НОВЫЙ АКТИВ", area)
+    original_window = active_window_id(probe.tree())
+    probe.tap(PURCHASE_DIALOG, area)
+    wait_for_new_app_window(probe, original_window, PURCHASE_DIALOG, area)
+    probe.reveal(PURCHASE_ACTION, area)
+    disabled = probe.wait_for(lambda: button_label(probe.tree(), PURCHASE_ACTION), "Missing purchase-check button")
+    if disabled.get("enabled") != "false":
+        raise AssertionError("A missing price permits a purchase check")
+    probe.tap_resource("purchase-price", area, direction="start")
+    append_native_text(probe, "", "95")
+    probe.dismiss_keyboard()
+    probe.tap(PURCHASE_ACTION, area)
+    expected = "Проверенные ограничения соблюдены" if scenario == "ready" else "Покупка не прошла проверку"
+    _reveal_purchase_result(probe, expected, area)
+    probe.reveal("Расчёт сохранён: synthetic-purchase-check", area)
+    if scenario == "partial":
+        probe.reveal("Покупка затрагивает защищённый резерв.", area, direction="start")
+    probe.tap_resource("purchase-price", area, direction="start")
+    append_native_text(probe, "95", "0")
+    probe.dismiss_keyboard()
+    probe.reveal(PURCHASE_ACTION, area)
+    if matching_node(probe.tree(), expected) is not None:
+        raise AssertionError("Changed input retains the previous purchase result")
+    probe.tap("Закрыть", area)
+    case.checks.extend(("search-outside-current-holdings", "missing-price-blocked", "typed-purchase-request",
+                        "constraint-result-shown", "edited-input-invalidates-result", "no-broker-order"))
+
+
+def _reveal_purchase_result(probe, expected, area):
+    """A response can arrive after a page scroll and leave its heading above."""
+    try:
+        return probe.reveal(expected, area)
+    except AssertionError as error:
+        if str(error) != "List target not reachable: " + expected:
+            raise
+    # Keep the same required native label and bounded traversal. A missing,
+    # expired or different result must still fail; no other error is retried.
+    result = probe.reveal(expected, area, direction="start")
+    print("CATALOGUE_RESULT_REVEALED=reverse-after-response-scroll", flush=True)
+    return result

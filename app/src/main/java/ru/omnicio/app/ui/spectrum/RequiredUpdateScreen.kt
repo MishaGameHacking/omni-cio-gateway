@@ -12,11 +12,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -30,7 +27,11 @@ import ru.omnicio.app.ui.updates.UpdateGateUi
 
 /** Spectrum renders the shared gate; it cannot download, install, or unblock content. */
 @Composable
-fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
+fun RequiredUpdateScreen(
+    state: UpdateGateUi,
+    actions: UpdateGateActions,
+    extraContent: @Composable () -> Unit = {},
+) {
     var details by rememberSaveable { mutableStateOf(false) }
     val motion = LocalSpectrumMotionPreference.current
     val updateRequired = state.decision == ReleaseDecision.UPDATE_REQUIRED
@@ -83,7 +84,7 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                            SpectrumLoadingIndicator(Modifier.size(28.dp), "Проверка актуальной версии")
                             Text(
                                 "Проверяем доступность актуальной версии.",
                                 modifier = Modifier.weight(1f),
@@ -92,8 +93,8 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                     }
                     if (state.busy) {
                         Text("Скачивание и проверка: ${state.progressPercent}%")
-                        LinearProgressIndicator(
-                            progress = { state.progressPercent / 100f },
+                        SpectrumProgressBar(
+                            fraction = state.progressPercent / 100f,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -109,6 +110,7 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                     }
                 }
             }
+            item(key = "update-read-only-access") { extraContent() }
             if (updateRequired) {
                 item(key = "update-action") {
                     SpectrumPrimaryButton(
@@ -123,14 +125,13 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                 }
             }
             item(key = "update-process-toggle") {
-                TextButton(onClick = { details = !details }, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text(if (details) "Скрыть подробности" else "Как проходит обновление")
-                }
+                SpectrumSecondaryButton(if (details) "Скрыть подробности" else "Как проходит обновление",
+                    onClick = { details = !details }, modifier = Modifier.heightIn(min = 48.dp))
             }
             if (details) item(key = "update-process") { UpdateProcessSummary() }
             if (details) item(key = "update-source") {
                 Text(
-                    "APK загружается с московского сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
+                    "APK загружается с сервера Analyst AI. Перед установкой проверяются размер, контрольная сумма, приложение, версия и подпись.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -143,21 +144,19 @@ fun RequiredUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
                 )
             }
             item(key = "update-retry") {
-                TextButton(
+                SpectrumSecondaryButton(
+                    text = "Повторить проверку",
                     onClick = actions.retry,
                     enabled = state.canRetry,
                     modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text("Повторить проверку")
-                }
+                )
             }
             item(key = "update-close") {
-                TextButton(
+                SpectrumSecondaryButton(
+                    text = "Закрыть",
                     onClick = actions.close,
                     modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text("Закрыть")
-                }
+                )
             }
         }
     }
@@ -203,4 +202,5 @@ private fun UpdateProcessStep(number: String, title: String, explanation: String
         }
     }
 }
+
 

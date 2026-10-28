@@ -3,13 +3,18 @@ package ru.omnicio.app.ui.workspace
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.analysis.AnalysisBackendClient
 import ru.omnicio.app.data.analysis.AnalysisStatus
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.ui.spectrum.SpectrumCard
+import ru.omnicio.app.ui.spectrum.SpectrumBadge
+import ru.omnicio.app.ui.spectrum.SpectrumIcon
+import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 
 data class WorkspaceSession(val token: String = "", val userId: String = "")
 val LocalWorkspaceSession = staticCompositionLocalOf { WorkspaceSession() }
@@ -40,7 +45,10 @@ fun ObservationSummary(onDetails: () -> Unit) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
         status?.monitoring?.lastSnapshotAt?.let { Text("Портфель: ${relativeObservation(it)}", style = MaterialTheme.typography.bodySmall) }
         Text("Анализ: ${status?.lastRun?.createdAt?.let { relativeObservation(it) } ?: "время не получено"}", style = MaterialTheme.typography.bodySmall)
-        Text("Подробности ›", color = MaterialTheme.colorScheme.primary)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Подробности", color = MaterialTheme.colorScheme.primary)
+            SpectrumIcon(SpectrumSymbol.Forward, Modifier.size(20.dp))
+        }
     }
 }
 
@@ -58,5 +66,5 @@ fun AttentionBadge() {
             }
         }
     }
-    if ((count ?: 0) > 0) Badge { Text(count.toString()) }
+    if ((count ?: 0) > 0) SpectrumBadge(count.toString())
 }

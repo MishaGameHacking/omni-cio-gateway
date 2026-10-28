@@ -1,27 +1,32 @@
 package ru.omnicio.app.ui.home
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import org.json.JSONObject
 import ru.omnicio.app.data.backend.AnalystUser
 import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
-import ru.omnicio.app.ui.portfolio.*
+import ru.omnicio.app.ui.portfolio.currencySymbol
+import ru.omnicio.app.ui.portfolio.decimalText
 import ru.omnicio.app.ui.spectrum.*
-import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 import ru.omnicio.app.ui.workspace.*
 
-/** A decision workspace: capital, next destination and actual allocation. */
+/** Real capital first; analysis state and its blockers retain their own source/time. */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: PortfolioCurrency,
     refreshing: Boolean, refreshError: String?, lastUpdatedMillis: Long?, onCurrencyClick: () -> Unit,
@@ -29,154 +34,210 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
     onOpenMessages: () -> Unit, onOpenProfile: () -> Unit,
     modifier: Modifier = Modifier, onConnect: () -> Unit = onOpenProfile,
     onOpenPayments: () -> Unit = onOpenPortfolio) {
-    val snapshot = (state as? PortfolioUiState.Ready)?.snapshot
-    val waiting = state == PortfolioUiState.Loading || state == PortfolioUiState.ApiConnected
-    val prefs = LocalWorkspacePreferences.current.value
+    val resource = rememberWorkspaceResource("/automation/status")
+    val status = resource.data?.takeIf { it.optInt("schema_version") == 1 }
+    val foreground = workspaceForeground()
+    val refreshStatus by rememberUpdatedState(resource.refresh)
+    LaunchedEffect(foreground) {
+        if (foreground) while (isActive) { delay(20_000); refreshStatus() }
+    }
+    val navigate = LocalWorkspaceNavigator.current
+    val broker = LocalBrokerConnection.current
+    val disconnected = status?.has("broker_connected") == true && !status.optBoolean("broker_connected")
+    val mode = status?.text("state", "") ?: ""
+    val currentError = resource.error
+    val title = when {
+        currentError != null -> "Связь требует проверки"
+        status == null -> "Получаем состояние"
+        else -> automationStateTitle(mode)
+    }
+    val explanation = when {
+        currentError != null -> "Не удалось обновить состояние системы. Сохранённые сведения могут быть устаревшими."
+        status == null -> "Проверяем подключение и работу серверного анализа."
+        else -> automationStateDescription(mode)
+    }
+    val blockers = status?.records("blockers").orEmpty().filterNot { blocker ->
+        val code = blocker.text("code", "")
+        (disconnected && code in setOf("tinvest_not_connected", "broker_not_connected")) ||
+            (mode == "paused" && code in setOf("automation_paused", "paused"))
+    }
+    val discovery = status?.optJSONObject("discovery")
+    val candidates = discovery?.records("candidates").orEmpty()
+    val observation = status?.text("last_observation_at", "").orEmpty()
+    val hasObservation = observation.isNotBlank()
+    val loading = resource.busy && status == null || mode == "collecting" && currentError == null
+
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = { AnalystBottomBar(AnalystTab.Home, onOpenPortfolio, onOpenProfile) }) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding),
-                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-                item(key = "brand-header") { HomeHeader(user, onOpenMessages) }
-                item(key = "portfolio-hero") {
-                    CapitalHero(state, snapshot, selectedCurrency, refreshing, refreshError, lastUpdatedMillis,
-                        prefs.hideHomeBalance, onCurrencyClick, onConnect)
-                }
-                item(key = "assistant") { HomeNextStep(state, snapshot, refreshError, waiting, onConnect, onOpenRisk, onOpenRecommendations) }
-                if (!snapshot?.warnings.isNullOrEmpty()) {
-                    item(key = "attention") { SpectrumCard {
-                        Text("Требует внимания", style = MaterialTheme.typography.titleMedium)
-                        snapshot!!.warnings.take(2).forEach { Text(it) }
-                        if (snapshot.warnings.size > 2) DetailFold("Все ограничения (${snapshot.warnings.size})") { snapshot.warnings.drop(2).forEach { Text(it) } }
-                    } }
-                }
-                item(key = "monitoring") { ObservationSummary(onOpenRisk) }
-                item(key = "capabilities") { HomeQuickActions(onOpenPortfolio, onOpenPayments) }
-                if (snapshot != null && prefs.homeStructure) {
-                    item(key = "allocation") { AllocationOverview(snapshot, onOpenPortfolio) }
-                }
-
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeHeader(user: AnalystUser, onMessagesClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SpectrumBrandOrb(Modifier.size(42.dp), compact = true)
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text("Analyst AI", modifier = Modifier.semantics { contentDescription = user.name?.let { "Analyst AI · $it" } ?: "Analyst AI" },
-                style = MaterialTheme.typography.labelLarge, color = LocalSpectrumPalette.current.cyan)
-            Text("Ваш капитал", style = MaterialTheme.typography.headlineMedium)
-        }
-        BadgedBox(badge = { AttentionBadge() }) {
-        IconButton(onClick = onMessagesClick, modifier = Modifier.size(48.dp)
-            .semantics { contentDescription = "Уведомления" }) {
-            SpectrumLiveFeatureIcon(SpectrumLiveFeature.Notifications, Modifier.size(34.dp),
-                motionAllowed = false)
-        }
-        }
-    }
-}
-
-@Composable
-private fun CapitalHero(state: PortfolioUiState, snapshot: PortfolioSnapshot?, currency: PortfolioCurrency,
-    refreshing: Boolean, error: String?, updated: Long?, hidden: Boolean, onCurrency: () -> Unit,
-    onConnect: () -> Unit) {
-    SpectrumCard(emphasized = true) {
-        if (snapshot == null) {
-            Text("Всё начинается с вашего счёта", style = MaterialTheme.typography.headlineSmall)
-            Text(when (state) {
-                PortfolioUiState.NotConnected -> "Подключите портфель Т-Инвестиций"
-                is PortfolioUiState.Error -> state.message
-                else -> "Получаем счета и позиции…"
-            }, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state == PortfolioUiState.Loading || state == PortfolioUiState.ApiConnected) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            } else SpectrumPrimaryButton("Подключение счёта", onConnect, Modifier.fillMaxWidth())
-        } else {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Всего в портфеле", Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onCurrency, modifier = Modifier.heightIn(min = 48.dp)) { Text("${currency.name} ▾") }
-            }
-            Text(if (hidden) "••• •••" else snapshot.totalValue.moneyText(),
-                style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-            BalanceVisibilityButton()
-            if (snapshot.totalValue.currency != currency.name) Text("Показана предыдущая оценка в ${snapshot.totalValue.currency}. Запрошена ${currency.name}.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (!hidden) {
-                SignedAmount(snapshot.expectedYieldAmount, snapshot.expectedYieldPercent)
-                Text("Текущий результат брокера", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .35f))
-            val observed = snapshot.asOf ?: updated?.let { java.time.Instant.ofEpochMilli(it).toString() }
-            Text("Данные: ${relativeObservation(observed)}${if (refreshing) " · обновляем" else ""}",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (error != null) SpectrumBadge("Сохранённые данные · обновление не удалось", accent = MaterialTheme.colorScheme.error)
-        }
-    }
-}
-
-@Composable
-private fun AllocationOverview(snapshot: PortfolioSnapshot, onOpenPortfolio: () -> Unit) {
-    SpectrumCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Распределение", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = onOpenPortfolio) { Text("Подробнее ›") }
-        }
-        val valid = snapshot.allocations.all { it.sharePercent.toBigDecimal().signum() >= 0 } &&
-            snapshot.allocations.sumOf { it.sharePercent.toBigDecimal() } <= java.math.BigDecimal("100.1")
-        if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("Структура скрыта"); return@SpectrumCard }
-        if (snapshot.allocations.isEmpty()) Text("Структура пока не получена")
-        val palette = LocalSpectrumPalette.current
-        val colors = listOf(palette.cyan, palette.violet, palette.amber, palette.blue, palette.rose)
-        val sorted = snapshot.allocations.sortedByDescending { it.sharePercent.toBigDecimal() }
-        val visible = sorted.take(3)
-        visible.forEachIndexed { index, item ->
-            DataRow(item.title, item.sharePercent.percentText())
-            if (valid) SpectrumProgressBar(item.sharePercent.toBigDecimal().toFloat() / 100f, accent = colors[index])
-        }
-        if (sorted.size > 3) DetailFold("Остальные категории (${sorted.size - 3})") {
-            sorted.drop(3).forEach { DataRow(it.title, it.sharePercent.percentText()) }
-        }
-        Text("Счетов: ${snapshot.accounts.size}", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun HomeNextStep(state: PortfolioUiState, snapshot: PortfolioSnapshot?, refreshError: String?, waiting: Boolean,
-    onConnect: () -> Unit, onOpenRisk: () -> Unit, onOpenRecommendations: () -> Unit) {
-                    SpectrumCard(emphasized = true) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            SpectrumAnalystAvatar(
-                                mood = when {
-                                    refreshError != null || snapshot?.warnings?.isNotEmpty() == true -> AnalystAvatarMood.Attention
-                                    snapshot == null -> AnalystAvatarMood.Waiting
-                                    else -> AnalystAvatarMood.Ready
-                                },
-                                motionAllowed = LocalSpectrumMotionPreference.current.enabled,
-                                modifier = Modifier.size(64.dp).testTag("spectrum-ai-analyst"))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("Следующий шаг", style = MaterialTheme.typography.titleLarge)
-                                Text(when { waiting -> "Получаем данные счёта"; state is PortfolioUiState.Error -> "Проверьте доступ к данным"; snapshot == null -> "Подключите счёт, чтобы начать"; snapshot.warnings.isNotEmpty() -> "Проверьте ограничения данных ниже"; else -> "Ознакомьтесь с последним анализом" },
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
-                            }
+            LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                item(key = "system-header") {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ru.omnicio.app.ui.AnalystHeaderMenu()
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Analyst AI", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary)
+                            Text("Главная", style = MaterialTheme.typography.headlineLarge,
+                                modifier = Modifier.semantics { heading() })
+                            LiveSyncLabel()
                         }
-                        SpectrumPrimaryButton(when {
-                            waiting -> "Получаем данные…"
-                            state is PortfolioUiState.Error -> "Проверить подключение"
-                            snapshot == null -> "Подключить портфель"
-                            snapshot.warnings.isNotEmpty() -> "Посмотреть риски"
-                            else -> "Посмотреть анализ"
-                        },
-                            when {
-                                snapshot == null -> onConnect
-                                snapshot.warnings.isNotEmpty() -> onOpenRisk
-                                else -> onOpenRecommendations
-                            }, Modifier.fillMaxWidth(), enabled = !waiting)
+                        SpectrumIconButton(SpectrumSymbol.Notifications, "События", onOpenMessages)
                     }
+                }
+                item(key = "portfolio-overview") {
+                    HomePortfolioHero(state, selectedCurrency, refreshing, refreshError,
+                        onOpenPortfolio, onConnect)
+                }
+                item(key = "portfolio-actions") {
+                    HomePortfolioActions(onOpenRisk, { navigate(WorkspaceRoute.Strategies) },
+                        { navigate(WorkspaceRoute.Assistant) })
+                }
+                item(key = "automation-state") {
+                    SpectrumCard(modifier = Modifier.testTag("automation-state"), emphasized = true) {
+                        SpectrumBadge(if (currentError != null) "Сведения не обновлены" else "Состояние анализа")
+                        Text(title, style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                        Text(explanation, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (loading) SpectrumLoadingIndicator(description = title)
+                        if (hasObservation) Text("Последняя проверка · " + localMoment(observation),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (disconnected || broker == BrokerConnectionState.Missing && status == null)
+                            SpectrumPrimaryButton("Подключить Т-Инвестиции", onConnect, Modifier.fillMaxWidth(),
+                                enabled = !resource.busy)
+                        else if (mode in setOf("paused", "disabled", "attention"))
+                            SpectrumSecondaryButton("Настройки системы", onOpenProfile, Modifier.fillMaxWidth())
+                        if (currentError != null) {
+                            Text(currentError, color = MaterialTheme.colorScheme.error)
+                            SpectrumSecondaryButton("Повторить проверку связи", resource.refresh,
+                                Modifier.fillMaxWidth(), enabled = !resource.busy)
+                        }
+                    }
+                }
+                if (blockers.isNotEmpty()) item(key = "automation-blockers") {
+                    SpectrumCard(modifier = Modifier.testTag("automation-blockers")) {
+                        Text("Что мешает работе", style = MaterialTheme.typography.titleLarge)
+                        blockers.take(4).forEach { blocker ->
+                            val message = blocker.text("message", "")
+                            if (message.isNotBlank()) Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (blockers.size > 4)
+                            Text("Другие ограничения доступны в настройках.", style = MaterialTheme.typography.bodySmall)
+                        SpectrumSecondaryButton(if (disconnected) "Настроить подключение" else "Открыть настройки",
+                            if (disconnected) onConnect else onOpenProfile, Modifier.fillMaxWidth())
+                    }
+                }
+                if (!disconnected || hasObservation || candidates.isNotEmpty()) item(key = "analysis-results") {
+                    SpectrumCard {
+                        Text("Результаты", style = MaterialTheme.typography.titleLarge)
+                        Text(when {
+                            status == null -> "Результаты ещё не получены."
+                            candidates.isNotEmpty() -> "Для дальнейшей проверки найдено инструментов: " + candidates.size + "."
+                            !hasObservation -> "Первый результат появится после подключения и проверки данных."
+                            discovery == null || discovery.text("state", "") in setOf("waiting", "not_started", "unavailable") ->
+                                "Сохранённого результата отбора пока нет."
+                            else -> "В текущем результате нет инструментов, прошедших предварительный отбор."
+                        }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (candidates.isNotEmpty())
+                            Text("Проверки, недостающие сведения и основания доступны в решениях.",
+                                style = MaterialTheme.typography.bodySmall)
+                        SpectrumPrimaryButton("Посмотреть решения", onOpenRecommendations, Modifier.fillMaxWidth())
+                    }
+                }
+                item(key = "system-connections") {
+                    SpectrumCard {
+                        DetailFold("Подключения и режим") {
+                        SystemStateLine("Брокер", when {
+                            status?.optBoolean("broker_connected") == true -> "Доступ к данным подтверждён"
+                            disconnected -> "Не подключён"
+                            broker == BrokerConnectionState.Unknown -> "Статус не получен"
+                            else -> "Проверяем подключение"
+                        })
+                        SystemStateLine("Автоматический анализ", when {
+                            status == null -> "Статус не получен"
+                            !status.optBoolean("enabled") -> "На паузе"
+                            !status.optBoolean("scheduler_enabled") -> "Ожидает запуска на сервере"
+                            else -> "Включён"
+                        })
+                        val ai = status?.optJSONObject("ai")
+                        SystemStateLine("ИИ", when {
+                            ai == null -> "Статус не получен"
+                            ai.optBoolean("available") && ai.optBoolean("live_inference_verified") -> "Последний вызов подтверждён"
+                            ai.optBoolean("available") -> "Настроен; работа модели ещё не подтверждена"
+                            else -> "Нужна настройка подключения и лимитов"
+                        })
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        val execution = status?.optJSONObject("execution")
+                        val readOnly = execution?.text("mode", "") == "read_only" && execution.optBoolean("real_orders_enabled") == false
+                        Text(if (readOnly) "Режим наблюдения" else "Режим исполнения не подтверждён",
+                            style = MaterialTheme.typography.titleMedium)
+                        Text(if (readOnly) "Система анализирует данные. Реальные покупки и продажи не выполняются."
+                            else "Сведения о режиме исполнения пока недоступны.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                item(key = "system-history") {
+                    SpectrumSecondaryButton("История проверок", { navigate(WorkspaceRoute.AnalysisTimeline) },
+                        Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+private fun automationStateTitle(state: String): String = when (state) {
+    "paused" -> "Анализ на паузе"
+    "not_connected" -> "Нужен доступ к счёту"
+    "disabled" -> "Фоновая работа выключена"
+    "collecting" -> "Идёт сбор данных"
+    "waiting" -> "Ожидаем следующую проверку"
+    "attention" -> "Нужно ваше внимание"
+    "current" -> "Последний результат сохранён"
+    else -> "Состояние не подтверждено"
+}
+
+private fun automationStateDescription(state: String): String = when (state) {
+    "paused" -> "Автоматический анализ выключен в настройках."
+    "not_connected" -> "Подключите данные Т-Инвестиций, чтобы система могла анализировать ваш счёт."
+    "disabled" -> "Сервер пока не выполняет автоматический анализ."
+    "collecting" -> "Выполняется серверное задание. Результат появится после завершения проверки."
+    "waiting" -> "Подтверждённого нового результата пока нет."
+    "attention" -> "Проверка выявила ограничение. Его причина показана ниже."
+    "current" -> "Можно открыть выводы и проверить их основания."
+    else -> "Ожидаем подтверждённые сведения от сервера."
+}
+
+@Composable
+private fun SystemStateLine(label: String, value: String) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/** Retained for existing secondary portfolio views; never composed on the system home. */
+@Composable
+internal fun InteractiveBalance(amount: MoneyAmount, hidden: Boolean, onCurrency: () -> Unit) {
+    HoldToRevealBalance(amount, hidden, onCurrency)
+}
+
+@Composable
+internal fun HoldToRevealBalance(amount: MoneyAmount, hidden: Boolean, onCurrency: () -> Unit, modifier: Modifier = Modifier) {
+    var revealed by remember { mutableStateOf(false) }
+    val active = workspaceForeground()
+    val select by rememberUpdatedState(onCurrency)
+    LaunchedEffect(active, hidden) { revealed = false }
+    val text = if (hidden && !(revealed && active)) "••• •••" else
+        decimalText(amount.value.toBigDecimal()) + " " + currencySymbol(amount.currency)
+    Text(text, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold,
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).semantics {
+            onClick("Следующая валюта оценки") { select(); true }
+        }.pointerInput(hidden, active) {
+            detectTapGestures(onTap = { select() }, onLongPress = { if (hidden && active) revealed = true },
+                onPress = { try { tryAwaitRelease() } finally { revealed = false } })
+        })
 }

@@ -14,11 +14,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
+import ru.omnicio.app.ui.spectrum.SpectrumAlertDialog as AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,7 +41,7 @@ import ru.omnicio.app.data.research.*
 /** Parent Ideas list owns scrolling; pages bound the number of eagerly composed cards. */
 @Composable
 fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, showRefresh: Boolean = true, refreshKey: Int = 0) {
-    val client = remember { ResearchClient() }
+    val client = ru.omnicio.app.data.workspace.LocalPortfolioReadSource.current
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     var active by remember(lifecycle) { mutableStateOf(lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) ?: false) }
     var state by remember(accessToken) { mutableStateOf(ResearchLoadState<JSONObject>()) }
@@ -53,12 +53,12 @@ fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, sh
         lifecycle?.addObserver(observer)
         onDispose { lifecycle?.removeObserver(observer) }
     }
-    LaunchedEffect(accessToken, active, retry, refreshKey) {
+    LaunchedEffect(client, accessToken, active, retry, refreshKey) {
         if (!active || accessToken.isBlank()) return@LaunchedEffect
         try {
             while (isActive) {
                 state = state.start()
-                when (val result = withContext(Dispatchers.IO) { client.read(accessToken) }) {
+                when (val result = withContext(Dispatchers.IO) { client.research(accessToken) }) {
                     is BackendResult.Success -> {
                         if (!validSnapshot(result.value)) {
                             state = state.failure("Ответ проверки имеет неверный формат. Повторите запрос позже.", false)
@@ -81,7 +81,7 @@ fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, sh
         state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
         if (state.stale) Text("Показан предыдущий результат. Новая проверка не выполнена; выводы могли устареть.", fontWeight = FontWeight.SemiBold)
-        if (state.loading && state.data == null) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (state.loading && state.data == null) ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(description = "Получаем исследование")
         if (showRefresh) TextButton(onClick = { retry++ }, enabled = active && !state.loading && accessToken.isNotBlank(),
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
             Text(if (state.loading) "Проверяем данные…" else "Повторить проверку бумаг")
@@ -89,6 +89,9 @@ fun PortfolioResearchPanel(accessToken: String, instrumentId: String? = null, sh
         if (ru.omnicio.app.ui.workspace.LocalWorkspacePreferences.current.value.hideHomeBalance) {
             Text("Подробности скрыты режимом приватности.")
         } else state.data?.let { payload ->
+            ru.omnicio.app.ui.workspace.SaveResearchButton(payload,
+                defaultTitle = if (instrumentId == null) "Проверка портфеля" else "Исследование бумаги",
+                instrumentId = instrumentId, observedAt = payload.text("as_of"))
             if (instrumentId == null) ResearchSnapshot(payload, accessToken)
             else {
                 val cards = payload.optJSONArray("cards") ?: JSONArray()
@@ -119,7 +122,7 @@ private fun JSONObject.coverage(cards: Int) = researchCoverage(mapOf(
 ), cards)
 
 @Composable
-private fun ResearchSnapshot(snapshot: JSONObject, accessToken: String) {
+internal fun ResearchSnapshot(snapshot: JSONObject, accessToken: String) {
     var expanded by remember(accessToken) { mutableStateOf(false) }
     var page by remember(accessToken) { mutableIntStateOf(0) }
     if (snapshot.text("state") == "research") Text("Последняя успешная проверка: ${researchTime(snapshot.text("as_of")) ?: "время не получено"}", style = MaterialTheme.typography.bodySmall)
@@ -180,7 +183,7 @@ private fun ResearchRisk(risk: JSONObject) {
 
 @Composable
 private fun ResearchCard(card: JSONObject) {
-    Card(Modifier.fillMaxWidth()) {
+    ru.omnicio.app.ui.spectrum.SpectrumCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(card.text("name") ?: "Инструмент", style = MaterialTheme.typography.titleMedium)
             Text(listOfNotNull(card.text("ticker"), card.text("isin"), card.text("class_code")).joinToString(" · "), style = MaterialTheme.typography.bodySmall)
@@ -258,3 +261,4 @@ private fun launchPage(context: Context, url: String, appOnly: Boolean): Boolean
 
 private fun JSONObject.text(key: String): String? = (opt(key) as? String)?.takeIf { it.isNotBlank() }
 private fun JSONArray?.strings(): List<String> = if (this == null) emptyList() else (0 until length()).mapNotNull { (opt(it) as? String)?.takeIf(String::isNotBlank) }
+

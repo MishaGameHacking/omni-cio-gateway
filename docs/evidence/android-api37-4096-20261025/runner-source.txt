@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+"""One real API37/4096 leaf run; never a full-matrix publication receipt."""
+import datetime as dt
+import fcntl
+import hashlib
+import importlib.util
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import signal
+import subprocess
+import sys
+import time
+import traceback
+
+ROOT = Path("/srv/analyst-ai/workspace")
+STATE = Path("/var/lib/analyst-ai-build")
+SDK = Path("/opt/analyst-android-sdk")
+PYTHON = STATE / "venv/bin/python"
+APK = ROOT / "app/build/outputs/apk/preview/app-preview.apk"
+PREVIOUS = STATE / "previous-0.12.0.apk"
+UI = ROOT / "app/build/outputs/apk/preview/ui-screens"
+EXPECTED = {
+    "source_sha256": "aef6bb6dc89131b3c1412cc2b5454fc0aa6df68c6cae7e6abf82b379feb118a7",
+    "apk_sha256": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "previous_sha256": "c62c7bb9b2c0fd454ec00985f869f3f9fa3023ed555ced9b5e0ae2a107e7f8d2",
+}
+LIMIT = 7200
+INTERVAL = 10
+if pwd.getpwuid(os.getuid()).pw_name != "analyst-build":
+    raise RuntimeError("runner_requires_analyst_build")
+os.umask(0o027)
+base = STATE / "diagnostics"
+if base.is_symlink():
+    raise RuntimeError("diagnostics_directory_is_symlink")
+base.mkdir(exist_ok=True)
+run = base / ("leaf37-4096-" + dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + str(os.getpid()))
+run.mkdir(mode=0o750)
+work = run / "leaf"
+log_path = run / "leaf.log"
+sample_path = run / "samples.jsonl"
+relative = next(line[3:] for line in Path("/proc/self/cgroup").read_text().splitlines() if line.startswith("0::"))
+CG = (Path("/sys/fs/cgroup") / relative.lstrip("/")).resolve(strict=True)
+if not CG.is_relative_to("/sys/fs/cgroup") or not CG.name.endswith(".service"):
+    raise RuntimeError("dedicated_systemd_service_cgroup_required")
+spec = importlib.util.spec_from_file_location("workspace_gate", ROOT / "deploy/timeweb_workspace.py")
+workspace = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(workspace)
+def utc():
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+def digest(path):
+    h = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            h.update(block)
+    return h.hexdigest()
+def identities():
+    return {"source_sha256": workspace.source_hash(), "apk_sha256": digest(APK), "previous_sha256": digest(PREVIOUS)}
+def read(path):
+    try:
+        return path.read_text()[:65536].strip()
+    except OSError as error:
+        return {"unavailable": type(error).__name__}
+CG_FILES = ("cpu.stat", "cpu.max", "cpu.weight", "cpu.pressure", "memory.events", "memory.events.local", "memory.pressure", "memory.current", "memory.peak", "memory.high", "memory.max", "memory.swap.current", "memory.swap.peak", "memory.swap.max", "memory.stat", "io.stat", "io.pressure", "pids.current")
+started = time.monotonic()
+samples = sample_path.open("x", encoding="utf-8")
+result = {"purpose": "api37_4096_full_leaf_diagnostic", "status": "preflight", "started_at": utc(), "expected": EXPECTED, "cgroup": str(CG), "log": str(log_path), "samples": str(sample_path), "work_dir": str(work), "shared_ui_directory": str(UI), "full_matrix_completed": False, "runtime_result_written": False}
+process = None
+lock = None
+stop_signal = None
+launch_ns = None
+def interrupted(signum, _frame):
+    global stop_signal
+    stop_signal = signum
+for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(signum, interrupted)
+def save_result():
+    temp = run / "result.next.json"
+    temp.write_text(json.dumps(result, indent=2) + "\n")
+    os.replace(temp, run / "result.json")
+def sample(phase):
+    meminfo = Path("/proc/meminfo").read_text().splitlines()
+    vmstat = Path("/proc/vmstat").read_text().splitlines()
+    value = {
+        "at": utc(), "elapsed_seconds": round(time.monotonic() - started, 3), "phase": phase,
+        "cgroup": {name: read(CG / name) for name in CG_FILES},
+        "host_pressure": {name: read(Path("/proc/pressure") / name) for name in ("cpu", "memory", "io")},
+        "host_meminfo": [line for line in meminfo if line.split(":", 1)[0] in {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree", "Dirty", "Writeback"}],
+        "host_vmstat": [line for line in vmstat if re.match(r"^(pswpin|pswpout|pgfault|pgmajfault|pgscan\S*|pgsteal\S*|workingset_refault\S*) ", line)],
+        "host_cpu": [line for line in Path("/proc/stat").read_text().splitlines() if re.match(r"^cpu(?:\d+)? ", line)],
+        "host_uptime": read(Path("/proc/uptime")),
+    }
+    samples.write(json.dumps(value, separators=(",", ":")) + "\n")
+    samples.flush()
+def owned_group_members():
+    if process is None:
+        return []
+    members = []
+    for item in (CG / "cgroup.procs").read_text().split():
+        pid = int(item)
+        if pid == os.getpid():
+            continue
+        try:
+            if os.getpgid(pid) == process.pid and os.getsid(pid) == process.pid:
+                members.append(pid)
+        except ProcessLookupError:
+            pass
+    return members
+def stop_owned_group():
+    if process is None:
+        return
+    if owned_group_members():
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline and owned_group_members():
+            process.poll()
+            time.sleep(0.2)
+        if owned_group_members():
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+    process.wait(timeout=10)
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline and owned_group_members():
+        time.sleep(0.2)
+    result["remaining_owned_group_members"] = len(owned_group_members())
+    if result["remaining_owned_group_members"]:
+        raise RuntimeError("owned_process_group_cleanup_incomplete")
+def preserve_fresh_screens():
+    if launch_ns is None or not UI.exists():
+        return
+    if UI.is_symlink():
+        raise RuntimeError("ui_directory_is_symlink")
+    destination = run / "ui-screens"
+    copied = []
+    for path in sorted(UI.iterdir()):
+        if path.suffix not in (".png", ".json") or path.is_symlink():
+            continue
+        if not path.is_file() or path.stat().st_mtime_ns < launch_ns:
+            continue
+        destination.mkdir(exist_ok=True)
+        shutil.copy2(path, destination / path.name)
+        copied.append({"file": path.name, "sha256": digest(destination / path.name)})
+    result["fresh_ui_files"] = copied
+print("LEAF_MONITOR=" + json.dumps({"directory": str(run), "log": str(log_path), "samples": str(sample_path), "result": str(run / "result.json")}), flush=True)
+try:
+    sample("before")
+    lock = (STATE / "workspace.lock").open("a")
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    result["before"] = identities()
+    if result["before"] != EXPECTED:
+        raise RuntimeError("preflight_identity_mismatch")
+    workspace.require_capacity("runtime")
+    for stage in ("check", "build"):
+        receipt = workspace.previous(stage, EXPECTED["source_sha256"])
+        if stage == "build" and receipt.get("apk_sha256") != EXPECTED["apk_sha256"]:
+            raise RuntimeError("build_receipt_apk_mismatch")
+    icds = sorted(Path("/usr/share/vulkan/icd.d").glob("lvp_icd*.json"))
+    if len(icds) != 1:
+        raise RuntimeError("exactly_one_lavapipe_icd_required")
+    if stop_signal is not None:
+        raise InterruptedError("cancelled_before_launch")
+    env = dict(os.environ)
+    env.update({
+        "ANDROID_HOME": str(SDK), "ANDROID_SDK_ROOT": str(SDK),
+        "ANDROID_I_WANT_MY_TCG": "yes", "RUN_PROFILE_UI_TESTS": "1",
+        "VK_ICD_FILENAMES": str(icds[0]), "PYTHONUNBUFFERED": "1",
+        "GRADLE_USER_HOME": "/var/cache/analyst-ai/gradle",
+        "JAVA_HOME": "/usr/lib/jvm/java-17-openjdk-amd64",
+        "TELEGRAM_CLIENT_ID": "123456", "TELEGRAM_CLIENT_SECRET": "test-only",
+        "BACKEND_PUBLIC_URL": "https://example.invalid",
+        "FERNET_KEY": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "ANALYSIS_SCHEDULER_ENABLED": "false", "AI_EXTERNAL_PROCESSING_APPROVED": "false",
+        "DATABASE_PATH": str(run / "tests.sqlite3")
+    })
+    command = ["xvfb-run", "-a", str(PYTHON), str(ROOT / ".github/scripts/test_apk_installation.py"), "--sdk", str(SDK), "--apk", str(APK), "--previous", str(PREVIOUS), "--api", "37", "--page-bytes", "4096", "--work-dir", str(work)]
+    result["status"] = "running"
+    save_result()
+    launch_ns = time.time_ns()
+    deadline = time.monotonic() + LIMIT
+    next_sample = time.monotonic()
+    with log_path.open("x", encoding="utf-8") as log:
+        process = subprocess.Popen(command, cwd=ROOT, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        while True:
+            now = time.monotonic()
+            if stop_signal is not None:
+                result["status"] = "cancelled"
+                result["signal"] = stop_signal
+                break
+            if now >= deadline:
+                result["status"] = "leaf_timeout"
+                break
+            code = process.poll()
+            if code is not None:
+                result["status"] = "leaf_passed" if code == 0 else "leaf_failed"
+                break
+            if now >= next_sample:
+                sample("running")
+                next_sample = now + INTERVAL
+            time.sleep(min(1.0, max(0.01, deadline - time.monotonic())))
+        sample("before_cleanup")
+        stop_owned_group()
+        log.flush()
+except BaseException as error:
+    result["status"] = "runner_failed"
+    result["error_type"] = type(error).__name__
+    result["error"] = str(error)[:1000]
+    (run / "failure.txt").write_text(traceback.format_exc())
+finally:
+    try:
+        stop_owned_group()
+    except BaseException as error:
+        result["status"] = "cleanup_failed"
+        result["cleanup_error"] = type(error).__name__ + ": " + str(error)[:300]
+    if process is not None:
+        result["leaf_returncode"] = process.poll()
+    try:
+        result["after"] = identities()
+        result["identities_unchanged"] = result["after"] == EXPECTED
+        if not result["identities_unchanged"]:
+            result["status"] = "identity_changed"
+    except BaseException as error:
+        result["status"] = "identity_verification_failed"
+        result["after_error"] = type(error).__name__ + ": " + str(error)[:300]
+    try:
+        preserve_fresh_screens()
+        sample("after_cleanup")
+    except BaseException as error:
+        result["status"] = "evidence_preservation_failed"
+        result["evidence_error"] = type(error).__name__ + ": " + str(error)[:300]
+    result["finished_at"] = utc()
+    result["elapsed_seconds"] = round(time.monotonic() - started, 3)
+    save_result()
+    samples.close()
+    if lock is not None:
+        lock.close()
+    print("LEAF_RESULT=" + json.dumps(result), flush=True)
+sys.exit(0 if result["status"] == "leaf_passed" else 1)

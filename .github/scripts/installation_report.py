@@ -1,6 +1,9 @@
 """Validate required emulator evidence; never execute a test or infer success."""
 from __future__ import annotations
 
+from pathlib import Path
+import sys
+
 BASE_TESTS = frozenset({"candidate_clean_install", "bootstrap_activity_launch"})
 UPGRADE_TESTS = frozenset({
     "previous_clean_install",
@@ -10,7 +13,19 @@ UPGRADE_TESTS = frozenset({
 PROFILE_TESTS = frozenset({"debug_ui_fixture_install", "profile_ui"})
 
 
-def validate_results(results: object, *, upgrade_required: bool, profile_required: bool) -> None:
+def validate_current_ui(profile: dict, fixture: dict, *, version_code: int | None = None) -> None:
+    # Reuse the publication parser's exact current matrix. Import only the local
+    # pure evidence module; this check never initializes a backend or network.
+    checkout = str(Path(__file__).resolve().parents[2])
+    if checkout not in sys.path:
+        sys.path.insert(0, checkout)
+    from backend.installation_evidence import validate_ui_receipt
+    validate_ui_receipt(profile, fixture.get("apk_sha256"), version_code=version_code)
+
+
+def validate_results(results: object, *, upgrade_required: bool, profile_required: bool,
+                     android_api: int | None = None, page_size_bytes: int = 4096,
+                     candidate_version_code: int | None = None) -> None:
     """Accept exactly the checks requested for this run, with explicit success."""
     if not isinstance(results, list):
         raise ValueError("Invalid installation report")
@@ -27,7 +42,16 @@ def validate_results(results: object, *, upgrade_required: bool, profile_require
         expected.update(UPGRADE_TESTS)
     if profile_required:
         expected.update(PROFILE_TESTS)
+    if android_api is not None:
+        from kernel_page_size import TEST_NAME, validate_record
+        expected.add(TEST_NAME)
     if len(names) != len(set(names)):
         raise ValueError("Duplicate installation tests")
     if set(names) != expected:
         raise ValueError("Missing or unexpected installation tests")
+    if android_api is not None:
+        validate_record(next(item for item in results if item["test"] == TEST_NAME), android_api, page_size_bytes=page_size_bytes)
+        if profile_required:
+            validate_current_ui(next(item for item in results if item["test"] == "profile_ui"),
+                                next(item for item in results if item["test"] == "debug_ui_fixture_install"),
+                                version_code=candidate_version_code)

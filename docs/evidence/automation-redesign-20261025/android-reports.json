@@ -1,0 +1,28 @@
+{
+  "source_sha256": "955661284edcb9cf5baa27d3bb1984275dd361857a58fb27b4905dffd87c6d1e",
+  "observed_at": "2026-10-25T11:51:07.348567+00:00",
+  "android_unit": {
+    "suites": 30,
+    "tests": 174,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0
+  },
+  "lint": {
+    "debug": {
+      "Warning": 68,
+      "Hint": 5
+    },
+    "preview": {
+      "Warning": 64,
+      "Hint": 5
+    }
+  },
+  "last_gradle": {
+    "tasks": 197,
+    "executed": 6,
+    "up_to_date": 191,
+    "duration": "1m 38s"
+  },
+  "cached_android_tests_are_not_newly_executed": true
+}

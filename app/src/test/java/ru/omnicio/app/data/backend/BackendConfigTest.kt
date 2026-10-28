@@ -4,38 +4,49 @@ import java.net.URI
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.omnicio.app.data.updates.UpdateProtocol
 
 class BackendConfigTest {
     @Test
-    fun pendingInstallationCannotCreateATransportForSavedCredentials() {
-        assertFalse(BackendConfig.isConfigured)
+    fun verifiedOwnerInstallationUsesTheExactHttpsOrigin() {
+        assertTrue(BackendConfig.isConfigured)
+        assertEquals("https://analyst-ai-2941515.twc1.net", BackendConfig.BASE_URL)
         val destination = URI(BackendConfig.BASE_URL + "/me")
-        val failure = assertThrows(IllegalStateException::class.java) {
-            BackendConfig.openConnection(destination)
-        }
-        assertEquals(BackendConfig.UNAVAILABLE_MESSAGE, failure.message)
+        val connection = BackendConfig.openConnection(destination)
+        assertEquals(destination, connection.url.toURI())
+        assertFalse(connection.instanceFollowRedirects)
+        connection.disconnect()
     }
 
     @Test
     fun retiredAndForeignAddressesCannotBecomeFallbacks() {
         val destinations = listOf(
             URI("https://176.98.178.81.sslip.io/me"),
+            URI("https://backend-not-configured.invalid/me"),
             URI("https://other.invalid/me"),
             URI("http://" + BackendConfig.HOST + "/me"),
             URI("https://user@" + BackendConfig.HOST + "/me"),
+            URI("https://" + BackendConfig.HOST + ":443/me"),
+            URI("https://" + BackendConfig.HOST + "/me#fragment"),
+            URI("https://" + BackendConfig.HOST + ".other.invalid/me"),
         )
         for (destination in destinations) {
-            assertThrows(IllegalStateException::class.java) { BackendConfig.openConnection(destination) }
+            assertThrows(IllegalArgumentException::class.java) { BackendConfig.openConnection(destination) }
         }
     }
 
     @Test
     fun updatePolicyUsesTheSameOriginAndRejectsTheRetiredChannel() {
         assertEquals(BackendConfig.HOST, UpdateProtocol.HOST)
-        val retired = "https://176.98.178.81.sslip.io"
         val path = UpdateProtocol.policyPath(UpdateProtocol.PREVIEW_PACKAGE)
-        assertThrows(IllegalArgumentException::class.java) { UpdateProtocol.requestUri(retired, path) }
+        assertEquals(
+            URI(BackendConfig.BASE_URL + path),
+            UpdateProtocol.requestUri(BackendConfig.BASE_URL, path),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            UpdateProtocol.requestUri("https://176.98.178.81.sslip.io", path)
+        }
     }
 }

@@ -1,5 +1,9 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumDatePickerDialog as DatePickerDialog
+
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
@@ -19,7 +23,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import ru.omnicio.app.data.backend.BackendResult
-import ru.omnicio.app.data.portfolio.PortfolioDataClient
+import ru.omnicio.app.data.workspace.LocalPortfolioReadSource
 import ru.omnicio.app.data.portfolio.RefreshBackoff
 import ru.omnicio.app.data.portfolio.RefreshSnapshot
 
@@ -46,8 +50,8 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
     var request by remember(token, accountId, section, dataScope) {
         mutableStateOf(RefreshSnapshot<Map<String, String>, JSONObject>())
     }
-    val client = remember { PortfolioDataClient() }
-    LaunchedEffect(token, accountId, section, query, active, interval) {
+    val client = LocalPortfolioReadSource.current
+    LaunchedEffect(client, token, accountId, section, query, active, interval) {
         if (!active || token.isBlank()) return@LaunchedEffect
         val backoff = RefreshBackoff(interval)
         while (isActive) {
@@ -55,7 +59,7 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
             val id = request.requestId
             val waitMillis: Long
             try {
-                when (val result = withContext(Dispatchers.IO) { client.details(token, accountId, section, query) }) {
+                when (val result = withContext(Dispatchers.IO) { client.account(token, accountId, section, query) }) {
                     is BackendResult.Success -> {
                         request = request.succeed(id, result.value, System.currentTimeMillis())
                         waitMillis = backoff.success()
@@ -85,7 +89,7 @@ internal fun AccountDataNotice(data: AccountData) {
     when {
         data.error != null -> Notice(data.error)
         data.json == null -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            ru.omnicio.app.ui.spectrum.SpectrumLoadingIndicator(Modifier.size(28.dp), description = "Получаем данные счёта")
             Text("Загружаем данные счёта…")
         }
         else -> Notice("Получено ${dateText(data.json.optString("asOf"))} · обновляется автоматически")
@@ -102,7 +106,7 @@ internal data class PortfolioPeriod(val start: String?, val end: String?) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod) -> Unit) {
-    var calendar by remember { mutableStateOf(false) }
+    var calendar by rememberSaveable { mutableStateOf(false) }
     val today = LocalDate.now(Moscow)
     val starts = listOf(today, today.minusMonths(1).plusDays(1), today.minusMonths(6).plusDays(1),
         today.minusYears(1).plusDays(1), today.withDayOfYear(1), null)
@@ -138,7 +142,10 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
                         }
                     }) { Text("Применить") }
             }, dismissButton = { TextButton(onClick = { calendar = false }) { Text("Отмена") } }) {
-            DateRangePicker(state = picker, modifier = Modifier.heightIn(max = 520.dp), title = { Text("Выбор периода", Modifier.padding(16.dp)) })
+            DateRangePicker(state = picker, modifier = Modifier.heightIn(max = 520.dp),
+                colors = ru.omnicio.app.ui.spectrum.spectrumDatePickerColors(),
+                title = { Text("Выбор периода", Modifier.padding(16.dp)) })
         }
     }
 }
+

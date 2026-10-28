@@ -1,0 +1,31 @@
+package ru.omnicio.app.ui.workspace
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import ru.omnicio.app.ui.spatial.SpatialWindow
+import ru.omnicio.app.ui.spectrum.SpectrumCard
+
+/** Dialog content gets an actual surface in its own Window while sharing the Engine. */
+@Composable
+fun WorkspaceDialog(title: String, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    ru.omnicio.app.ui.spectrum.SpectrumModal(onDismissRequest = onDismiss,
+        properties = DialogProperties(decorFitsSystemWindows = false)) {
+        SpatialWindow(Modifier.widthIn(max = 600.dp).fillMaxWidth()) {
+            SpectrumCard(Modifier.verticalScroll(rememberScrollState()).semantics { testTagsAsResourceId = true }
+                .testTag("workspace-content"), emphasized = true) {
+                Text(title, style = MaterialTheme.typography.titleLarge)
+                content()
+            }
+        }
+    }
+}

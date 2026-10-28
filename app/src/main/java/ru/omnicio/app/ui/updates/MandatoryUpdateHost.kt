@@ -10,19 +10,9 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.CancellationException
@@ -67,6 +57,7 @@ fun MandatoryUpdateHost(
     val context = LocalContext.current
     val activity = LocalActivity.current as? ComponentActivity
     val active = rememberForeground(activity?.lifecycle)
+    val foregroundNow by rememberUpdatedState(active)
     val client = remember { UpdateClient() }
     val contentState = rememberSaveableStateHolder()
     val scope = rememberCoroutineScope()
@@ -84,32 +75,24 @@ fun MandatoryUpdateHost(
     val installationStatus by UpdateInstaller.statusText.collectAsState()
     val installationPending by UpdateInstaller.pending.collectAsState()
 
-    LaunchedEffect(active) {
-        if (active) withContext(Dispatchers.IO) { UpdateInstaller.refreshPending(context) }
-    }
+    fun startUpdate(chosen: ReleaseDescriptor, automatic: Boolean = false) {
+        val decision = chosen.decision(
+            BuildConfig.APPLICATION_ID,
+            BuildConfig.VERSION_CODE.toLong(),
+            Build.VERSION.SDK_INT,
+        )
+        if (!processUpdateAttempts.claim(
+                release = chosen,
+                decision = decision,
+                automatic = automatic,
+                foreground = foregroundNow && activity?.lifecycle?.currentState
+                    ?.isAtLeast(Lifecycle.State.STARTED) == true,
+                permissionGranted = context.packageManager.canRequestPackageInstalls(),
+                busy = busy,
+                installationPending = UpdateInstaller.pending.value,
+            )
+        ) return
 
-    LaunchedEffect(active, retry, serverBlocked) {
-        if (!active) return@LaunchedEffect
-        while (isActive) {
-            checking = true
-            try {
-                val verified = verifyPolicy(context, client)
-                release = verified.release
-                current = verified.current
-                feedback = feedback.policyChecked()
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) {
-                current = false
-                feedback = feedback.policyChecked(if (BackendConfig.isConfigured)
-                    "Не удалось проверить актуальность версии. Проверьте интернет и повторите попытку."
-                else BackendConfig.UNAVAILABLE_MESSAGE)
-            } finally { checking = false }
-            delay(60_000)
-        }
-    }
-
-    fun startUpdate(chosen: ReleaseDescriptor) {
-        if (busy || installationPending) return
         busy = true
         progressFlow.value = 0
         feedback = feedback.operationStarted()
@@ -119,9 +102,50 @@ fun MandatoryUpdateHost(
                 val apk = client.download(context, chosen) { progressFlow.value = it }
                 check(client.current() == chosen) { "Вышла более новая сборка. Повторите проверку." }
                 UpdateInstaller.install(context, apk, chosen)
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (failure: Exception) { feedback = feedback.operationFailed(failure.message ?: "Не удалось установить обновление. Повторите попытку.") }
-            finally { busy = false }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                feedback = feedback.operationFailed(
+                    failure.message ?: "Не удалось установить обновление. Повторите попытку.",
+                )
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    LaunchedEffect(active, retry, serverBlocked) {
+        if (!active) return@LaunchedEffect
+        var pendingRecovered = false
+        while (isActive) {
+            checking = true
+            try {
+                // Recover existing sessions before any new automatic operation.
+                if (!pendingRecovered) {
+                    withContext(Dispatchers.IO) { UpdateInstaller.refreshPending(context) }
+                    pendingRecovered = true
+                }
+                val verified = verifyPolicy(context, client)
+                release = verified.release
+                current = verified.current
+                feedback = feedback.policyChecked()
+                // Failed policy reads never reach this call; current lifecycle is checked inside.
+                startUpdate(verified.release, automatic = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                current = false
+                feedback = feedback.policyChecked(
+                    if (BackendConfig.isConfigured) {
+                        "Не удалось проверить версию на сервере. Повторим проверку автоматически."
+                    } else {
+                        BackendConfig.UNAVAILABLE_MESSAGE
+                    },
+                )
+            } finally {
+                checking = false
+            }
+            delay(60_000)
         }
     }
 
@@ -198,29 +222,5 @@ private fun rememberForeground(lifecycle: Lifecycle?): Boolean {
 
 @Composable
 private fun DefaultUpdateScreen(state: UpdateGateUi, actions: UpdateGateActions) {
-    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Analyst AI", style = MaterialTheme.typography.headlineLarge)
-            Text(state.title, style = MaterialTheme.typography.headlineSmall)
-            Text("Установлено: ${state.installedVersion}")
-            state.release?.let { Text("На сервере: ${it.versionName}") }
-            Text(state.explanation)
-            state.release?.notes?.takeIf(String::isNotBlank)?.let { Text(it) }
-            if (state.checking && !state.busy) CircularProgressIndicator()
-            if (state.busy) {
-                Text("Скачивание и проверка: ${state.progressPercent}%")
-                LinearProgressIndicator(progress = { state.progressPercent / 100f }, modifier = Modifier.fillMaxWidth())
-            }
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
-            state.installationStatus?.let { Text(it) }
-            if (state.decision == ReleaseDecision.UPDATE_REQUIRED) {
-                Button(enabled = state.canUpdate, onClick = actions.update, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Обновить приложение") }
-            }
-            TextButton(enabled = state.canRetry, onClick = actions.retry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Повторить проверку") }
-            TextButton(onClick = actions.close, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Закрыть") }
-        }
-    }
+    ru.omnicio.app.ui.spectrum.RequiredUpdateScreen(state, actions)
 }

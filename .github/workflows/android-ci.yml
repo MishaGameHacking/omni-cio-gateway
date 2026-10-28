@@ -1,6 +1,9 @@
 name: Android CI
 'on':
   workflow_call:
+    secrets:
+      TIMEWEB_CLOUD_TOKEN:
+        required: true
   pull_request:
     branches:
     - main
@@ -11,120 +14,103 @@ concurrency:
   cancel-in-progress: false
 jobs:
   transfer-preflight:
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name ==
+      'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: write
+    outputs:
+      prepared_attempt: ${{ steps.prepare.outputs.prepared_attempt }}
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       id: checkout
       with:
         persist-credentials: false
-    - name: Test private handoff boundaries without credentials
-      run: |
-        node --test .github/scripts/ci_private_transfer.test.cjs .github/scripts/require_main_release.test.cjs .github/scripts/authoritative_merge_gate.test.cjs
-        python3 -m unittest discover -s tools/tests -p 'test_*.py'
     - name: Verify synthetic draft handoff and unauthenticated denial
+      id: prepare
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+        script: |
+          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+          core.setOutput('prepared_attempt', process.env.GITHUB_RUN_ATTEMPT);
     - name: Remove the temporary draft immediately if preparation fails
       if: failure() && steps.checkout.outcome == 'success'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
-    name: Verify private CI handoff before building
+    name: Verify the private final-evidence return before building
   build:
     name: Build with the existing signing identity
-    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
+    if: (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name ==
+      'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main')
+    needs:
+    - transfer-preflight
     runs-on:
     - self-hosted
     - Windows
     - X64
     - omni-cio-ci
+    timeout-minutes: 285
     permissions:
-      contents: write
+      contents: read
       checks: read
       actions: read
-    timeout-minutes: 40
     env:
-      GIT_CONFIG_COUNT: '1'
-      GIT_CONFIG_KEY_0: core.longpaths
-      GIT_CONFIG_VALUE_0: 'true'
+      SOURCE_ROOT: ${{ github.workspace }}/android-ci-build-${{ github.run_id }}-${{ github.run_attempt }}/source
+      CI_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      CI_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      CI_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      PYTHONUNBUFFERED: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      RUN_PROFILE_UI_TESTS: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
     outputs:
-      archive_sha256: ${{ steps.transfer.outputs.archive_sha256 }}
+      input_archive: ${{ steps.pack_inputs.outputs.input_archive }}
+      input_sha256: ${{ steps.pack_inputs.outputs.input_sha256 }}
+      input_receipt_sha256: ${{ steps.pack_inputs.outputs.input_receipt_sha256 }}
+      input_attempt: ${{ steps.pack_inputs.outputs.input_attempt }}
     steps:
-    - name: Checkout source
+    - name: Require the existing laptop and a new job-owned directory
+      shell: cmd
+      run: |
+        py -3 -c "import os,sys,pathlib; assert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert sys.version_info[:3]==(3,14,6); w=pathlib.Path(os.environ['GITHUB_WORKSPACE']); assert w in [pathlib.Path('C:/')/r/'_work/omni-cio-gateway/omni-cio-gateway' for r in ('actions-runner','actions-runner-2','actions-runner-3','actions-runner-4')]; assert all(not q.is_symlink() and not getattr(q.lstat(),'st_file_attributes',0)&0x400 for q in (w,*w.parents)); p=pathlib.Path(os.environ['SOURCE_ROOT']).parent; assert p.parent==w; assert p.name=='android-ci-build-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']; assert not p.exists() and not p.is_symlink()"
+        if errorlevel 1 exit /b 1
+    - name: Checkout the exact tested merge with LF bytes
       id: checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
+        ref: ${{ github.sha }}
+        path: android-ci-build-${{ github.run_id }}-${{ github.run_attempt }}/source
         persist-credentials: false
-        clean: true
-    - name: Set up JDK 17
-      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
-      with:
-        distribution: temurin
-        java-version: '17'
-    - name: Verify pinned Gradle wrapper
+        clean: false
+    - name: Run complete host checks and all signed Android builds under the shared lease
       shell: cmd
       run: |
-        certutil -hashfile gradle\wrapper\gradle-wrapper.jar SHA256 > "%RUNNER_TEMP%\gradle-wrapper.sha256"
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" build
         if errorlevel 1 exit /b 1
-        findstr /I /C:"238e777fcddd7e34f9708186085def2abd6e08e658505b38718d79d74c21abd5" "%RUNNER_TEMP%\gradle-wrapper.sha256" >nul
-        if errorlevel 1 exit /b 1
-        call gradlew.bat --version
-        if errorlevel 1 exit /b 1
-    - name: Choose Android SDK root
-      shell: cmd
-      run: |
-        set "SDK_ROOT=%ANDROID_SDK_ROOT%"
-        if not defined SDK_ROOT set "SDK_ROOT=%ANDROID_HOME%"
-        if not defined SDK_ROOT if exist "%LOCALAPPDATA%\Android\Sdk" set "SDK_ROOT=%LOCALAPPDATA%\Android\Sdk"
-        if not defined SDK_ROOT set "SDK_ROOT=%RUNNER_TOOL_CACHE%\AndroidSdk\sdk"
-        echo ANDROID_SDK_ROOT=%SDK_ROOT%>>"%GITHUB_ENV%"
-        echo ANDROID_HOME=%SDK_ROOT%>>"%GITHUB_ENV%"
-    - name: Ensure Android SDK 36 is installed
-      shell: cmd
-      run: |
-        if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat" goto tools_ready
-        set "TOOLS_ZIP=%RUNNER_TEMP%\commandlinetools-win-15859902_latest.zip"
-        curl.exe -fL --retry 3 --retry-delay 2 "https://dl.google.com/android/repository/commandlinetools-win-15859902_latest.zip" -o "%TOOLS_ZIP%"
-        if errorlevel 1 exit /b 1
-        certutil -hashfile "%TOOLS_ZIP%" SHA256 > "%TOOLS_ZIP%.sha256"
-        if errorlevel 1 exit /b 1
-        findstr /I /C:"90ae805d20434428bffcb699c290860f19bb5f66a67e6b330067e3de801fb04a" "%TOOLS_ZIP%.sha256" >nul
-        if errorlevel 1 exit /b 1
-        if not exist "%ANDROID_SDK_ROOT%\cmdline-tools" mkdir "%ANDROID_SDK_ROOT%\cmdline-tools"
-        tar.exe -xf "%TOOLS_ZIP%" -C "%ANDROID_SDK_ROOT%\cmdline-tools"
-        if errorlevel 1 exit /b 1
-        if exist "%ANDROID_SDK_ROOT%\cmdline-tools\latest" rmdir /s /q "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-        move "%ANDROID_SDK_ROOT%\cmdline-tools\cmdline-tools" "%ANDROID_SDK_ROOT%\cmdline-tools\latest"
-        if errorlevel 1 exit /b 1
-        :tools_ready
-        set "SDKMANAGER=%ANDROID_SDK_ROOT%\cmdline-tools\latest\bin\sdkmanager.bat"
-        set "YES_FILE=%RUNNER_TEMP%\android-sdk-yes.txt"
-        (for /l %%A in (1,1,50) do @echo y) > "%YES_FILE%"
-        call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" --licenses < "%YES_FILE%"
-        if errorlevel 1 exit /b 1
-        call "%SDKMANAGER%" --sdk_root="%ANDROID_SDK_ROOT%" "platforms;android-36" "build-tools;36.0.0"
-        if errorlevel 1 exit /b 1
-    - name: Test APK verification rules
-      shell: cmd
-      run: |
-        py -3 -m unittest discover -s .github\scripts\tests -p "test_*.py" -v
-        if errorlevel 1 exit /b 1
+      id: build_checks
+      timeout-minutes: 210
     - name: Report exact-head Sonar findings for remediation
-      if: always()
+      if: always() && steps.checkout.outcome == 'success'
+      timeout-minutes: 22
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
         retries: 3
         script: |
-          const { newestSonarCheck, assertCleanSonar } = require('./.github/scripts/require_clean_sonar.cjs');
+          const { newestSonarCheck, assertCleanSonar } = require(process.env.SOURCE_ROOT + '/.github/scripts/require_clean_sonar.cjs');
           const ref = context.payload.pull_request?.head?.sha || context.sha;
           let sonar = null;
-          for (let attempt = 0; attempt < 18; attempt++) {
+          // Automatic analysis can queue while Gradle builds. Keep the exact-head
+          // gate before any APK handoff; a timeout still fails verification.
+          for (let attempt = 0; attempt < 120; attempt++) {
             const checks = await github.paginate(github.rest.checks.listForRef, {
               ...context.repo, ref, check_name: 'SonarCloud Code Analysis', per_page: 100,
             });
@@ -145,201 +131,375 @@ jobs:
           }
           core.info('SONAR_ANNOTATION_COUNT=' + annotations.length);
           assertCleanSonar(sonar, annotations, ref);
-    - name: Lint and build all Android variants
-      shell: cmd
-      run: |
-        call gradlew.bat :app:lintDebug :app:lintPreview :app:assembleDebug :app:assembleRelease :app:assemblePreview :ci-ui-driver:lintDebug :ci-ui-driver:assembleDebug --stacktrace
-        if errorlevel 1 exit /b 1
-    - name: Download installed 0.9.0 APK for exact upgrade compatibility test
+    - name: Download the exact published 0.13.5 / 43 APK for upgrade verification
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        github-token: ${{ github.token }}
         script: |
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
-          const release = (await github.rest.repos.getReleaseByTag({...context.repo, tag:'android-preview-a957e62dbf41af06be4a8f9c399e8f3745188344'})).data;
-          const asset = release.assets.find(a => a.name === 'Analyst-AI-0.9.0-preview-a957e62.apk');
-          if (!asset) throw new Error('0.9.0 reference APK missing');
-          const response = await github.rest.repos.getReleaseAsset({...context.repo, asset_id:asset.id, headers:{accept:'application/octet-stream'}});
-          const bytes = Buffer.from(response.data);
-          if (crypto.createHash('sha256').update(bytes).digest('hex') !== '32be82e640498010a0b61e073a6d82ec2237e766fac660058c447096445a1076') throw new Error('0.9.0 reference APK checksum mismatch');
-          const dest = path.join(process.env.RUNNER_TEMP, `previous-apk-${context.runId}.apk`);
-          fs.writeFileSync(dest, bytes);
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const crypto = require('node:crypto');
+          const expected = {
+            version_code: 43,
+            version_name: '0.13.5-preview',
+            bytes: 29771254,
+            sha256: '4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6',
+          };
+          const url = 'https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-43-4e9bf0a2fd54d8ab4b9d49ef9ddf96bc14a274ac4c145585fcfdb88d6ae774b6.apk';
+          const response = await fetch(url, {redirect: 'error', signal: AbortSignal.timeout(60000)});
+          if (response.status !== 200 || !response.body) {
+            await response.body?.cancel();
+            throw new Error('Published baseline43 download failed: HTTP ' + response.status);
+          }
+          const length = response.headers.get('content-length');
+          if (length !== null && length !== String(expected.bytes)) {
+            await response.body.cancel();
+            throw new Error('Published baseline43 Content-Length differs');
+          }
+          const chunks = [];
+          const digest = crypto.createHash('sha256');
+          let total = 0;
+          for await (const chunk of response.body) {
+            total += chunk.byteLength;
+            if (total > expected.bytes) throw new Error('Published baseline43 exceeds exact size');
+            digest.update(chunk);
+            chunks.push(chunk);
+          }
+          if (total !== expected.bytes || digest.digest('hex') !== expected.sha256) {
+            throw new Error('Published baseline43 bytes or SHA256 differ');
+          }
+          const attempt = process.env.GITHUB_RUN_ATTEMPT;
+          if (!/^[1-9]\d{0,19}$/.test(String(context.runId)) || !/^[1-9]\d{0,4}$/.test(attempt)) {
+            throw new Error('Exact run and attempt identity required for baseline43');
+          }
+          const dest = path.join(fs.realpathSync(process.env.RUNNER_TEMP), `previous43-${context.runId}-${attempt}.apk`);
+          fs.writeFileSync(dest, Buffer.concat(chunks, total), {flag: 'wx'});
+          const saved = fs.readFileSync(dest);
+          if (saved.length !== expected.bytes || crypto.createHash('sha256').update(saved).digest('hex') !== expected.sha256) {
+            throw new Error('Saved baseline43 read-back differs');
+          }
           core.exportVariable('PREVIOUS_APK', dest);
-    - name: Release only this checkout's reproducible build intermediates
-      if: always() && steps.checkout.outcome == 'success'
+          core.info('PUBLISHED_ANDROID_UPGRADE_BASELINE=' + JSON.stringify(expected));
+    - name: Retain the four exact CI inputs on this laptop with source and receipt hashes
       shell: cmd
       run: |
-        py -3 .github\scripts\release_build_intermediates.py --allow-incomplete-build
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" pack
         if errorlevel 1 exit /b 1
-    - name: Test private CI transport boundaries
-      shell: cmd
-      run: |
-        node --test .github\scripts\ci_private_transfer.test.cjs
-        if errorlevel 1 exit /b 1
-    - name: Pack only the four signed CI inputs with exact source hashes
-      shell: cmd
-      run: |
-        py -3 tools\ci_apk_archive.py pack
-        if errorlevel 1 exit /b 1
-    - name: Transfer signed inputs through a private temporary GitHub draft
-      id: transfer
-      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-      with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'upload'});
-    needs:
-    - transfer-preflight
+      id: pack_inputs
+      timeout-minutes: 35
     concurrency:
       group: analyst-android-pr-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: false
   runtime:
-    name: Verify main repair APK on free Linux / API 35 and 36
+    name: Verify the exact APK on the existing laptop / API37 / 16KB and 4KB
     needs:
+    - transfer-preflight
     - build
-    runs-on: ubuntu-24.04
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 420
     permissions:
       contents: write
       checks: read
       actions: read
-    timeout-minutes: 70
     env:
-      RUN_PROFILE_UI_TESTS: '1'
+      SOURCE_ROOT: ${{ github.workspace }}/android-ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}/source
+      CI_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      CI_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      CI_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
       PYTHONUNBUFFERED: '1'
-      LIBGL_ALWAYS_SOFTWARE: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      RUN_PROFILE_UI_TESTS: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+      CI_INPUT_ARCHIVE: ${{ needs.build.outputs.input_archive }}
+      CI_INPUT_SHA256: ${{ needs.build.outputs.input_sha256 }}
+      CI_INPUT_RECEIPT_SHA256: ${{ needs.build.outputs.input_receipt_sha256 }}
+      CI_INPUT_ATTEMPT: ${{ needs.build.outputs.input_attempt }}
+    outputs:
+      archive_sha256: ${{ steps.evidence_upload.outputs.archive_sha256 }}
+      runtime_root: ${{ steps.export.outputs.runtime_root }}
+      runtime_attempt: ${{ steps.export.outputs.runtime_attempt }}
+      runtime_receipt_sha256: ${{ steps.export.outputs.runtime_receipt_sha256 }}
+    steps:
+    - name: Require the existing laptop and a new job-owned directory
+      shell: cmd
+      run: |
+        py -3 -c "import os,sys,pathlib; assert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert sys.version_info[:3]==(3,14,6); w=pathlib.Path(os.environ['GITHUB_WORKSPACE']); assert w in [pathlib.Path('C:/')/r/'_work/omni-cio-gateway/omni-cio-gateway' for r in ('actions-runner','actions-runner-2','actions-runner-3','actions-runner-4')]; assert all(not q.is_symlink() and not getattr(q.lstat(),'st_file_attributes',0)&0x400 for q in (w,*w.parents)); p=pathlib.Path(os.environ['SOURCE_ROOT']).parent; assert p.parent==w; assert p.name=='android-ci-runtime-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']; assert not p.exists() and not p.is_symlink()"
+        if errorlevel 1 exit /b 1
+    - name: Checkout the exact tested merge with LF bytes
+      id: checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        path: android-ci-runtime-${{ github.run_id }}-${{ github.run_attempt }}/source
+        persist-credentials: false
+        clean: false
+    - name: Prepare the private evidence return for a later rerun attempt
+      id: prepare_return
+      if: needs.transfer-preflight.outputs.prepared_attempt != format('{0}', github.run_attempt)
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require(process.env.SOURCE_ROOT + '/.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'prepare'});
+    - name: Remove this run draft immediately when rerun preparation fails
+      if: failure() && steps.prepare_return.outcome == 'failure'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require(process.env.SOURCE_ROOT + '/.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+    - name: Copy verified retained inputs into the fresh runtime checkout and recheck APK integrity
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" runtime-prepare
+        if errorlevel 1 exit /b 1
+      id: prepare_runtime
+      timeout-minutes: 65
+    - name: Run original full native API37 suite with measured 16384-byte pages
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" profile-16384
+        if errorlevel 1 exit /b 1
+      id: profile_16384
+      timeout-minutes: 125
+      if: always() && steps.prepare_runtime.outcome == 'success'
+    - name: Run original full native API37 suite with measured 4096-byte pages
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" profile-4096
+        if errorlevel 1 exit /b 1
+      id: profile_4096
+      timeout-minutes: 125
+      if: always() && steps.prepare_runtime.outcome == 'success'
+    - name: Require both complete installation and current UI receipts for the same APK
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" validate
+        if errorlevel 1 exit /b 1
+      id: validate
+      timeout-minutes: 35
+      if: always() && steps.prepare_runtime.outcome == 'success'
+    - name: Preserve exact private runtime evidence after either outcome
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" export
+        if errorlevel 1 exit /b 1
+      id: export
+      timeout-minutes: 15
+      if: always() && steps.checkout.outcome == 'success' && steps.prepare_runtime.outcome != 'skipped'
+    - name: Upload only the private final-evidence archive
+      id: evidence_upload
+      if: always() && steps.export.outcome == 'success'
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      with:
+        script: await require(process.env.SOURCE_ROOT + '/.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'upload'});
+  collect:
+    name: Preserve the exact private Android evidence on runtime storage
+    needs:
+    - transfer-preflight
+    - runtime
+    if: always() && needs.runtime.outputs.archive_sha256 != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - name: Checkout the pinned Timeweb transport helpers
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: cd1866ee944ccea2259669f4293379241fd4ee02
+        path: .transport-admin
+        persist-credentials: false
+    - name: Download and verify the exact private evidence archive
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      env:
+        TRANSFER_SHA256: ${{ needs.runtime.outputs.archive_sha256 }}
+      with:
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
+    - name: Save verified evidence on Timeweb without publishing
+      env:
+        TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        TRANSFER_SHA256: ${{ needs.runtime.outputs.archive_sha256 }}
+        PYTHONUNBUFFERED: '1'
+      run: |
+        python3 - <<'PY'
+        import hashlib,json,os,pathlib,shlex,subprocess,sys,tempfile,time,urllib.request,urllib.error
+        sys.path[:0]=[".transport-admin/deploy",".transport-admin/tools"]
+        import prepare_owner_vm as p
+        import access_owner_vm as access
+        token=p.validated_token(os.environ["TIMEWEB_CLOUD_TOKEN"])
+        def api(method,path,body=None):
+            req=urllib.request.Request("https://api.timeweb.cloud/api/v1"+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={"Authorization":"Bearer "+token,"Accept":"application/json","Content-Type":"application/json"})
+            try:
+                with urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context())).open(req,timeout=45) as r:
+                    raw=r.read(4194305);assert len(raw)<=4194304
+                    return r.status,json.loads(raw) if raw else {}
+            except urllib.error.HTTPError as e:return e.code,p.cloud.error_details(e.read(65536))
+
+        def with_ams(remote_script, *, timeout=300, capture=False, binary_input=None):
+            sid=9417611;ip="83.217.195.29";host="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILN7hxzg6D6GjaE9OYQ19wH86tSm10pTnv+s81eqOfIU runner@runnervmtai0g"
+            status,data=api("GET","/servers/"+str(sid));assert status==200
+            server=data["server"]
+            assert server["name"]=="Analyst AI runtime 20261025" and server["project_id"]==2941515 and server["availability_zone"]=="ams-1" and p.cloud.public_ipv4(server)==ip
+            access.SERVER_ID=sid
+            with tempfile.TemporaryDirectory(prefix="analyst-ams-admin-",dir=os.environ["RUNNER_TEMP"]) as directory:
+                folder=pathlib.Path(directory);p.cloud.generate_key(folder/"client");public=(folder/"client.pub").read_text().strip()
+                created=access.request(token,"POST","/ssh-keys",{"name":"analyst-ams-admin-"+os.environ["GITHUB_RUN_ID"],"body":public,"is_default":False})
+                key=created.get("ssh_key",created.get("ssh-key",{}));kid=key["id"]
+                assert type(kid) is int and key["body"].split()[:2]==public.split()[:2]
+                attached=False
+                try:
+                    access.request(token,"POST","/servers/"+str(sid)+"/ssh-keys",{"ssh_key_ids":[kid]});attached=True
+                    cmd=p.ssh_command(folder,ip,host);cmd[1:1]=["-o","ServerAliveInterval=20","-o","ServerAliveCountMax=3"]
+                    for attempt in range(12):
+                        try:p.remote(cmd,"test $(id -u) = 0",timeout=12);break
+                        except (p.ProbeError,subprocess.TimeoutExpired):
+                            if attempt==11:raise
+                            time.sleep(5)
+                    payload=remote_script.encode() if binary_input is None else binary_input
+                    remote_command="python3 -" if binary_input is None else "python3 -c "+shlex.quote(remote_script)
+                    result=subprocess.run([*cmd,remote_command],input=payload,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=timeout)
+                    if not capture:print(result.stdout.decode(errors="replace"),flush=True)
+                    if result.returncode:
+                        print("AMS_REMOTE_ERROR="+result.stderr.decode(errors="replace")[-4000:],flush=True)
+                        raise RuntimeError("remote_task_failed")
+                    return result.stdout
+                finally:
+                    try:
+                        if attached:access.request(token,"DELETE","/servers/"+str(sid)+"/ssh-keys/"+str(kid))
+                    finally:
+                        access.request(token,"DELETE","/ssh-keys/"+str(kid))
+                    print("AMS_TEMP_KEY_REMOVED=true",flush=True)
+
+
+        import re
+        run=os.environ["GITHUB_RUN_ID"];attempt=os.environ["GITHUB_RUN_ATTEMPT"]
+        expected=os.environ["TRANSFER_SHA256"]
+        assert re.fullmatch(r"[1-9]\d{0,19}",run) and re.fullmatch(r"[1-9]\d{0,4}",attempt)
+        assert re.fullmatch(r"[a-f0-9]{64}",expected)
+        blob=(pathlib.Path(os.environ["RUNNER_TEMP"])/"ci-handoff.zip").read_bytes()
+        assert 0<len(blob)<=512*1024**2 and hashlib.sha256(blob).hexdigest()==expected
+        remote_script=r"""import pathlib,sys,hashlib,json,os,pwd,stat
+        data=sys.stdin.buffer.read(512*1024**2+1)
+        assert len(data)==EXPECTED_BYTES and hashlib.sha256(data).hexdigest()==EXPECTED_HASH
+        parent=pathlib.Path('/var/lib/analyst-ai-build/incoming')
+        account=pwd.getpwnam('analyst-build')
+        if not parent.exists():parent.mkdir(mode=0o750);os.chown(parent,0,account.pw_gid)
+        assert parent.resolve()==parent and stat.S_ISDIR(parent.lstat().st_mode)
+        folder=parent/FOLDER
+        folder.mkdir(mode=0o750);os.chown(folder,0,account.pw_gid)
+        destination=folder/'android-ci-evidence.zip'
+        with destination.open('xb') as out:out.write(data);out.flush();os.fsync(out.fileno())
+        os.chown(destination,0,account.pw_gid);destination.chmod(0o640)
+        assert hashlib.sha256(destination.read_bytes()).hexdigest()==EXPECTED_HASH
+        receipt={'path':str(destination),'sha256':EXPECTED_HASH,'bytes':len(data),'run_id':RUN_ID,'run_attempt':RUN_ATTEMPT,'publication_authorized':False,'origin':'Windows laptop','runtime_pass':False,'source_code_executed_on_timeweb':False}
+        metadata=folder/'transfer-receipt.json';metadata.write_text(json.dumps(receipt,indent=2)+'\n');os.chown(metadata,0,account.pw_gid);metadata.chmod(0o640)
+        print('WINDOWS_ANDROID_CI_RETURNED_ARCHIVE='+json.dumps(receipt),flush=True)
+        """
+        remote_script=remote_script.replace("EXPECTED_BYTES",str(len(blob))).replace("EXPECTED_HASH",repr(expected)).replace("FOLDER",repr("android-ci-"+run+"-"+attempt)).replace("RUN_ID",run).replace("RUN_ATTEMPT",attempt)
+        with_ams(remote_script,timeout=180,binary_input=blob)
+        PY
+  cleanup:
+    name: Delete only this run's private CI transfer
+    needs:
+    - transfer-preflight
+    - build
+    - runtime
+    - collect
+    if: always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name
+      == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
     - name: Checkout the same source commit
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       with:
         persist-credentials: false
         clean: true
-    - name: Enable this ephemeral runner user to use KVM
-      run: |
-        sudo chown "$(id -u):$(id -g)" /dev/kvm
-        python3 tools/ci_host_capacity.py
-    - name: Download and verify the private signed CI inputs
-      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-      env:
-        TRANSFER_SHA256: ${{ needs.build.outputs.archive_sha256 }}
-      with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'download'});
-    - name: Verify exact source and per-file hashes before unpacking
-      run: python3 tools/ci_apk_archive.py unpack
-    - name: Set up JDK 17
-      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6
-      with:
-        distribution: temurin
-        java-version: '17'
-    - name: Install checksum-pinned official Linux Android tools
-      run: |
-        archive="$RUNNER_TEMP/commandlinetools-linux-15859902_latest.zip"
-        curl --fail --location --retry 3 --proto '=https' --tlsv1.2 'https://dl.google.com/android/repository/commandlinetools-linux-15859902_latest.zip' --output "$archive"
-        echo "4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583  $archive" | sha256sum --check -
-        mkdir -p "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools"
-        unzip -q "$archive" -d "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools"
-        mv "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/cmdline-tools" "$RUNNER_TEMP/analyst-android-sdk/cmdline-tools/latest"
-        echo "ANDROID_SDK_ROOT=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
-        echo "ANDROID_HOME=$RUNNER_TEMP/analyst-android-sdk" >> "$GITHUB_ENV"
-    - name: Install the unchanged main Android platform matrix
-      run: |
-        python3 - <<'PYCODE'
-        from pathlib import Path
-        import os, subprocess
-        root = Path(os.environ["ANDROID_SDK_ROOT"])
-        cli = root / "cmdline-tools/latest/bin/android"
-        packages = ["platforms/android-36", "build-tools/36.0.0", "emulator", "platform-tools",
-                    "system-images/android-35/google_apis/x86_64", "system-images/android-36/google_apis/x86_64"]
-        for package in packages:
-            subprocess.run([str(cli), "--sdk=" + str(root), "sdk", "install", package],
-                           input="y\n" * 200, text=True, check=True, timeout=600)
-        PYCODE
-        "$ANDROID_SDK_ROOT/emulator/emulator" -accel-check
-    - name: Install headless display dependencies
-      run: |
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends xvfb libgl1
-    - name: Verify unchanged main APK signature and platform metadata
-      run: |
-        apk_dir="$GITHUB_WORKSPACE/app/build/outputs/apk/preview"
-        build_tools="$ANDROID_SDK_ROOT/build-tools/36.0.0"
-        java -jar "$build_tools/lib/apksigner.jar" verify --verbose --print-certs "$apk_dir/app-preview.apk" > "$apk_dir/signature.txt"
-        "$build_tools/zipalign" -c -P 16 -v 4 "$apk_dir/app-preview.apk" > "$apk_dir/alignment.txt"
-        "$build_tools/aapt" dump badging "$apk_dir/app-preview.apk" > "$apk_dir/badging.txt"
-        "$build_tools/aapt" dump xmltree "$apk_dir/app-preview.apk" AndroidManifest.xml > "$apk_dir/manifest.txt"
-        python3 .github/scripts/verify_apk.py
-    - name: Verify main clean install, launch and full UI on API 35
-      run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --api 35 --work-dir app/build/outputs/apk/preview/install-api-35
-        python3 -c "import shutil; shutil.copytree('app/build/outputs/apk/preview/ui-screens', 'app/build/outputs/apk/preview/ui-screens-api35', dirs_exist_ok=True)"
-    - name: Verify main upgrade, clean install, launch and full UI on API 36
-      run: |
-        xvfb-run --auto-servernum python3 .github/scripts/test_apk_installation.py --sdk "$ANDROID_SDK_ROOT" --apk app/build/outputs/apk/preview/app-preview.apk --previous "$PREVIOUS_APK" --api 36 --work-dir app/build/outputs/apk/preview/install-api-36
-        python3 .github/scripts/validate_distribution.py
-    - name: Record synthetic UI evidence and reports
-      if: always()
+    - name: Delete only this run private CI handoff and verify absence
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        github-token: ${{ github.token }}
-        script: |
-          const fs = require('fs');
-          const path = require('path');
-          const crypto = require('crypto');
-          const root = fs.realpathSync(process.env.GITHUB_WORKSPACE);
-          const base = path.join(root, 'app/build/outputs/apk/preview');
-          const shots = ['failure', 'workspace-ux100', 'ux100-chart', 'bars-selected', 'bars-large-font', 'ux100-impact', 'workspace-appearance', 'workspace-strategy', 'workspace-assistant', 'workspace-market', 'workspace-ratings', 'spectrum-home', 'spectrum-portfolio', 'spectrum-allocation', 'light-initial', 'dark-selected', 'dark-restored', 'light-selected', 'system-dark', 'system-light', 'security', 'info', 'about', 'education', 'large-font', 'education-large-font'];
-          const names = ['apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json', 'ui-screens-api35/ux100-chart.png', 'ui-screens-api35/bars-selected.png', 'ui-screens-api35/bars-large-font.png', ...shots.map(n => `ui-screens/${n}.png`)];
-          const records = [];
-          for (const name of names) {
-            const file = path.join(base, name);
-            if (!fs.existsSync(file)) continue;
-            if (fs.lstatSync(file).isSymbolicLink() || !fs.realpathSync(file).startsWith(root + path.sep)) throw new Error('Evidence outside checkout');
-            const bytes = fs.readFileSync(file);
-            if (bytes.length > 2097152) throw new Error('Evidence file unexpectedly large');
-            const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
-            if (name.endsWith('.json')) {
-              core.info(`VERIFICATION_REPORT ${name} ${JSON.stringify(JSON.parse(bytes.toString('utf8')))}`);
-            }
-            const blob = (await github.rest.git.createBlob({...context.repo, encoding:'base64', content:bytes.toString('base64')})).data;
-            let preview_base64_blob_sha = null;
-            if (name.endsWith('.png')) {
-              // The review connector reads UTF-8 blobs; retain exact PNG bytes in a readable envelope.
-              const preview = (await github.rest.git.createBlob({...context.repo, encoding:'utf-8', content:bytes.toString('base64')})).data;
-              preview_base64_blob_sha = preview.sha;
-            }
-            records.push({name, blob_sha:blob.sha, preview_base64_blob_sha, sha256, bytes:bytes.length});
-          }
-          core.info('VERIFICATION_EVIDENCE=' + JSON.stringify({head:context.payload.pull_request?.head?.sha || context.sha, run:context.runId, records}));
-          await core.summary.addHeading('Android verification evidence').addCodeBlock(JSON.stringify(records, null, 2), 'json').write();
-    - name: Upload optional synthetic Spectrum screenshots
-      if: always()
-      continue-on-error: true
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-      with:
-        name: spectrum-ui-${{ github.event.pull_request.head.sha || github.sha }}
-        path: app/build/outputs/apk/preview/ui-screens/*.png
-        if-no-files-found: warn
-        retention-days: 1
-        compression-level: 0
-    - name: Assert verified APK and evidence are present
+        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+    permissions:
+      contents: write
+  publication:
+    name: Apply existing release or private-retention policy after evidence cleanup
+    needs:
+    - runtime
+    - collect
+    - cleanup
+    if: always() && needs.runtime.result == 'success' && needs.collect.result == 'success' && needs.cleanup.result == 'success'
+    runs-on:
+    - self-hosted
+    - Windows
+    - X64
+    - omni-cio-ci
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      checks: read
+      actions: read
+      pull-requests: read
+    env:
+      SOURCE_ROOT: ${{ github.workspace }}/android-ci-publication-${{ github.run_id }}-${{ github.run_attempt }}/source
+      CI_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CI_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+      CI_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      CI_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+      PYTHONUNBUFFERED: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+      RUN_PROFILE_UI_TESTS: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+      CI_RUNTIME_ROOT: ${{ needs.runtime.outputs.runtime_root }}
+      CI_RUNTIME_ATTEMPT: ${{ needs.runtime.outputs.runtime_attempt }}
+      CI_RUNTIME_RECEIPT_SHA256: ${{ needs.runtime.outputs.runtime_receipt_sha256 }}
+      CI_EVIDENCE_SHA256: ${{ needs.runtime.outputs.archive_sha256 }}
+    steps:
+    - name: Require the existing laptop and a new job-owned directory
+      shell: cmd
       run: |
-        python3 - <<'PYCODE'
-        from pathlib import Path
-        base = Path('app/build/outputs/apk/preview')
-        required = ['app-preview.apk', 'apk-verification.json', 'install-api-35/install-results.json', 'install-api-36/install-results.json']
-        if any(not (base / name).is_file() for name in required) or not list((base / 'ui-screens').glob('*.png')):
-            raise RuntimeError('Verified APK or required runtime evidence is missing')
-        PYCODE
-
+        py -3 -c "import os,sys,pathlib; assert sys.platform=='win32' and os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert sys.version_info[:3]==(3,14,6); w=pathlib.Path(os.environ['GITHUB_WORKSPACE']); assert w in [pathlib.Path('C:/')/r/'_work/omni-cio-gateway/omni-cio-gateway' for r in ('actions-runner','actions-runner-2','actions-runner-3','actions-runner-4')]; assert all(not q.is_symlink() and not getattr(q.lstat(),'st_file_attributes',0)&0x400 for q in (w,*w.parents)); p=pathlib.Path(os.environ['SOURCE_ROOT']).parent; assert p.parent==w; assert p.name=='android-ci-publication-'+os.environ['GITHUB_RUN_ID']+'-'+os.environ['GITHUB_RUN_ATTEMPT']; assert not p.exists() and not p.is_symlink()"
+        if errorlevel 1 exit /b 1
+    - name: Checkout the exact tested merge with LF bytes
+      id: checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        path: android-ci-publication-${{ github.run_id }}-${{ github.run_attempt }}/source
+        persist-credentials: false
+        clean: false
+    - name: Reverify exact retained runtime root receipt source and APKs before sharing
+      shell: cmd
+      run: |
+        py -3 "%SOURCE_ROOT%\.github\scripts\windows_android_ci.py" inspect-retained
+        if errorlevel 1 exit /b 1
+      id: retained
+      timeout-minutes: 10
     - name: Verify explicit release quality before sharing any APK
-      if: >-
-        github.ref == 'refs/heads/main' &&
-        (github.event_name == 'workflow_dispatch' ||
+      if: |-
+        github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'push' &&
           contains(github.event.head_commit.message, '[publish-apk]')))
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: |
-          const quality = await require('./.github/scripts/require_main_release.cjs')({github, context});
+        script: |+
+          process.chdir(process.env.RUNTIME_ROOT);
+          process.env.GITHUB_WORKSPACE = process.env.RUNTIME_ROOT;
+          const quality = await require(process.env.SOURCE_ROOT + '/.github/scripts/require_main_release.cjs')({github, context});
           core.info('MAIN_RELEASE_QUALITY=' + JSON.stringify(quality));
           const fs = require('fs');
           const crypto = require('crypto');
@@ -351,47 +511,46 @@ jobs:
               crypto.createHash('sha256').update(bytes).digest('hex') !== report.sha256) {
             throw new Error('Unverified or previously published APK identity cannot be shared');
           }
-          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+
+      env:
+        RUNTIME_ROOT: ${{ steps.retained.outputs.retained_root }}
     - name: Retain APK and verification evidence when storage is available
       id: retain_apk
-      if: >-
-        github.ref == 'refs/heads/main' &&
-        (github.event_name == 'workflow_dispatch' ||
+      if: |-
+        github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'push' &&
           contains(github.event.head_commit.message, '[publish-apk]')))
       continue-on-error: true
-      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       with:
         name: Analyst-AI-${{ github.sha }}
-        path: |
-          app/build/outputs/apk/preview/app-preview.apk
-          app/build/outputs/apk/preview/apk-verification.json
-          app/build/outputs/apk/preview/install-api-36/install-results.json
-          app/build/outputs/apk/preview/install-api-35/install-results.json
-          app/build/outputs/apk/preview/ui-screens/*.png
+        path: |-
+          ${{ steps.retained.outputs.retained_root }}/app/build/outputs/apk/preview/app-preview.apk
+          ${{ steps.retained.outputs.retained_root }}/app/build/outputs/apk/preview/apk-verification.json
+          ${{ steps.retained.outputs.retained_root }}/app/build/outputs/apk/preview/install-api37-4096/install-results.json
+          ${{ steps.retained.outputs.retained_root }}/app/build/outputs/apk/preview/install-api37-16384/install-results.json
+          ${{ steps.retained.outputs.retained_root }}/app/build/outputs/apk/preview/ui-screens/*.png
         if-no-files-found: error
         retention-days: 1
         compression-level: 0
-
     - name: Report unavailable optional Actions retention
       if: steps.retain_apk.outcome == 'failure'
       run: |
         echo ::warning::Verified APK retention in GitHub Actions storage failed, usually because the repository artifact quota is full. Build, installation, UI, and release-integrity gates remain authoritative.
-
-
     - name: Publish verified APK to GitHub Releases
-      if: >-
-        github.ref == 'refs/heads/main' &&
-        (github.event_name == 'workflow_dispatch' ||
+      if: |-
+        github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
          (github.event_name == 'push' &&
           contains(github.event.head_commit.message, '[publish-apk]')))
-      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
         github-token: ${{ github.token }}
         script: |
-          const quality = await require('./.github/scripts/require_main_release.cjs')({github, context});
+          process.chdir(process.env.RUNTIME_ROOT);
+          process.env.GITHUB_WORKSPACE = process.env.RUNTIME_ROOT;
+          const quality = await require(process.env.SOURCE_ROOT + '/.github/scripts/require_main_release.cjs')({github, context});
           core.info('MAIN_RELEASE_QUALITY=' + JSON.stringify(quality));
-          await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
+
           const fs = require('fs');
           const crypto = require('crypto');
           const owner = context.repo.owner;
@@ -412,14 +571,20 @@ jobs:
           const tag = `android-preview-${sha}`;
           const assetName = `Analyst-AI-${version}-${sha.slice(0, 7)}.apk`;
           const title = `Analyst AI ${version}`;
-          const releaseNotes = fs.readFileSync('docs/releases/0.10.0.md', 'utf8').trim();
-          if (!releaseNotes.includes('0.10.0') || !releaseNotes.includes('F01.4')) throw new Error('Release notes do not identify this update');
+          const sourceDocs = `https://github.com/${owner}/${repo}/blob/${sha}/docs`;
+          const releaseNotes = ['3D100.md', '3D100_EVIDENCE.md', 'PLAN_STATUS.md'].reduce(
+            (text, file) => text.replaceAll(`(../${file})`, `(${sourceDocs}/${file})`),
+            fs.readFileSync('docs/releases/0.11.0.md', 'utf8').trim());
+          if (!releaseNotes.includes('0.11.0') || !releaseNotes.includes('3D100')) throw new Error('Release notes do not identify this update');
           const body = [
             releaseNotes,
-            'Signed, non-debuggable preview APK. Android 15+; application ID ru.omnicio.app.debug.',
+            'Signed, non-debuggable preview APK. Android 17+; application ID ru.omnicio.app.debug.',
             'Uses the existing test signing key, not a production-store signing key.',
-            'APK signature, ZIP/ELF alignment, DEX integrity, clean installation, upgrade and post-upgrade launch from the installed 0.9.0 preview, plus clean installation and full profile/education UI on Android 15 and 16 x86_64 emulators verified.',
-            'A successful emulator run does not claim that every physical-device configuration has been reproduced.',
+            'APK signature, ZIP/ELF alignment, DEX integrity, clean installation and launch, upgrade from 0.13.5 / 43 and post-upgrade launch were verified on Android 17/API 37 x86_64 emulators with measured getconf PAGE_SIZE values of 16384 and 4096 bytes.',
+            'The spectrum-3d-100-v2 UI receipt contains 60 business and 14 portfolio case/font IDs per page-size profile, alongside the native-rendering checks. Production UI components were exercised in a separate debug APK with synthetic data.',
+            'The attached apk-verification.json binds both emulator results to this preview APK SHA-256 and each UI receipt to the exact installed debug APK SHA-256 and case/font IDs.',
+            'These emulator checks do not verify a physical phone, physical ARM hardware with 16 KB pages, TalkBack gestures, heat, battery use, live broker or paid-model access, or installation through the in-app updater.',
+            `Source commit: ${sha}`,
             `SHA-256: ${hash}`,
             `Signing certificate SHA-256: ${report.certificate_sha256}`,
           ].join('\n\n');
@@ -448,27 +613,19 @@ jobs:
           release = (await github.rest.repos.updateRelease({owner, repo, release_id:release.id, name:title, body, draft:false, prerelease:true, make_latest:'false'})).data;
           core.notice(`APK published and verified: ${release.html_url}`);
           await core.summary.addHeading(title).addRaw(`APK SHA-256: ${hash}\n\n${body}`).write();
-  cleanup:
-    name: Delete only this run's private CI transfer
-    needs:
-    - transfer-preflight
-    - build
-    - runtime
-    if: always() && ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) || ((github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'))
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    steps:
-    - name: Checkout the same source commit
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      with:
-        persist-credentials: false
-        clean: true
-    - name: Delete only this run private CI handoff and verify absence
+      env:
+        RUNTIME_ROOT: ${{ steps.retained.outputs.retained_root }}
+    - name: Retain requested device-test APK as a private draft
+      if: success() && github.event_name == 'pull_request'
       uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
       with:
-        script: await require('./.github/scripts/ci_private_transfer.cjs')({github, context, core, command:'cleanup'});
-    permissions:
-      contents: write
+        github-token: ${{ github.token }}
+        script: |
+          process.chdir(process.env.RUNTIME_ROOT);
+          process.env.GITHUB_WORKSPACE = process.env.RUNTIME_ROOT;
+          await require(process.env.SOURCE_ROOT + '/.github/scripts/private_apk_review.cjs')({github, context, core});
+      env:
+        RUNTIME_ROOT: ${{ steps.retained.outputs.retained_root }}
   verify:
     name: Android debug and release build
     if: always()
@@ -476,28 +633,32 @@ jobs:
     - transfer-preflight
     - build
     - runtime
+    - collect
     - cleanup
+    - publication
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     permissions: {}
     steps:
-    - name: Require every build, runtime and cleanup result
+    - name: Require every build runtime evidence cleanup and policy result
       env:
         PREFLIGHT: ${{ needs.transfer-preflight.result }}
         BUILD: ${{ needs.build.result }}
         RUNTIME: ${{ needs.runtime.result }}
         CLEANUP: ${{ needs.cleanup.result }}
+        COLLECT: ${{ needs.collect.result }}
+        PUBLICATION: ${{ needs.publication.result }}
       run: |
-        for result in "$PREFLIGHT" "$BUILD" "$RUNTIME" "$CLEANUP"; do
+        for result in "$PREFLIGHT" "$BUILD" "$RUNTIME" "$COLLECT" "$CLEANUP" "$PUBLICATION"; do
           if [ "$result" != success ]; then
-            echo "A required Android verification job did not succeed."
+            echo "A required Android verification, evidence, cleanup, or policy job did not succeed."
             exit 1
           fi
         done
   merge-gate:
-    # The name is required by the existing Protect main rule (GitHub Actions).
     name: V10 authoritative merge gate
-    needs: [verify]
+    needs:
+    - verify
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 12

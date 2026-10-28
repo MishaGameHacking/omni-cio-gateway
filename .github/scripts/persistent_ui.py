@@ -6,6 +6,7 @@ fallback: disconnected or invalid frames fail. This is not part of the preview A
 from __future__ import annotations
 
 from contextlib import contextmanager
+from backend.android_runtime_contract import TARGET_SDK
 import hashlib
 from pathlib import Path
 import re
@@ -21,6 +22,7 @@ DRIVER_COMPONENT = DRIVER_PACKAGE + "/.FrameInstrumentation"
 MAX_FRAME_BYTES = 2 * 1024 * 1024
 FRAME_TIMEOUT = 30
 FRAME_DEADLINE_ERROR = "Fresh UI frame deadline exceeded"
+SHOW_ON_SCREEN_FLAG = 0x20000000
 ACTION_FLAG = 0x80000000
 ACTION_START_FLAG = 0x10000000
 ACTION_LIST_SHIFT = 24
@@ -31,6 +33,14 @@ SCROLL_LIST_CODES = {
     "portfolio-content": 3,
     "profile-tabs": 4,
     "workspace-content": 5,
+    "dossier-tabs": 6,
+    "quotes-intervals": 7,
+    "assistant-composer": 8,
+    "navigation-panel-content": 9,
+    "navigation-row-main": 10,
+    "navigation-row-portfolio": 11,
+    "navigation-row-research": 12,
+    "navigation-row-personal": 13,
 }
 
 
@@ -136,6 +146,42 @@ class FrameReader:
             self.broken = True
             raise
 
+
+    def show_on_screen(self, resource_id: str, target_id: str) -> bool:
+        """Request only public minimal scrolling of an observed descendant.
+
+        The driver resolves the exact visible target again inside the exact
+        whitelisted list. No click, arbitrary action or app state crosses this
+        protocol. The acknowledgement never substitutes for a fresh UI frame.
+        """
+        code = SCROLL_LIST_CODES.get(resource_id)
+        if code is None or not isinstance(target_id, str) or not 1 <= len(target_id) <= 96 or re.fullmatch(
+                r"[a-z][a-z0-9-]*(?::[a-z0-9][a-z0-9-]*)*", target_id, flags=re.ASCII) is None:
+            raise ValueError("Unknown list or invalid native reveal target")
+        if self.broken:
+            raise ConnectionError("Failed UiAutomation stream cannot perform actions")
+        try:
+            sequence = self._next_sequence()
+            raw_request = SHOW_ON_SCREEN_FLAG | (code << ACTION_LIST_SHIFT) | sequence
+            target = target_id.encode("ascii")
+            deadline = time.monotonic() + 12
+            self.connection.settimeout(12)
+            self.connection.sendall(struct.pack(">IH", raw_request, len(target)) + target)
+            received, status, size = struct.unpack(
+                ">III", read_exact(self.connection, 12, deadline=deadline)
+            )
+            if received != sequence or status not in (5, 6) or size != 0:
+                raise ValueError("Invalid native reveal acknowledgement")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Native reveal acknowledgement exceeded deadline")
+            performed = status == 5
+            print(f"UI_ACCESSIBILITY_ACTION=list-{resource_id};show-{target_id};"
+                  f"performed-{str(performed).lower()};sequence-{sequence}", flush=True)
+            return performed
+        except Exception:
+            self.broken = True
+            raise
+
     def scroll_portfolio(self) -> bool:
         """Compatibility wrapper for the original exact portfolio action."""
         return self.scroll_list("portfolio-content", "end")
@@ -176,8 +222,8 @@ def assert_disposable(device):
         raise ValueError("Frame instrumentation is restricted to the owned disposable AVD")
     if checked(device, "shell", "getprop", "ro.kernel.qemu").strip() != "1":
         raise ValueError("Frame instrumentation refuses physical devices")
-    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() not in {"35", "36"}:
-        raise ValueError("Frame instrumentation requires a tested API 35 or 36 image")
+    if checked(device, "shell", "getprop", "ro.build.version.sdk").strip() != str(TARGET_SDK):
+        raise ValueError("Frame instrumentation requires the current tested Android image")
 
 
 def connect_session(port: int, token: str):

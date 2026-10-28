@@ -1,74 +1,128 @@
 package ru.omnicio.app.ui.workspace
 
+import ru.omnicio.app.ui.spatial.SpatialBackHandler as BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.mapSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.theme.*
+import ru.omnicio.app.ui.AnalystMenuButton
+import ru.omnicio.app.ui.LocalDetailNavigationMenu
+import ru.omnicio.app.ui.RegisterPanelExit
 
 @Composable
 fun AppearanceScreen(onBack: () -> Unit) {
     val controller = LocalWorkspacePreferences.current
-    val prefs = controller.value
-    val theme = LocalThemePreference.current
-    val motion = LocalSpectrumMotionPreference.current
-    WorkspaceDetailPage("Оформление", "Ваш ритм и пространство", onBack) { padding ->
+    val draft = controller.value
+    val preview: (WorkspacePreferences) -> Unit = controller.update
+    val requestExit: (() -> Unit) -> Unit = { proceed -> proceed() }
+    val leave = onBack
+    RegisterPanelExit(WorkspaceRoute.Appearance, requestExit)
+    BackHandler(onBack = leave)
+    WorkspaceDetailPage("Оформление", "Изменения сохраняются автоматически", leave, adaptToIme = true) { padding ->
+        val compact = LocalCompactWorkspaceInput.current
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            if (compact) item(key = "page-heading") {
+                WorkspacePageHeading("Оформление", "Изменения сохраняются автоматически")
+            }
             item {
                 SpectrumCard(emphasized = true) {
-                    Text("Analyst AI", style = MaterialTheme.typography.headlineMedium)
-                    Text("Спокойный фокус. Живые детали.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    SpectrumProgressBar(.64f, accent = LocalSpectrumPalette.current.cyan)
-                    Text("Предпросмотр оформления", style = MaterialTheme.typography.labelMedium)
+                    Text("Analyst AI", style = MaterialTheme.typography.titleLarge)
+                    Text("Единый стиль · движение и удобство", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                        SpectrumBrandOrb(Modifier.size(76.dp))
+                        SpectrumAssetMark("share", "А", Modifier.size(64.dp))
+                        SpectrumAssetMark("bond", "Б", Modifier.size(64.dp))
+                    }
+                    Text("Аа · 0123456789", style = MaterialTheme.typography.headlineSmall)
+                    Text("Образцы оформления без финансовых значений. Проверьте удобство чтения и скорость отклика.", style = MaterialTheme.typography.bodySmall)
+                    Text(controller.saveStatus, style = MaterialTheme.typography.labelMedium,
+                        modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                    if (controller.saveFailed) SpectrumSecondaryButton("Повторить сохранение", controller.retrySave, Modifier.fillMaxWidth())
+
                 }
             }
-            item { SpectrumCard { WorkspaceChoices("Тема", ThemeMode.entries.map { it.title },
-                ThemeMode.entries.indexOf(theme.mode)) { theme.select(ThemeMode.entries[it]) } } }
-            item { SpectrumCard { WorkspaceChoices("Цвет акцента", AccentStyle.entries.map { it.title },
-                prefs.accent.ordinal) { controller.update(prefs.copy(accent = AccentStyle.entries[it])) } } }
-            item { SpectrumCard { WorkspaceChoices("Плотность карточек", InterfaceDensity.entries.map { it.title },
-                prefs.density.ordinal) { controller.update(prefs.copy(density = InterfaceDensity.entries[it])) } } }
             item { SpectrumCard {
-                WorkspaceToggle("Движение", "Иконки и переходы", motion.enabled, motion.select)
-                WorkspaceToggle("Глубина", "Мягкие тени и пространственные акценты", prefs.depth) {
-                    controller.update(prefs.copy(depth = it))
+                WorkspaceChoices("Движение", MotionLevel.entries.map { it.title }, draft.motion.ordinal) { preview(draft.copy(motion = MotionLevel.entries[it])) }
+                Text(when (draft.motion) {
+                    MotionLevel.LIVE -> "Видимые иконки плавно движутся по кругу и реагируют на касание. Числа и подписи остаются неподвижными."
+                    MotionLevel.SUBDUED -> "Короткие спокойные переходы; меньше фонового движения."
+                    MotionLevel.OFF -> "Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения."
+                }, style = MaterialTheme.typography.bodySmall)
+                if (!android.animation.ValueAnimator.areAnimatorsEnabled()) Text("Системные анимации отключены. Это ограничение имеет приоритет над выбранным режимом.")
+                WorkspaceToggle("Акцентные карточки", "Мягкие тени и цветные границы карточек", draft.depth) {
+                    preview(draft.copy(depth = it))
                 }
-                WorkspaceToggle("Отклик касаний", "Лёгкая вибрация при смене раздела", prefs.haptics) {
-                    controller.update(prefs.copy(haptics = it))
+                WorkspaceToggle("Яркое освещение", "Плотные поверхности и более отчётливые границы", draft.brightLight) { preview(draft.copy(brightLight = it)) }
+                WorkspaceToggle("Отклик касаний", "Лёгкая вибрация при смене раздела", draft.haptics) {
+                    preview(draft.copy(haptics = it))
                 }
             } }
-            item { WorkspaceSection("Главный экран") }
+            item { WorkspaceSection("Приватность") }
             item { SpectrumCard {
-                WorkspaceToggle("Скрывать сумму", "Во всех финансовых разделах, графиках и подробностях", prefs.hideHomeBalance) {
-                    controller.update(prefs.copy(hideHomeBalance = it))
-                }
-                WorkspaceToggle("Структура капитала", "Краткое распределение на главном экране", prefs.homeStructure) {
-                    controller.update(prefs.copy(homeStructure = it))
+                WorkspaceToggle("Скрывать сумму", "Во всех финансовых разделах, графиках и подробностях", draft.hideHomeBalance) {
+                    preview(draft.copy(hideHomeBalance = it))
                 }
             } }
             item { SpectrumSecondaryButton("Вернуть оформление по умолчанию", {
-                controller.update(WorkspacePreferences()); theme.select(ThemeMode.DARK); motion.select(true)
+                preview(WorkspacePreferences(hideHomeBalance = draft.hideHomeBalance, homeStructure = draft.homeStructure))
             }, Modifier.fillMaxWidth()) }
+            item { Text("Каждый выбор применяется автоматически. Системный размер шрифта и ограничения движения учитываются.", style = MaterialTheme.typography.bodySmall) }
         }
     }
 }
 
+internal val LocalCompactWorkspaceInput = staticCompositionLocalOf { false }
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
     symbol: SpectrumSymbol = SpectrumSymbol.Allocation,
+    adaptToIme: Boolean = false,
     content: @Composable (PaddingValues) -> Unit) {
+    val menu = LocalDetailNavigationMenu.current
     SpectrumBackground(Modifier.fillMaxSize()) {
-        Scaffold(containerColor = androidx.compose.ui.graphics.Color.Transparent,
-            contentWindowInsets = WindowInsets.safeDrawing,
-            topBar = {
-                WorkspaceHeader(title, subtitle, onBack, symbol)
-            }, content = content)
+        // Measure the actual safe viewport, including any insets already consumed
+        // by a parent. Reading the screen height and subtracting IME again would
+        // reserve its space twice in an embedded workspace.
+        val insets = if (adaptToIme) WindowInsets.safeDrawing else WindowInsets(0, 0, 0, 0)
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(insets)) {
+            // Large text can consume the safe viewport even with the IME hidden.
+            // Keep the same content slot while the header yields its height.
+            val compact = adaptToIme && maxHeight < 240.dp * LocalDensity.current.fontScale
+            CompositionLocalProvider(LocalCompactWorkspaceInput provides compact) {
+                Row(Modifier.fillMaxSize()) {
+                    if (compact) Column(Modifier.width(56.dp).fillMaxHeight()
+                        .verticalScroll(rememberScrollState()).padding(top = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        menu?.let { AnalystMenuButton(it.open) }
+                        SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
+                    }
+                    // Keep the content at one composition location while the
+                    // header gives its height to the focused native editor.
+                    Scaffold(Modifier.weight(1f).fillMaxHeight(),
+                        containerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        contentWindowInsets = WindowInsets.safeDrawing,
+                        topBar = {
+                            if (!compact) WorkspaceHeader(title, subtitle, onBack, symbol, onOpenMenu = menu?.open)
+                        }, content = content)
+                }
+            }
+        }
     }
 }

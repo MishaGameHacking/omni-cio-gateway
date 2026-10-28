@@ -1,0 +1,89 @@
+{
+  "stage": "runtime-leaf",
+  "status": "failed",
+  "publication_authorized": false,
+  "source_sha256": "fdb272e3b396586631babd98392590c1562b2c5bafd981dffa831e035b9b7f5c",
+  "android_api": 37,
+  "page_size_bytes": 4096,
+  "boot_timeout_seconds": 1200,
+  "attempts": 1,
+  "subprocess_timeout_seconds": 7200,
+  "unit": "analyst-ai-runtime-leaf-4k-fdb.service",
+  "started_at": "2026-10-25T11:05:08.322004+00:00",
+  "log_directory": "/var/lib/analyst-ai-build/runs/20261025T110508321822Z-runtime-leaf-4k",
+  "command": [
+    "xvfb-run",
+    "-a",
+    "/var/lib/analyst-ai-build/venv/bin/python",
+    "/srv/analyst-ai/workspace/.github/scripts/test_apk_installation.py",
+    "--sdk",
+    "/opt/analyst-android-sdk",
+    "--apk",
+    "/srv/analyst-ai/workspace/app/build/outputs/apk/preview/app-preview.apk",
+    "--previous",
+    "/srv/analyst-ai-ota/releases/ru.omnicio.app.debug/Analyst-AI-37-1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74.apk",
+    "--api",
+    "37",
+    "--page-bytes",
+    "4096",
+    "--work-dir",
+    "/var/lib/analyst-ai-build/runs/20261025T110508321822Z-runtime-leaf-4k/install-api37-4096",
+    "--boot-timeout-seconds",
+    "1200",
+    "--attempts",
+    "1"
+  ],
+  "upgrade_baseline": {
+    "package_name": "ru.omnicio.app.debug",
+    "version_code": 37,
+    "apk_sha256": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
+  },
+  "candidate_version_code": 38,
+  "frozen_hashes": {
+    "apk": "d57ea8c55642aaf1b18703cf0170fdd78b5d73912d57b3415d34c563fcab9649",
+    "verification": "d38b63efd706f0401608b47186da21301161750ed9a83c0bdf5545362f001ab9",
+    "fixture": "401cb0e742cb1b688f5e001c8b4a76172cd83967b9797d010d146df8ddb18b9b",
+    "public_apk": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "public_manifest": "f4ca200f71636be6222b4b0cd32d38c1653701afcdaf4b8c174dd23c6020eedd",
+    "image_metadata": "eaa32c775da3293e3c995bb98819b9bddaad7787ff3c3708911cea745ea72724"
+  },
+  "system_image": "system-images;android-37.0;google_apis;x86_64",
+  "lavapipe_icd": "/usr/share/vulkan/icd.d/lvp_icd.json",
+  "harness_sha256": "926140ca9b46abf140f3f5dbbcac04fc43aab2b83ac406c87d6bd97705ef323e",
+  "exit_code": 1,
+  "error_type": "RuntimeError",
+  "error": "tracked_installation_leaf_failed",
+  "remaining_owned_processes": 0,
+  "source_sha256_after": "fdb272e3b396586631babd98392590c1562b2c5bafd981dffa831e035b9b7f5c",
+  "hashes_after": {
+    "apk": "d57ea8c55642aaf1b18703cf0170fdd78b5d73912d57b3415d34c563fcab9649",
+    "verification": "d38b63efd706f0401608b47186da21301161750ed9a83c0bdf5545362f001ab9",
+    "fixture": "401cb0e742cb1b688f5e001c8b4a76172cd83967b9797d010d146df8ddb18b9b",
+    "public_apk": "1c91b77a8c86453b60ff2340723f3280f64b6e34769ecc984b4663499bb9aa74",
+    "public_manifest": "f4ca200f71636be6222b4b0cd32d38c1653701afcdaf4b8c174dd23c6020eedd",
+    "image_metadata": "eaa32c775da3293e3c995bb98819b9bddaad7787ff3c3708911cea745ea72724"
+  },
+  "install_results": {
+    "path": "/var/lib/analyst-ai-build/runs/20261025T110508321822Z-runtime-leaf-4k/install-api37-4096/install-results.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "data": []
+  },
+  "attempt_install_results": {
+    "path": "/var/lib/analyst-ai-build/runs/20261025T110508321822Z-runtime-leaf-4k/install-api37-4096/attempt-1/install-results.json",
+    "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "data": []
+  },
+  "boot_observation": {
+    "path": "/var/lib/analyst-ai-build/runs/20261025T110508321822Z-runtime-leaf-4k/install-api37-4096/attempt-1/boot-observation.json",
+    "sha256": "948ff3c4c323201e776336002dac3477e8bd84b123781fd345e9102201076b51",
+    "data": {
+      "requested_seconds": 1200,
+      "elapsed_seconds": 1200.002,
+      "outcome": "timeout",
+      "boot_completed": false,
+      "error_type": "TimeoutError"
+    }
+  },
+  "finished_at": "2026-10-25T11:26:41.638975+00:00"
+}

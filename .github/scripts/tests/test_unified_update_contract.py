@@ -1,5 +1,6 @@
 """Source-boundary regressions, not a replacement for device self-update tests."""
 from pathlib import Path
+import re
 import unittest
 import xml.etree.ElementTree as ET
 
@@ -25,7 +26,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
     def test_main_uses_shared_gate_and_spectrum_renderer(self):
         main = self.source('MainActivity.kt')
         self.assertIn('MandatoryUpdateHost(blockedContent =', main)
-        self.assertIn('RequiredUpdateScreen(state, actions)', main)
+        self.assertIn('RequiredUpdateScreen(state, actions, extraContent = { OfflineSnapshotAccess(state) })', main)
         self.assertIn('AnalystAiApp(', main)
 
     def test_bootstrap_does_not_forward_untrusted_extras_or_check_a_second_policy(self):
@@ -45,28 +46,46 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         for token in ('captureTelegramCallback', 'AUTH_SCHEME = "analystai"', 'AUTH_HOST = "auth"', 'exchangeTelegramCode(code)', 'sessionStore.save(result.value)'):
             self.assertIn(token, source)
 
+
     def test_spectrum_primary_navigation_and_internal_destinations(self):
         main = self.source('MainActivity.kt')
         bar = self.source('ui/AnalystBottomBar.kt')
-        for tab in ('Home', 'Portfolio', 'Actions', 'Risk', 'Profile'):
-            self.assertIn('AnalystTab.' + tab, main)
-            self.assertIn('AnalystTab.' + tab, bar)
+        catalogue = self.source('ui/NavigationCatalogue.kt')
+        self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
+        self.assertIn('SpectrumGlyphButton',bar)
+        self.assertNotIn('AnalystMenuButton(openMenu)',bar)
+        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Портфель','Portfolio'),
+                                 ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
+            self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
+            self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
+        for tab in ('Risk','Education'):
+            self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+tab,main)
         for screen in ('Recommendations', 'Messages'):
             self.assertIn('AppScreen.' + screen, main)
-        for label in ('Капитал', 'Портфель', 'Действия', 'Риски', 'Профиль'):
-            self.assertIn('"' + label + '"', bar)
-        self.assertNotIn('AnalystTab.Ideas', main)
-        self.assertNotIn('AnalystTab.Pulse', main)
-        self.assertNotIn('AnalystTab.Chat', main)
+        self.assertIn('AutonomousDecisionsScreen(goBack)', main)
+        for forbidden in ('AnalystTab.Ideas', 'AnalystTab.Pulse', 'AnalystTab.Chat'):
+            self.assertNotIn(forbidden, main)
 
-    def test_home_is_real_data_dashboard_not_demo_fixture(self):
+
+    def test_home_uses_server_saved_automation_state_without_demo_balances(self):
         main = self.source('MainActivity.kt')
-        home = self.source('ui/home/HomeScreen.kt')
+        source = self.source('ui/home/HomeScreen.kt')
+        home = source.split('fun HomeScreen(', 1)[1].split('\nprivate fun automationStateTitle', 1)[0]
         self.assertIn('HomeScreen(', main)
-        for token in ('PortfolioUiState', 'PortfolioSnapshot', 'snapshot.totalValue.moneyText()', 'snapshot.allocations'):
+        for token in ('rememberWorkspaceResource("/automation/status")',
+                      'resource.data?.takeIf { it.optInt("schema_version") == 1 }',
+                      'status?.records("blockers")', 'status?.optJSONObject("discovery")',
+                      'discovery?.records("candidates")', 'status?.text("last_observation_at", "")',
+                      'val currentError = resource.error',
+                      'execution?.text("mode", "") == "read_only"',
+                      'execution.optBoolean("real_orders_enabled") == false'):
             self.assertIn(token, home)
-        for forbidden in ('1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
+        for forbidden in ('snapshot.totalValue', 'snapshot.allocations', 'InteractiveBalance(',
+                          'HoldToRevealBalance(', 'PortfolioSnapshot(', 'rememberWorkspaceAction(',
+                          '1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
             self.assertNotIn(forbidden, home)
+        self.assertIn('status == null -> "Статус не получен"', home)
+        self.assertIn('Результаты ещё не получены.', home)
 
     def test_network_clients_send_same_version_and_handle_426(self):
         for file in ('data/backend/AnalystBackendClient.kt', 'data/analysis/AnalysisBackendClient.kt', 'data/portfolio/PortfolioDataClient.kt'):

@@ -24,6 +24,8 @@ from backend.release_publication import publish
 from backend.monitoring_access import monitoring_connection
 from backend.portfolio_details import record_history
 from backend.tests.test_autonomous_ai import sample_snapshot
+from backend.tests.calendar_dispatch_fixtures import open_dispatch_market
+from backend.tests.android_runtime_fixtures import publication_report
 
 
 class ApplicationUpdateTests(unittest.TestCase):
@@ -64,6 +66,7 @@ class ApplicationUpdateTests(unittest.TestCase):
             'signature_v2':True,'zipalign_16kb':True,'debuggable':False,'test_only':False,
             'package':'ru.omnicio.app.debug','version_code':version,'version_name':str(version),'min_sdk':36,
             'installation_evidence':{'apk_sha256':sha,'36':checks}}
+        evidence = publication_report(evidence)
         return publish(self.root/'releases',apk,evidence,expected_certificate='c'*64)
 
     def headers(self, version=23):
@@ -127,10 +130,14 @@ class ApplicationUpdateTests(unittest.TestCase):
         self.assertEqual(self.client.get('/me', headers=self.headers(22)).status_code, 426)
 
     def test_scheduler_enqueues_connected_users_without_client_readiness(self):
-        with patch.object(ai.AnalysisQueue, 'enqueue') as enqueue, \
-                patch.object(ai, 'drain', return_value={}) as drain:
+        with closing(backend.connect()) as db:
+            user = db.execute('SELECT * FROM users WHERE id=?', (self.uid,)).fetchone()
+        with open_dispatch_market(user), patch.object(ai, 'drain', return_value={}) as drain:
             ai.run_scheduler_cycle()
-        enqueue.assert_called_once_with(self.uid)
+        self.assertFalse(updates.user_can_run(backend.connect, self.uid))
+        with closing(backend.connect()) as db:
+            queued = db.execute("SELECT user_id,status FROM ai_work_jobs").fetchall()
+        self.assertEqual([(row['user_id'], row['status']) for row in queued], [(self.uid, 'queued')])
         drain.assert_called_once()
 
     def test_expired_or_missing_android_session_does_not_stop_monitoring(self):
@@ -231,7 +238,9 @@ class ApplicationUpdateTests(unittest.TestCase):
                 )
             db.execute('DELETE FROM sessions')
             db.commit()
-        with patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90)), \
+        with closing(backend.connect()) as db:
+            users = db.execute('SELECT * FROM users ORDER BY id').fetchall()
+        with open_dispatch_market(*users), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90)), \
                 patch.object(ai.GuardedAIClient, 'check_ready', side_effect=ai.GuardError('test_ai_disabled')):
             result = ai.run_scheduler_cycle()
         self.assertEqual(result, {'processed': 5, 'failed': 0})

@@ -19,7 +19,8 @@ class AnalystBackendClient(
         val response = request(
             method = "POST",
             path = "/auth/session",
-            body = JSONObject().put("code", code.trim()).toString(),
+            body = JSONObject().put("code", code.trim())
+                .put("device_name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".take(100)).toString(),
         )
         return when (response) {
             is BackendResult.Success -> runCatching {
@@ -170,6 +171,7 @@ class AnalystBackendClient(
             }
             val status = connection.responseCode
             ru.omnicio.app.data.updates.ClientVersion.observeStatus(status)
+            ru.omnicio.app.data.backend.SessionExpiry.observe(status, bearer)
             val responseBody = if (status in 200..299) {
                 connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             } else {

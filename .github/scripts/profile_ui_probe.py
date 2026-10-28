@@ -9,10 +9,14 @@ import tempfile
 import time
 import xml.etree.ElementTree as ET
 
+APPLY_LABEL = 'Применить'
+LIGHT_THEME_LABEL = 'Светлая'
+
+
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Оформление"
-WORKSPACE_BACK = "‹ Назад"
+WORKSPACE_BACK = "Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
 INFO_LABEL = "О приложении"
@@ -20,8 +24,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "fff5f8ff"
-DARK_BACKGROUND = "ff090e18"
+LIGHT_BACKGROUND = "ff050e1c"
+DARK_BACKGROUND = "ff050e1c"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -33,6 +37,55 @@ def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
         if text in [label.strip() for label in labels]:
             return node
     return None
+
+
+def checkable_label(tree: ET.Element, text: str) -> ET.Element | None:
+    """Resolve the native control, including labels in its unmerged children."""
+    return _native_label(tree, text, "checkable", "true")
+
+
+def button_label(tree: ET.Element, text: str) -> ET.Element | None:
+    """Read the action owner's state, including Compose's separate role child.
+
+    Compose exposes a non-leaf clickable as View, with a direct, unlabelled
+    Button child for Role.Button. That child has no click action or Disabled
+    property; enabled must be read from its clickable parent, not the role or
+    text child. A label or arbitrary clickable without a button role is not
+    evidence of a button.
+    """
+    matches = [node for node in tree.iter("node")
+               if node.get("package") == PACKAGE
+               and node.get("visible-to-user") != "false"
+               and _owns_button_role(node)
+               and matching_node(node, text) is not None]
+    if len(matches) > 1:
+        raise AssertionError("Ambiguous native control label: " + text)
+    return matches[0] if matches else None
+
+
+def _owns_button_role(node: ET.Element) -> bool:
+    if node.get("class") == "android.widget.Button":
+        return True
+    if node.get("class") != "android.view.View" or node.get("clickable") != "true":
+        return False
+    return any(child.get("class") == "android.widget.Button"
+               and child.get("package") == PACKAGE
+               and child.get("visible-to-user") != "false"
+               and child.get("clickable") == "false"
+               and not child.get("text") and not child.get("content-desc")
+               and len(child) == 0
+               for child in node)
+
+
+def _native_label(tree: ET.Element, text: str, attribute: str, value: str) -> ET.Element | None:
+    matches = [node for node in tree.iter("node")
+               if node.get("package") == PACKAGE
+               and node.get("visible-to-user") != "false"
+               and node.get(attribute) == value
+               and matching_node(node, text) is not None]
+    if len(matches) > 1:
+        raise AssertionError("Ambiguous native control label: " + text)
+    return matches[0] if matches else None
 
 
 def node_bounds(node: ET.Element) -> tuple[int, int, int, int]:
@@ -67,7 +120,9 @@ def semantic_scroll_direction(
     x2: int,
     y2: int,
 ) -> str:
-    if area == "profile-tabs":
+    if area in {"profile-tabs", "dossier-tabs", "quotes-intervals",
+                "navigation-row-main", "navigation-row-portfolio",
+                "navigation-row-research", "navigation-row-personal"}:
         return _horizontal_scroll_direction(x1, y1, x2, y2)
     return _vertical_scroll_direction(x1, y1, x2, y2)
 
@@ -126,6 +181,7 @@ class ProfileProbe:
                 raise AssertionError("Invalid or incomplete emulator screenshot")
             picture.replace(destination)
         print("PROFILE_SCREENSHOT=" + name, flush=True)
+        return destination
 
     def wait_for(self, read, message):
         deadline = time.monotonic() + 12
@@ -133,7 +189,7 @@ class ProfileProbe:
         while time.monotonic() < deadline:
             try:
                 value = read()
-                if value is not None:
+                if value is not None and value is not False:
                     return value
             except (RuntimeError, ET.ParseError, ValueError) as error:
                 last_error = error
@@ -188,7 +244,7 @@ class ProfileProbe:
 
         return scroll
 
-    def reveal(self, text, area="profile-content", direction="end"):
+    def reveal(self, text, area="profile-content", direction="end", *, max_swipes=10):
         from profile_scroll import reveal_in_list
 
         target = reveal_in_list(
@@ -197,6 +253,7 @@ class ProfileProbe:
             text,
             resource_id=area,
             direction=direction,
+            max_swipes=max_swipes,
             layout_timeout=12,
         )
         if target is None:
@@ -213,6 +270,8 @@ class ProfileProbe:
         resource_id,
         area="profile-content",
         direction="end",
+        for_capture=False,
+        minimum_size=(0, 0),
     ):
         from profile_scroll import reveal_resource_in_list
 
@@ -223,12 +282,15 @@ class ProfileProbe:
             resource_id=area,
             direction=direction,
             layout_timeout=12,
+            for_capture=for_capture,
+            minimum_size=minimum_size,
         )
         if target is None:
-            from profile_scroll import visible_resource
+            from profile_scroll import visible_resource, fully_visible_resource
 
             target = self.wait_for(
-                lambda: visible_resource(self.tree(), resource_id),
+                lambda: fully_visible_resource(self.tree(), resource_id, area, minimum_size)
+                if for_capture else visible_resource(self.tree(), resource_id),
                 "UI resource not visible: " + resource_id,
             )
         return target
@@ -243,18 +305,39 @@ class ProfileProbe:
             str((top + bottom) // 2),
         )
 
-    def tap(self, text, area="profile-content", direction="end"):
-        self.tap_node(self.reveal(text, area, direction))
+    def dismiss_keyboard(self):
+        from native_input_evidence import dismiss_keyboard
+        return dismiss_keyboard(self)
+
+    def tap(self, text, area="profile-content", direction="end", *, max_swipes=10):
+        self.tap_node(self.label_tap_target(text, area, direction, max_swipes=max_swipes))
+
+    def label_tap_target(self, text, area="profile-content", direction="end", *, max_swipes=10):
+        """Reveal and observe the settled native action before any tap."""
+        from native_label_target import settled_label
+        from profile_scroll import reveal_in_list
+
+        target = reveal_in_list(
+            self.tree, self._semantic_scroll_callback(area, direction), text,
+            resource_id=area, direction=direction, max_swipes=max_swipes, layout_timeout=12, for_tap=True,
+        )
+        if target is None:
+            raise AssertionError("Native action list is not visible: " + area)
+        return settled_label(self.tree, text)
 
     def tap_visible(self, text):
-        """Wait for a dialog action; never scroll the obscured profile behind it."""
-        from profile_scroll import visible_label
+        """Wait for a native visible action/editor without scrolling any list."""
+        from native_label_target import settled_label
 
-        target = self.wait_for(
-            lambda: visible_label(self.tree(), text),
-            "Dialog action not visible: " + text,
-        )
-        self.tap_node(target)
+        self.tap_node(settled_label(self.tree, text))
+
+    def _show_resource_on_screen(self, area, resource_id):
+        from persistent_ui import FrameReader
+
+        reader = getattr(self.read_tree, "__self__", None)
+        if not isinstance(reader, FrameReader):
+            raise ValueError("Native target reveal needs the owned frame session")
+        return reader.show_on_screen(area, resource_id)
 
     def resource_tap_target(
         self,
@@ -272,6 +355,7 @@ class ProfileProbe:
             direction=direction,
             layout_timeout=12,
             for_tap=True,
+            show_on_screen=self._show_resource_on_screen,
         )
         if target is None:
             raise AssertionError("Button list is not visible: " + area)
@@ -281,19 +365,27 @@ class ProfileProbe:
         self.tap_node(self.resource_tap_target(resource_id, area, direction))
 
     def tap_profile_content(self, text):
+        from native_label_target import settled_label
         from profile_scroll import reveal_in_list
         from profile_tab_checks import content_tree
 
+        def read_content():
+            frame = self.tree()
+            scoped = ET.Element("hierarchy", dict(frame.attrib))
+            scoped.append(content_tree(frame))
+            return scoped
+
         target = reveal_in_list(
-            lambda: content_tree(self.tree()),
+            read_content,
             self._semantic_scroll_callback("profile-content", "end"),
             text,
             resource_id="profile-content",
             layout_timeout=12,
+            for_tap=True,
         )
         if target is None:
             raise AssertionError("Profile content action not visible: " + text)
-        self.tap_node(target)
+        self.tap_node(settled_label(read_content, text))
 
     def tab(self, label):
         from profile_tab_checks import TAB_IDS, reveal_tab, selected_tab, settled_tab
@@ -318,7 +410,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "fff4f7ff" if expected == DARK_BACKGROUND else "ff101722"
+        foreground = "ffedf5ff" if expected == DARK_BACKGROUND else "ffedf5ff"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):
@@ -350,26 +442,53 @@ class ProfileProbe:
             self.marker("probe-screen:" + screen)
             self.palette(DARK_BACKGROUND)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
-            self.find_all(("Капитал", "Портфель", "Действия", "Риски", "Профиль"))
+            self.find_all(("Главная", "Решения", "Настройки"))
             self.find("Analyst AI" if screen == "home" else "Портфель")
             self.capture("spectrum-" + screen)
             if screen == "portfolio":
                 self.reveal("Денежные средства", "portfolio-content")
                 self.capture("spectrum-allocation")
-                from profile_scroll import visible_resource
-                search = self.wait_for(lambda visible_resource=visible_resource: visible_resource(self.tree(), "portfolio-search"), "Portfolio search is not visible")
-                self.tap_node(search)
-                self.command("shell", "input", "text", "NO_SUCH_ASSET")
-                self.command("shell", "input", "keyevent", "BACK")
+                from native_input_evidence import append_native_text
+                self.tap_resource("portfolio-search", "portfolio-content")
+                append_native_text(self, "", "NO_SUCH_ASSET")
+                self.dismiss_keyboard()
                 self.find("Ничего не найдено")
                 self.tap_visible("Сбросить")
                 self.find("Денежные средства")
+                from position_preview_probe import exercise_position_preview
+                exercise_position_preview(self)
         self.command("shell", "am", "force-stop", PACKAGE)
+
+    def goal_workflow(self):
+        from goal_workflow_probe import exercise_goal_workflow
+        exercise_goal_workflow(self)
+
+    def balance_privacy(self):
+        from balance_privacy_probe import exercise_balance_privacy
+        exercise_balance_privacy(self)
+
+    def spatial(self):
+        from spatial_ui_probe import exercise_spatial
+        exercise_spatial(self)
+
+    def business(self):
+        from business_ui_probe import exercise_business
+        report = exercise_business(self)
+        self.business_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
+
+    def session_context(self):
+        from session_context_probe import exercise_session_context
+        exercise_session_context(self)
+
+    def portfolio(self):
+        from portfolio_ui_probe import exercise_portfolio
+        report = exercise_portfolio(self)
+        self.portfolio_cases = [row["case"] + "@" + format(row["font_scale"], "g") for row in report["cases"]]
 
     def workspace(self):
         from profile_launch import launch_profile
         for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
-                              ("assistant", "Ассистент"), ("market", "Отрасли и классы"), ("ux100", "Проверка UX100")):
+                              ("assistant", "Ассистент"), ("market", "Рынки и география"), ("ux100", "Проверка UX100")):
             launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)
             self.find(label)
             self.find("ВИЗУАЛЬНЫЙ ТЕСТ · НЕ РЕАЛЬНЫЕ ДАННЫЕ")
@@ -377,7 +496,7 @@ class ProfileProbe:
             if screen == "strategy":
                 self.tap_visible("Отбор")
                 self.reveal("Кредитные рейтинги", "workspace-content")
-                self.reveal("Минимум: BBB- ▾", "workspace-content")
+                self.reveal("Минимум: BBB-", "workspace-content")
                 self.capture("workspace-ratings")
                 self.tap_visible("Доход")
                 self.reveal("Пополнять резерв", "workspace-content")
@@ -414,57 +533,61 @@ class ProfileProbe:
                 self.tap("Обновления события (2)", "workspace-content")
                 self.find("Уточнение источника")
             elif screen == "appearance":
-                self.reveal("Движение", "workspace-content")
-                self.tap("Движение", "workspace-content")
+                self.reveal("Без движения", "workspace-content")
+                self.tap("Без движения", "workspace-content")
+                self.find("Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения.")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
             self.tap_visible(WORKSPACE_BACK)
-            self.find("Ваш капитал")
+            self.find("Главная")
         self.command("shell", "am", "force-stop", PACKAGE)
 
     def profile_preflight(self):
-        # Exercise the previously failing production rail before system-mode
-        # changes, then repeat the same checks after those changes below.
+        # Exercise actual settings and dialogs before system-mode changes,
+        # then repeat after applying those changes below.
         self.open()
-        # This preflight validates real dialog actions and tab geometry. The
+        # This preflight validates real dialog actions and settings scroll reachability. The
         # full dialog stage below captures all three required screenshots;
         # avoid re-capturing those frames before the primary UI assertions.
         self.dialogs(capture_evidence=False)
         self.section_scroll_reset()
 
     def themes(self):
+        # Stable full-suite stage name; owner replaced theme selection with one style.
+        # Six real captures cover OS day/night, persisted motion and cancelled preview.
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
-        # Spectrum starts dark; light/system remain explicit user choices.
-        self.palette(DARK_BACKGROUND)
-        self.tap(THEME_LABEL)
-        self.tap("Светлая", "workspace-content")
-        self.tap_visible(WORKSPACE_BACK)
         self.palette(LIGHT_BACKGROUND)
-        self.capture("light-initial")
+        self.capture("style-system-day-initial")
         self.tap(THEME_LABEL)
-        self.tap("Тёмная", "workspace-content")
+        self.tap("Без движения", "workspace-content")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
-        self.capture("dark-selected")
+        self.capture("style-motion-off")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
         self.palette(DARK_BACKGROUND)
-        self.capture("dark-restored")
         self.tap(THEME_LABEL)
-        self.tap("Светлая", "workspace-content")
+        self.reveal("Без движения", "workspace-content")
+        from portfolio_preferences_probe import selected_control
+        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Motion setting was not restored")
+        self.capture("style-motion-restored")
+        self.tap("Сдержанное", "workspace-content")
+        self.tap("Отменить", "workspace-content", direction="start")
+        self.reveal("Без движения", "workspace-content")
+        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Cancel did not restore saved motion")
+        self.tap("Живое", "workspace-content")
+        self.tap(APPLY_LABEL, "workspace-content", direction="start")
         self.tap_visible(WORKSPACE_BACK)
-        self.palette(LIGHT_BACKGROUND)
-        self.capture("light-selected")
-        self.tap(THEME_LABEL)
-        self.tap("Как в системе", "workspace-content")
-        self.tap_visible(WORKSPACE_BACK)
+        self.palette(DARK_BACKGROUND)
+        self.capture("style-motion-live")
         self.command("shell", "cmd", "uimode", "night", "yes")
         self.palette(DARK_BACKGROUND)
-        self.capture("system-dark")
+        self.capture("style-system-night")
         self.command("shell", "cmd", "uimode", "night", "no")
         self.palette(LIGHT_BACKGROUND)
-        self.capture("system-light")
+        self.capture("style-system-day")
 
     def dialogs(self, capture_evidence=True):
         self.tap_resource("profile-security-action")
@@ -472,7 +595,7 @@ class ProfileProbe:
         if capture_evidence:
             self.capture("security")
         self.tap_visible(CONFIRM_LABEL)
-        self.horizontal_info()
+        self.reveal(INFO_LABEL)
         if capture_evidence:
             self.capture("info")
         self.tap_profile_content(INFO_LABEL)
@@ -487,18 +610,28 @@ class ProfileProbe:
         self.tap_visible(CONFIRM_LABEL)
 
     def section_scroll_reset(self):
-        self.tab(SETTINGS_LABEL)
+        # The redesigned settings are one scroll hierarchy. Start from a real visible top control.
+        self.reveal("Автоматический анализ", direction="start", max_swipes=20)
+        for group in ("Анализ и стратегия", "Подключения", "Интерфейс",
+                      "Приватность", "Дополнительно", "Аккаунт"):
+            node_bounds(self.reveal(group, direction="end", max_swipes=20))
+        self.reveal("Автоматический анализ", direction="start", max_swipes=20)
+        self.wait_for(lambda: checkable_label(self.tree(), "Автоматический анализ"),
+                      "Automatic analysis lost its native switch")
         self.tap_resource("profile-security-action")
         self.find(CONFIRM_LABEL)
         self.tap_visible(CONFIRM_LABEL)
-        self.tab(INFO_LABEL)
-        self.find(EDUCATION_LABEL)
-        self.tab(SETTINGS_LABEL)
-        self.find(THEME_LABEL)
+        self.reveal(THEME_LABEL, direction="start", max_swipes=20)
+
+    def automation(self):
+        from automation_ui_probe import exercise_automation
+        report = exercise_automation(self)
+        self.automation_report = report
+        self.automation_cases = [row["case"] + "@" + format(row["font_scale"], "g")
+                                 for row in report["cases"]]
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tab(INFO_LABEL)
         self.tap(EDUCATION_LABEL)
         self.find(EDUCATION_LABEL)
         self.reveal(FIRST_LESSON, area)
@@ -511,13 +644,13 @@ class ProfileProbe:
         self.tap("Все уроки", area)
         self.find(EDUCATION_LABEL)
         self.tap(BACK_FROM_EDUCATION, area)
-        self.find("Профиль")
+        self.find("Настройки")
 
     def large_font(self):
         self.command("shell", "settings", "put", "system", "font_scale", "2.0")
         self.command("shell", "am", "force-stop", PACKAGE)
         self.open()
-        self.horizontal_info()
+        self.section_scroll_reset()
         self.capture("large-font")
         self.education("education-large-font")
 
@@ -544,11 +677,11 @@ def night_setting(output: str) -> str:
     return match.group(1).lower() if match else "auto"
 
 
-def exercise(device) -> None:
+def exercise(device) -> dict:
     from persistent_ui import frame_session
 
     with frame_session(device) as read_tree:
-        exercise_checks(device, read_tree)
+        return exercise_checks(device, read_tree)
 
 
 def run_stage(probe, test):
@@ -563,8 +696,12 @@ def run_stage(probe, test):
         raise
 
 
-def exercise_checks(device, read_tree) -> None:
-    """Run the unchanged screen assertions with an explicitly scoped frame source."""
+def exercise_checks(device, read_tree) -> dict:
+    """Run production screen assertions with an explicitly scoped frame source."""
+    checkout = str(Path(__file__).resolve().parents[2])
+    if checkout not in sys.path:
+        sys.path.insert(0, checkout)
+    from backend.android_runtime_contract import CURRENT_UI_SUITE, UI_STAGE_IDS
     probe = ProfileProbe(device)
     probe.read_tree = read_tree
     original_night = night_setting(
@@ -581,25 +718,42 @@ def exercise_checks(device, read_tree) -> None:
         original_scale = "1.0"
     try:
         stages = (
+            ("native-2d-renderer", probe.spatial),
+            ("session-context", probe.session_context),
+            ("balance-privacy", probe.balance_privacy),
+            ("goal-workflow", probe.goal_workflow),
+            ("business-30-cases", probe.business),
+            ("portfolio-7-cases", probe.portfolio),
             ("spectrum-dashboards", probe.dashboards),
             ("workspace-interactions", probe.workspace),
+            ("automation-13-cases", probe.automation),
             ("profile-preflight", probe.profile_preflight),
             ("themes", probe.themes),
             ("dialogs", probe.dialogs),
-            ("section-scroll-reset", probe.section_scroll_reset),
+            ("settings-group-scroll", probe.section_scroll_reset),
             ("education", probe.education),
             ("large-font-200", probe.large_font),
         )
+        if tuple(name for name, _ in stages) != UI_STAGE_IDS:
+            raise AssertionError("UI stages differ from the current release contract")
+        completed_stages = []
         for name, test in stages:
             print("PROFILE_UI_STAGE=" + name, flush=True)
             run_stage(probe, test)
+            completed_stages.append(name)
             print("PROFILE_UI_STAGE_PASSED=" + name, flush=True)
         print(
-            "PROFILE_UI_TESTS=passed: spectrum-dark-first,light,dark,system,"
-            "persistence,about,security,section-scroll-reset,education,font-200,"
+            "PROFILE_UI_TESTS=passed: single-style,system-invariance,motion-persistence,"
+            "persistence,about,security,settings-group-scroll,automation,education,font-200,"
             "education-font-200,refresh-state-15,education-catalog-10",
             flush=True,
         )
+        return {"ui_suite": CURRENT_UI_SUITE, "ui_stages": completed_stages,
+                "business_case_count": len(probe.business_cases),
+                "business_cases": probe.business_cases, "portfolio_case_count": len(probe.portfolio_cases),
+                "portfolio_cases": probe.portfolio_cases,
+                "automation_case_count": len(probe.automation_cases), "automation_cases": probe.automation_cases,
+                "automation_report": probe.automation_report}
     finally:
         from profile_snapshot import restore_device_settings
 

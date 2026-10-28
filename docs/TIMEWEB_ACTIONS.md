@@ -106,8 +106,9 @@ do not conclude from this result that the owner never granted permissions.
 
 After identifying a suitable existing endpoint, publish **only** the public
 schema there, verify HTTPS and the unauthenticated response bytes, then supply
-that observed URL. Do not expose this private repository, create a paid server
-just for a tiny schema, extract the Actions secret, or invent an endpoint.
+that observed URL. The source repository is public; account secrets remain
+private. Do not create a paid server just for a tiny schema or invent an endpoint.
+The separately authorized Android CI capacity is a different workload.
 
 ## Test scope
 
@@ -121,8 +122,8 @@ Backend/Android/Sonar acceptance suite and cannot certify main as entirely green
 No installation, emulator execution, physical-phone run, new APK, live backend
 change, broker transaction or successful schema publication is claimed.
 
-Project requirements remain a personal Android 17+ investment chat with a
-professional 2D interface. This helper is infrastructure tooling, not the app's
+Project requirements remain a personal Android 17+ investment application with
+a real Filament/GLB 3D interface and native accessible text/input. This helper is infrastructure tooling, not the app's
 chat or broker API. Telegram/server/app callback and session tests remain part
 of application acceptance; this probe does not validate them.
 

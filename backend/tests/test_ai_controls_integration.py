@@ -25,6 +25,7 @@ from backend.ai_budget import MoneyLedger, BudgetDenied
 from backend.ai_policy import AnalysisBudget, AnalysisSignals
 from backend.analysis_engine import analyze_if_needed, AnalysisValidationError
 from backend.tests.test_autonomous_ai import sample_snapshot
+from backend.tests.calendar_dispatch_fixtures import open_dispatch_market
 
 
 class ControlsIntegrationTests(unittest.TestCase):
@@ -83,11 +84,11 @@ class ControlsIntegrationTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 503)
 
     def test_scheduler_drains_through_real_analysis_without_live_model(self):
-        now = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
+        now = datetime.now(UTC)
         def synthetic_run(user_id):
             return original(user_id, now=now)
         original = ai.run_user_analysis
-        with patch.dict(os.environ, {'AI_EXTERNAL_PROCESSING_APPROVED':'false'}), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5)), patch.object(ai, 'run_user_analysis', side_effect=synthetic_run), patch.object(ai, 'analyze_if_needed') as model:
+        with open_dispatch_market(self.user, now=now), patch.dict(os.environ, {'AI_EXTERNAL_PROCESSING_APPROVED':'false'}), patch.object(ai, 'get_tinvest_portfolio', return_value=sample_snapshot(stock_share=90, cash_share=5)), patch.object(ai, 'run_user_analysis', side_effect=synthetic_run), patch.object(ai, 'analyze_if_needed') as model:
             result = ai.run_scheduler_cycle()
         self.assertEqual(result, {'processed':1, 'failed':0})
         model.assert_not_called()
@@ -98,7 +99,7 @@ class ControlsIntegrationTests(unittest.TestCase):
         self.assertIsNone(CURRENT_JOB.get())
 
     def test_scheduler_retry_keeps_collection_job_after_temporary_error(self):
-        with patch.object(ai, 'get_tinvest_portfolio', side_effect=HTTPException(status_code=503, detail='tinvest_timeout')):
+        with open_dispatch_market(self.user), patch.object(ai, 'get_tinvest_portfolio', side_effect=HTTPException(status_code=503, detail='tinvest_timeout')):
             result = ai.run_scheduler_cycle()
         self.assertEqual(result['failed'], 1)
         status = self.queue.user_status(self.user_id)

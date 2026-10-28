@@ -1,0 +1,73 @@
+{
+  "application_imported": false,
+  "checked_at_utc": "2026-10-27T06:10:10.711169+00:00",
+  "cookies_used": false,
+  "credentials_sent": false,
+  "machine_contract_verified": false,
+  "page": {
+    "body_complete": true,
+    "body_sha256": "1b67e7f847e2c38de005b9bf4b52c5a46590467995404df6c860a1d3a276a876",
+    "bytes_observed": 152727,
+    "challenge_observed": false,
+    "headers": {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Content-Type": "text/html; charset=UTF-8",
+      "Date": "Tue, 27 Oct 2026 06:10:10 GMT"
+    },
+    "http_status": 200,
+    "maximum_bytes": 524288,
+    "state": "public_response_observed",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/"
+  },
+  "public_structure": {
+    "forms": [
+      {
+        "action": "https://ratings.cbr.ru/",
+        "method": "get"
+      }
+    ],
+    "input_names": [
+      "formSearh",
+      "ratingName",
+      "inn",
+      "isin",
+      "koNumber",
+      "country",
+      "typeGroup",
+      "kraName",
+      "ratingScale",
+      "ratingGroup",
+      "ratingAction",
+      "ratingStatus",
+      "dateFrom",
+      "dateTo",
+      "disclaimer"
+    ],
+    "script_src": [
+      "https://ratings.cbr.ru/bitrix/js/main/core/core.min.js?1741707225225353",
+      "https://ratings.cbr.ru/bitrix/js/ui/ears/dist/ears.bundle.min.js?174170683312525",
+      "https://ratings.cbr.ru/bitrix/cache/js/s1/prr/template_d5e856dff306e0713eef5b0a3c8fec4d/template_d5e856dff306e0713eef5b0a3c8fec4d_v1.js?177747033177954",
+      "https://ratings.cbr.ru/bitrix/cache/js/s1/prr/page_663478a8de3c5fae83b3205277e818fe/page_663478a8de3c5fae83b3205277e818fe_v1.js?174136260951365"
+    ]
+  },
+  "redirects_followed": false,
+  "robots": {
+    "body_complete": true,
+    "body_sha256": "55f7d9e99b8e2d4e0e193b2f0275501e6d9c1ebd29cadbea6a0da48a8587e3e0",
+    "bytes_observed": 146,
+    "challenge_observed": false,
+    "headers": {
+      "Content-Type": "text/html",
+      "Date": "Tue, 27 Oct 2026 06:10:10 GMT"
+    },
+    "http_status": 404,
+    "maximum_bytes": 32768,
+    "state": "non_success_stop",
+    "timeout_seconds": 10,
+    "url": "https://ratings.cbr.ru/robots.txt"
+  },
+  "schema": 1,
+  "server_id": 9417611,
+  "workarounds_attempted": false
+}

@@ -82,7 +82,8 @@ def _source_identity_valid(source: Source) -> bool:
 
 LEVELS = ('AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
           'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'SD', 'RD', 'D')
-AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru'}
+AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru',
+            'NKR': 'ratings.ru', 'NRA': 'ra-national.ru'}
 RATING_UNAVAILABLE = 'Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.'
 INVALID_RATING = 'Некорректная запись рейтинга исключена из оценки.'
 
@@ -110,10 +111,7 @@ class Rating:
         root = AGENCIES[self.agency]
         if host != root and host != 'www.' + root:
             return None
-        if self.agency == 'ACRA':
-            symbol = self.grade[:-4] if self.grade.endswith('(RU)') else ''
-        else:
-            symbol = self.grade[2:] if self.grade.startswith('ru') else ''
+        symbol = _national_rating_symbol(self.agency, self.grade)
         return LEVELS.index(symbol) if symbol in LEVELS else None
 
     def bucket(self) -> str:
@@ -251,6 +249,13 @@ def _statement_basis(statement: Statement) -> tuple[str, str, str]:
     return sector, standard, currency
 
 
+def validated_statement_data(statement: Statement) -> tuple[str, str, str, dict[str, Decimal]]:
+    """Validate imported or analysed values against the same numeric basis."""
+    sector, standard, currency = _statement_basis(statement)
+    values = {key: amount(value) for key, value in statement.values.items()}
+    return sector, standard, currency, values
+
+
 def _ratio(numerator: Decimal, denominator: Decimal) -> str:
     try:
         # A server worker must not inherit the arithmetic settings of a caller.
@@ -299,8 +304,7 @@ def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datet
     start, end = stamp(statement.period_start), stamp(statement.period_end)
     if start >= end or end > stamp(statement.source.published_at) or (at - end).days > 550:
         return {'state': 'stale', 'ratios': {}, 'messages': ['Отчётный период не подходит для текущей оценки.']}
-    sector, standard, currency = _statement_basis(statement)
-    values = {key: amount(value) for key, value in statement.values.items()}
+    sector, standard, currency, values = validated_statement_data(statement)
     if sector in {'financial', 'financials', 'finance', 'banks', 'insurance'}:
         return {'state': 'sector_model_required', 'ratios': {},
                 'messages': ['Для банка или страховой компании нужна отдельная проверка капитала и резервов.'],
@@ -314,3 +318,13 @@ def statement_analysis(statement: Statement | None, *, issuer_id: str, at: datet
             'standard': standard, 'currency': currency,
             'period_start': statement.period_start, 'period_end': statement.period_end,
             'source': asdict(statement.source), 'default_probability': None}
+
+
+def _national_rating_symbol(agency: str, grade: str) -> str:
+    if agency == 'ACRA':
+        return grade[:-4] if grade.endswith('(RU)') else ''
+    if agency == 'EXPERT_RA':
+        return grade[2:] if grade.startswith('ru') else ''
+    if agency == 'NKR':
+        return grade[:-3] if grade.endswith('.ru') else ''
+    return grade[:-4] if grade.endswith('|ru|') else ''

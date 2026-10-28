@@ -50,6 +50,86 @@ def tree(
     return root
 
 
+class FittedCaptureTests(unittest.TestCase):
+    def fitted(self, bounds="[148,700][940,764]"):
+        frame = tree(resource="workspace-content", target_resource="strategy-horizon", bounds=bounds)
+        viewport = module.visible_resource(frame, "workspace-content")
+        viewport.set("bounds", "[128,201][960,1568]")
+        viewport.set("scrollable", "false")
+        return frame
+
+    def capture(self, frame, swipe):
+        return module.reveal_resource_in_list(
+            lambda: frame, swipe, "strategy-horizon", resource_id="workspace-content",
+            for_capture=True, minimum_size=(48, 48),
+        )
+
+    def test_fitted_capture_returns_actual_complete_bounds_without_scrolling(self):
+        for qualified in (False, True):
+            frame = self.fitted()
+            if qualified:
+                for node in frame.iter("node"):
+                    node.set("resource-id", module.PACKAGE + ":id/" + node.get("resource-id"))
+            swipe = Mock()
+            with self.subTest(qualified=qualified):
+                target = self.capture(frame, swipe)
+                self.assertIsNotNone(target)
+                self.assertEqual(target.get("bounds"), "[148,700][940,764]")
+                self.assertIsNone(module._scroll_area(frame, "workspace-content"))
+                swipe.assert_not_called()
+
+    def test_fitted_capture_rejects_clipping_and_undersized_bounds(self):
+        for bounds in ("[120,700][940,764]", "[148,190][940,254]",
+                       "[148,700][970,764]", "[148,1540][940,1604]",
+                       "[148,700][195,764]", "[148,700][940,747]"):
+            swipe = Mock()
+            with self.subTest(bounds=bounds):
+                self.assertIsNone(self.capture(self.fitted(bounds), swipe))
+                swipe.assert_not_called()
+
+    def test_fitted_capture_rejects_missing_hidden_foreign_and_ambiguous_viewports(self):
+        for state in ("missing", "hidden", "foreign", "ambiguous", "empty"):
+            frame = self.fitted()
+            viewport = module.visible_resource(frame, "workspace-content")
+            if state == "missing":
+                frame.remove(viewport)
+            elif state == "hidden":
+                viewport.set("visible-to-user", "false")
+            elif state == "foreign":
+                viewport.set("package", "another.app")
+            elif state == "ambiguous":
+                ET.SubElement(frame, "node", {**viewport.attrib,
+                    "resource-id": module.PACKAGE + ":id/workspace-content"})
+            else:
+                viewport.set("bounds", "[128,201][128,1568]")
+            swipe = Mock()
+            with self.subTest(state=state):
+                self.assertIsNone(self.capture(frame, swipe))
+                swipe.assert_not_called()
+
+    def test_fitted_capture_cannot_move_another_list_for_an_absent_target(self):
+        frame = self.fitted()
+        frame.remove(module.visible_resource(frame, "strategy-horizon"))
+        ET.SubElement(frame, "node", {"package": module.PACKAGE,
+            "resource-id": "profile-content", "scrollable": "true",
+            "bounds": "[0,0][128,1568]"})
+        swipe = Mock()
+        self.assertIsNone(self.capture(frame, swipe))
+        swipe.assert_not_called()
+
+    @patch.object(module.time, "sleep")
+    def test_fitted_capture_waits_for_actual_layout_without_gesture(self, _sleep):
+        read = Mock(side_effect=[ET.Element("hierarchy"), self.fitted()])
+        swipe = Mock()
+        target = module.reveal_resource_in_list(
+            read, swipe, "strategy-horizon", resource_id="workspace-content",
+            layout_timeout=1, for_capture=True, minimum_size=(48, 48),
+        )
+        self.assertEqual(target.get("bounds"), "[148,700][940,764]")
+        self.assertEqual(read.call_count, 2)
+        swipe.assert_not_called()
+
+
 class ProfileScrollTests(unittest.TestCase):
     def button_frame(self, bounds):
         frame = tree(resource="education-content", target_resource="lesson-toggle-start-plan", bounds=bounds)

@@ -97,6 +97,55 @@ class SemanticActionTests(unittest.TestCase):
                         [action_request(1, resource_id, direction)],
                     )
 
+    def test_nested_dossier_tabs_have_a_distinct_horizontal_target(self):
+        self.assertEqual(frames.SCROLL_LIST_CODES["dossier-tabs"], 6)
+        self.assertNotEqual(frames.SCROLL_LIST_CODES["profile-tabs"], frames.SCROLL_LIST_CODES["dossier-tabs"])
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 300, 200, 100, 200), "end")
+        self.assertEqual(profile.semantic_scroll_direction("dossier-tabs", 100, 200, 300, 200), "start")
+        with self.assertRaises(ValueError):
+            profile.semantic_scroll_direction("dossier-tabs", 100, 200, 100, 400)
+
+    def test_dock_rows_use_distinct_bounded_native_requests_without_shell_fallback(self):
+        expected = {"navigation-row-main": 10, "navigation-row-portfolio": 11,
+                    "navigation-row-research": 12, "navigation-row-personal": 13}
+        source = (SCRIPTS.parents[1] / "ci-ui-driver/src/main/java/ru/omnicio/ciframe/FrameInstrumentation.java").read_text(encoding="utf-8")
+        for area, code in expected.items():
+            for direction, geometry in (("end", (300, 100, 100, 100)), ("start", (100, 100, 300, 100))):
+                with self.subTest(area=area, direction=direction):
+                    stream = Stream(ack())
+                    reader = frames.FrameReader(stream)
+                    device = Mock()
+                    probe = profile.ProfileProbe(device)
+                    probe.read_tree = reader.ready_tree
+                    self.assertEqual(frames.SCROLL_LIST_CODES[area], code)
+                    self.assertEqual(list(frames.SCROLL_LIST_CODES.values()).count(code), 1)
+                    with patch.dict(sys.modules, {"persistent_ui": frames}):
+                        probe._semantic_scroll_callback(area, direction)(*geometry)
+                    raw = 0x80000000 | (code << 24) | 1
+                    if direction == "start": raw |= 0x10000000
+                    self.assertEqual(stream.sent, [struct.pack(">I", raw)])
+                    device.assert_not_called()
+                    key = area.removeprefix("navigation-row-").upper()
+                    self.assertIn(f"LIST_NAVIGATION_{key} = {code};", source)
+                    self.assertIn(f'NAVIGATION_{key} = "{area}";', source)
+                    self.assertIn(f"case LIST_NAVIGATION_{key} -> NAVIGATION_{key};", source)
+
+    def test_dock_rows_reject_vertical_or_wrong_direction_before_any_action(self):
+        for group in ("main", "portfolio", "research", "personal"):
+            for geometry in ((100, 100, 100, 300), (100, 100, 300, 100)):
+                with self.subTest(group=group, geometry=geometry):
+                    stream = Stream(b"")
+                    reader = frames.FrameReader(stream)
+                    device = Mock()
+                    probe = profile.ProfileProbe(device)
+                    probe.read_tree = reader.ready_tree
+                    with patch.dict(sys.modules, {"persistent_ui": frames}):
+                        callback = probe._semantic_scroll_callback("navigation-row-" + group, "end")
+                        with self.assertRaises(ValueError): callback(*geometry)
+                    self.assertEqual(reader.sequence, 0)
+                    self.assertEqual(stream.sent, [])
+                    device.assert_not_called()
+
     def test_unknown_list_or_direction_sends_nothing(self):
         for resource_id, direction in (
             ("other-list", "end"),
@@ -213,6 +262,9 @@ class SemanticActionTests(unittest.TestCase):
             'EDUCATION_LIST = "education-content"',
             'PORTFOLIO_LIST = "portfolio-content"',
             'PROFILE_TABS = "profile-tabs"',
+            'DOSSIER_TABS = "dossier-tabs"',
+            'ASSISTANT_COMPOSER = "assistant-composer"',
+            'case LIST_ASSISTANT_COMPOSER -> ASSISTANT_COMPOSER',
             'APP_PACKAGE = "ru.omnicio.app.debug"',
             "matches.size() != 1",
             "node.isVisibleToUser()",
@@ -228,13 +280,12 @@ class SemanticActionTests(unittest.TestCase):
             "node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE",
         ):
             self.assertIn(required, source)
-        # API35 is now supported by explicit OWNER requirement. The old public
-        # method is restricted to the version-guarded branch; API36 keeps its API.
+        # Current OS uses the public tri-state API without an obsolete fallback.
         helper = source[source.index("private static boolean checkedState"):source.index("private static final class BoundedOutput")]
-        self.assertIn("Build.VERSION.SDK_INT >= Build.VERSION_CODES.BAKLAVA", helper)
+        self.assertNotIn("Build.VERSION.SDK_INT", helper)
         self.assertIn("node.getChecked() == AccessibilityNodeInfo.CHECKED_STATE_TRUE", helper)
-        self.assertIn("return node.isChecked();", helper)
-        self.assertEqual(source.count("node.isChecked()"), 1)
+        self.assertNotIn("return node.isChecked();", helper)
+        self.assertNotIn("node.isChecked()", source)
         self.assertNotIn("ACTION_CLICK", source)
         self.assertNotIn("executeShellCommand", source)
         self.assertNotIn("getTargetContext()", source)
@@ -242,8 +293,13 @@ class SemanticActionTests(unittest.TestCase):
     def test_profile_driver_has_no_coordinate_scroll_command(self):
         source = (SCRIPTS / "profile_ui_probe.py").read_text(encoding="utf-8")
         self.assertNotIn('"input", "swipe"', source)
+        callers = source + "".join(
+            (SCRIPTS / name).read_text(encoding="utf-8")
+            for name in ("business_ui_probe.py", "automation_ui_probe.py", "navigation_detail_probe.py")
+        )
+        self.assertNotIn('"input", "swipe"', callers)
         for area in frames.SCROLL_LIST_CODES:
-            self.assertIn(area, source)
+            self.assertIn(area, callers)
         self.assertIn("reader.scroll_list(area, direction)", source)
 
     def test_allocation_label_and_real_screenshot_remain_required(self):

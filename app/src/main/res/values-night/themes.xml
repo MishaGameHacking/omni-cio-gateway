@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.OMNICIO" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+        <item name="android:colorBackground">@color/analyst_background</item>
+        <item name="android:colorForeground">@color/analyst_on_background</item>
+        <item name="android:textColorPrimary">@color/analyst_on_surface</item>
+        <item name="android:textColorSecondary">@color/analyst_on_surface_variant</item>
+        <item name="android:textColorLink">@color/analyst_primary</item>
+        <item name="android:colorAccent">@color/analyst_primary</item>
+        <item name="android:colorControlNormal">@color/analyst_on_surface_variant</item>
+        <item name="android:colorControlActivated">@color/analyst_primary</item>
+        <item name="android:colorControlHighlight">@color/analyst_primary_container</item>
+        <item name="android:colorButtonNormal">@color/analyst_surface_container</item>
+        <item name="android:colorError">@color/analyst_error</item>
+        <item name="android:windowBackground">@color/analyst_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceStatusBarContrast">false</item>
+        <item name="android:enforceNavigationBarContrast">false</item>
+        <item name="android:windowSplashScreenBackground">@color/analyst_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/omni_launcher_foreground</item>
+        <item name="android:windowSplashScreenBehavior">icon_preferred</item>
+    </style>
+</resources>

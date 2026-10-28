@@ -1,0 +1,14 @@
+[Unit]
+Description=Measure Analyst AI resource use without changing capacity
+After=analyst-ai-owner.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/lib/analyst-ai-ops/resource_observer.py
+User=root
+Nice=19
+CPUQuota=10%
+MemoryMax=64M
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/analyst-ai-ops

@@ -1,6 +1,13 @@
 package ru.omnicio.app.ui.portfolio
 
+import ru.omnicio.app.ui.spectrum.SpectrumActionButton as TextButton
+
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.gestures.detectTapGestures
 import ru.omnicio.app.ui.workspace.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -10,16 +17,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,6 +49,7 @@ import ru.omnicio.app.ui.spectrum.SpectrumCard
 import ru.omnicio.app.ui.spectrum.SpectrumIcon
 import ru.omnicio.app.ui.spectrum.SpectrumSymbol
 import ru.omnicio.app.ui.spectrum.SpectrumTabs
+import ru.omnicio.app.ui.spectrum.SpectrumAssetMark
 
 internal val Moscow: ZoneId = ZoneId.of("Europe/Moscow")
 internal val Russian: Locale = Locale.forLanguageTag("ru-RU")
@@ -71,7 +84,7 @@ internal fun SignedAmount(amount: MoneyAmount?, percent: ApiDecimal? = null) {
     val sign = amount?.value?.toBigDecimal()?.signum() ?: percent?.toBigDecimal()?.signum() ?: 0
     val colors = MaterialTheme.colorScheme
     val tint = when {
-        sign > 0 -> if (colors.background.luminance() < 0.5f) Color(0xFF42CE76) else Color(0xFF137D3B)
+        sign > 0 -> LocalSpectrumPalette.current.emerald
         sign < 0 -> colors.error
         else -> colors.onSurfaceVariant
     }
@@ -122,30 +135,40 @@ internal fun ChoiceRow(options: List<String>, selected: Int, onSelect: (Int) -> 
 }
 
 @Composable
-internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = null, accountName: String? = null, onClick: () -> Unit) {
+internal fun PositionLine(position: PortfolioPosition, total: MoneyAmount? = null, accountName: String? = null,
+    selected: Boolean = false, onPreview: (() -> Unit)? = null, sharedKey: String = position.id, onClick: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
-    Surface(onClick = onClick, color = Color.Transparent, shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {}) {
-        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    var preview by rememberSaveable(sharedKey) { mutableStateOf(false) }
+    val showPreview = onPreview ?: { preview = true }
+    val previewClick = ru.omnicio.app.ui.spatial.rememberSpatialHapticClick(ru.omnicio.app.ui.spatial.SpatialHaptic.Selection, showPreview)
+    val rowClick = ru.omnicio.app.ui.spatial.rememberSpatialHapticClick(onClick)
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val focused by interaction.collectIsFocusedAsState()
+    ru.omnicio.app.ui.spatial.SpatialSurface(color = LocalSpectrumPalette.current.card,
+        state = when { pressed -> ru.omnicio.app.ui.spatial.SpatialState.Pressed; selected || focused -> ru.omnicio.app.ui.spatial.SpatialState.Selected; else -> ru.omnicio.app.ui.spatial.SpatialState.Idle },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("position-row-$sharedKey")
+            .combinedClickable(interactionSource = interaction, indication = null, role = Role.Button,
+                onClick = rowClick, onLongClick = previewClick, onLongClickLabel = "Кратко о позиции", hapticFeedbackEnabled = false)
+            .semantics(mergeDescendants = true) { this.selected = selected }) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(12.dp)) {
             val stacked = portfolioStackedLayout(maxWidth.value, fontScale)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    val symbol = when (position.instrumentType) {
-                        "cash", "currency", "etf" -> SpectrumSymbol.Allocation
-                        "bond" -> SpectrumSymbol.Sources
-                        "share" -> SpectrumSymbol.Market
-                        else -> SpectrumSymbol.Portfolio
+                    ru.omnicio.app.ui.spatial.SpatialObject(sharedKey) {
+                        SpectrumAssetMark(position.instrumentType, position.company ?: position.title, instrumentSharedModifier(sharedKey).size(36.dp))
                     }
-                    SpectrumIcon(symbol, Modifier.size(30.dp), selected = false, tile = false, motionAllowed = false)
                     PositionIdentity(position, Modifier.weight(1f), stacked)
                     if (!stacked) PositionAmounts(position, Modifier.widthIn(max = 132.dp), total)
                 }
                 if (accountName != null) Text(accountName, style = MaterialTheme.typography.bodySmall)
                 if (stacked) PositionAmounts(position, Modifier.fillMaxWidth(), total)
+                TextButton(onClick = showPreview, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) { Text("Кратко и действия") }
             }
         }
     }
+    if (preview) PortfolioQuickPreview(position, accountName, { preview = false }, { preview = false; onClick() })
 }
 
 @Composable
@@ -179,7 +202,7 @@ internal fun PositionDetails(position: PortfolioPosition, close: () -> Unit, acc
 }
 
 @Composable
-internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: String) {
+internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: String, onSelect: (String) -> Unit = {}) {
     if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Notice("Структура скрыта режимом приватности."); return }
     val fractions = remember(slices) { portfolioFractions(slices) }
     if (fractions == null) {
@@ -187,10 +210,15 @@ internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: S
         return
     }
     val spectrum = LocalSpectrumPalette.current
-    val palette = listOf(spectrum.blue, spectrum.emerald, spectrum.violet, spectrum.amber, spectrum.rose, spectrum.cyan)
+    val palette = spectrum.chartSeries
+    var selectedTitle by remember(caption) { mutableStateOf<String?>(null) }
+    val selected = fractions.indexOfFirst { it.id == selectedTitle }
+    val choose: (Int) -> Unit = { index -> fractions.getOrNull(index)?.let { selectedTitle = it.id; onSelect(it.id) } }
     if (fractions.size > 6) {
         fractions.sortedByDescending { it.fraction }.forEachIndexed { index, item ->
-            DataRow(item.title, "${decimalText(BigDecimal.valueOf(item.fraction * 100))}%")
+            TextButton(onClick = { choose(fractions.indexOf(item)) }, modifier = Modifier.fillMaxWidth()) {
+                Text("${item.title} · ${decimalText(BigDecimal.valueOf(item.fraction * 100))}%")
+            }
             ru.omnicio.app.ui.spectrum.SpectrumProgressBar(item.fraction.toFloat(), accent = palette[index % palette.size])
         }
         return
@@ -200,29 +228,29 @@ internal fun StructureChart(slices: List<ChartSlice>, center: String, caption: S
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val diameter = minOf(maxWidth, 208.dp)
         Box(Modifier.fillMaxWidth().height(diameter + 16.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.size(diameter).semantics { contentDescription = "Структура: $caption. Все доли перечислены ниже." }) {
-                val stroke = 18.dp.toPx()
-                val radius = size.minDimension - stroke
-                if (radius <= 0f) return@Canvas
-                val origin = Offset((size.width - radius) / 2, (size.height - radius) / 2)
-                drawArc(remainder, 0f, 360f, false, origin, Size(radius, radius), style = Stroke(stroke))
-                var angle = -90f
-                fractions.forEachIndexed { index, slice ->
-                    val sweep = (slice.fraction * 360).toFloat()
-                    val gap = if (fractions.size > 1) minOf(2f, sweep * 0.15f) else 0f
-                    drawArc(palette[index % palette.size], angle, sweep - gap,
-                        false, origin, Size(radius, radius), style = Stroke(stroke))
-                    angle += sweep
-                }
-            }
+            ru.omnicio.app.ui.spatial.SpatialRing(fractions.map { it.fraction }, palette,
+                selected.takeIf { it >= 0 }, Modifier.size(diameter)
+                    .semantics { contentDescription = "Структура: $caption. Выберите сегмент или его подпись ниже." }
+                    .pointerInput(fractions) { detectTapGestures { point ->
+                        val x = point.x - size.width / 2f; val y = point.y - size.height / 2f
+                        val radius = kotlin.math.sqrt(x * x + y * y)
+                        if (radius > minOf(size.width, size.height) * .22f && radius < minOf(size.width, size.height) * .5f) {
+                            val angle = (Math.toDegrees(kotlin.math.atan2(y.toDouble(), x.toDouble())) + 450.0) % 360.0
+                            var accumulated = 0.0
+                            val index = fractions.indexOfFirst { slice -> accumulated += slice.fraction * 360; angle < accumulated }
+                            if (index >= 0) choose(index)
+                        }
+                    } })
             if (!largeText) StructureCaption(center, caption, Modifier.widthIn(max = diameter * 0.68f))
         }
     }
     if (largeText) StructureCaption(center, caption, Modifier.fillMaxWidth())
     fractions.forEachIndexed { index, item ->
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(8.dp).background(palette[index % palette.size], CircleShape))
-            DataRow(item.title, decimalText(BigDecimal.valueOf(item.fraction * 100)) + "%", Modifier.weight(1f))
+            ru.omnicio.app.ui.spatial.SpatialIcon("monogram", Modifier.size(22.dp), tint = palette[index % palette.size])
+            TextButton(onClick = { choose(index) }, modifier = Modifier.weight(1f)) {
+                Text("${if (index == selected) "Выбрано · " else ""}${item.title} · ${decimalText(BigDecimal.valueOf(item.fraction * 100))}%")
+            }
         }
     }
 }
@@ -235,4 +263,5 @@ private fun StructureCaption(center: String, caption: String, modifier: Modifier
             textAlign = TextAlign.Center)
     }
 }
+
 

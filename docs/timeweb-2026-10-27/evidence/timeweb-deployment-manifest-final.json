@@ -1,0 +1,73 @@
+{
+  "candidate_complete_source_sha256": "11b2a2fdeb74cd2283a2403d409a7d17b9c035add632dc0897d923deb1cdefef",
+  "candidate_root": "/var/lib/analyst-ai-build/development/candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f",
+  "candidate_source_sha256": "cc88859582fd6281a9051d76c8dbe399dfb885cd7eb033a34d691a3561a0998e",
+  "change_id": "n02-n04-r4-20261027",
+  "files": {
+    "event_monitor.py": {
+      "new": {
+        "bytes": 13793,
+        "sha256": "68cf1edfba5226f1f866c9dceb904787e0b68b9808329b08e90418face9573d4"
+      },
+      "old": {
+        "bytes": 8060,
+        "sha256": "c5c853a1381369cfb0b95db922ec5d98536f261e727452970b2df6bdbc1378ad"
+      }
+    },
+    "market_schedule.py": {
+      "new": {
+        "bytes": 8984,
+        "sha256": "184f3f8a4aca281579a6768e442a357b02bc8620f813a3e6f162a75ed4982498"
+      },
+      "old": {
+        "bytes": 8958,
+        "sha256": "71fb3be626fb48856ec955a98a45b86023789e02060cd1bee79ab610c1abc1e1"
+      }
+    },
+    "operations_ledger.py": {
+      "new": {
+        "bytes": 20220,
+        "sha256": "c6874e515e2e526328cdbc3f1f8741c788004765f76f22f057518e7fad90e414"
+      },
+      "old": null
+    },
+    "public_sources.py": {
+      "new": {
+        "bytes": 23399,
+        "sha256": "274849ad97b7e7cf6bd0cf4bdfd4298da04b94464df85b3e6d9333be1ddcc614"
+      },
+      "old": null
+    },
+    "volume_monitor.py": {
+      "new": {
+        "bytes": 14599,
+        "sha256": "66ff4c8837ea154c7728b3775c8a0c1e349e7746a2254d87f4edd3224c606e64"
+      },
+      "old": {
+        "bytes": 14454,
+        "sha256": "ae8ca8ab1fbadc9271a37eee0c04807d1429097b96a00254ec943ae89b514b86"
+      }
+    },
+    "volume_workspace.py": {
+      "new": {
+        "bytes": 41425,
+        "sha256": "f555bd502addede8ade3068231322e7ad5c702f83da7d37ee5821a0cb14b2452"
+      },
+      "old": {
+        "bytes": 39906,
+        "sha256": "3c034e056e8af731d5d78cffda95f892f92a4ad5cb0c11b0774a6636953ce08d"
+      }
+    }
+  },
+  "inventory": {
+    "bytes": 171305,
+    "path": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/evidence/candidate-inventory.json",
+    "sha256": "7b374aa37e5859c883da3f0441e7869fbfd47d30d4468335c9a729876398badd"
+  },
+  "receipt": {
+    "bytes": 10986,
+    "path": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/evidence/timeweb-backend-check.json",
+    "sha256": "fd88dd5c5c9595f7706798bab7b08250042c1df6cf9035bfc33c0b551e8edcc3"
+  },
+  "schema": 1
+}

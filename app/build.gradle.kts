@@ -1,19 +1,23 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    // Host-side layout evidence; Android emulator release gates remain separate.
+    id("com.android.compose.screenshot") version "0.0.1-alpha16"
 }
 
 android {
+    experimentalProperties["android.experimental.enableScreenshotTest"] = true
     namespace = "ru.omnicio.app"
-    compileSdk = 36
+    compileSdk = 37
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "ru.omnicio.app"
-        minSdk = 35
-        targetSdk = 36
+        minSdk = 37
+        targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 34
-        versionName = "0.10.0"
+        versionCode = 50
+        versionName = "0.14.3"
     }
 
     buildTypes {
@@ -65,7 +69,15 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.filament.android)
+    implementation(libs.filament.gltfio)
 
     debugImplementation(libs.compose.ui.tooling)
-}
+    testImplementation(libs.junit)
+    // Real JSON operations for JVM model checks; never packaged in the Android app.
+    testImplementation("org.json:json:20260814")
 
+    screenshotTestImplementation(composeBom)
+    screenshotTestImplementation(libs.compose.ui.tooling)
+    screenshotTestImplementation("com.android.tools.screenshot:screenshot-validation-api:0.0.1-alpha16")
+}

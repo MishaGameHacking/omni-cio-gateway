@@ -1,0 +1,276 @@
+{
+  "administrative_live_smoke": {
+    "bytes": 7964,
+    "path": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/public-source-live-smoke.py",
+    "sha256": "86a5cfaaa4dcf05932a76c039de8b1e3bf37e9cc1d4c0979924b573a86e758a3"
+  },
+  "baseline_changed_files": [],
+  "baseline_regression": {
+    "expected_failure_observed": true,
+    "failed_tests": [
+      "test_missing_exchange_recovers_in_event_lane_without_refreshing_valuation",
+      "test_unavailable_metadata_does_not_open_polling_or_discard_successful_events",
+      "test_bounded_metadata_retries_survive_changed_holdings_without_starving_later_instruments",
+      "test_metadata_response_without_valid_exchange_never_guesses_moex[None]",
+      "test_metadata_response_without_valid_exchange_never_guesses_moex[]",
+      "test_metadata_response_without_valid_exchange_never_guesses_moex[ ]",
+      "test_metadata_response_without_valid_exchange_never_guesses_moex[ MOEX ]",
+      "test_metadata_response_without_valid_exchange_never_guesses_moex[xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx]",
+      "test_metadata_budget_stops_scheduling_after_a_slow_source",
+      "test_persistent_news_failure_does_not_freeze_completed_operations_or_payouts"
+    ],
+    "junit": {
+      "bytes": 17603,
+      "sha256": "2d3ebe255aa10b4739647a423bab98375bed2dca0d12732f235312b2fe2fd1cc"
+    },
+    "steps": [
+      {
+        "exit_code": 1,
+        "log_sha256": "718b281362c26d5592d4bb07895829014e2072bab41e61de91c017a0f49bed4b",
+        "name": "baseline-n02-regressions",
+        "network_allowed": false,
+        "seconds": 7.388
+      }
+    ],
+    "test_files": {
+      "backend/tests/test_n02_lane_recovery.py": {
+        "bytes": 4963,
+        "sha256": "6e06e49147b66e34faa5684ac220d8245c3aa308b9b9a0c8269257725d799be6"
+      },
+      "backend/tests/test_n02_metadata_recovery.py": {
+        "bytes": 8028,
+        "sha256": "3484c28f3070de8d03a5c1ef1dd6590264c85378dc8baf1a00b5c48b6e387942"
+      }
+    },
+    "tests": {
+      "errors": 0,
+      "failures": 10,
+      "reported_test_excess": 0,
+      "skipped": 0,
+      "testcase_elements": 11,
+      "tests": 11
+    }
+  },
+  "baseline_source_changed": false,
+  "baseline_test_receipt": {
+    "bytes": 2656,
+    "path": "/var/lib/analyst-ai-build/development/source49-check-20261027T055218Z-20765533/evidence/timeweb-backend-check.json",
+    "sha256": "8caedbb6cdd914f5e09d63fda5dd5d4ef41c5b1d32f8b0a14af85919bacc30ac"
+  },
+  "changed_sources": [],
+  "complete_source_sha256": "11b2a2fdeb74cd2283a2403d409a7d17b9c035add632dc0897d923deb1cdefef",
+  "dependency_mode": "reused_successful_isolated_source49_test_venv",
+  "evidence_directory": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/evidence",
+  "finished_at_utc": "2026-10-27T06:15:16.761323+00:00",
+  "junit_sha256": "8118307d79906476d68fdda5ab2997a71c8d6c9011b86bb30935a957ca9d5f94",
+  "live_source_changed": false,
+  "patch_files": {
+    "backend/event_monitor.py": {
+      "bytes": 13793,
+      "sha256": "68cf1edfba5226f1f866c9dceb904787e0b68b9808329b08e90418face9573d4"
+    },
+    "backend/market_schedule.py": {
+      "bytes": 8984,
+      "sha256": "184f3f8a4aca281579a6768e442a357b02bc8620f813a3e6f162a75ed4982498"
+    },
+    "backend/operations_ledger.py": {
+      "bytes": 20220,
+      "sha256": "c6874e515e2e526328cdbc3f1f8741c788004765f76f22f057518e7fad90e414"
+    },
+    "backend/public_sources.py": {
+      "bytes": 23399,
+      "sha256": "274849ad97b7e7cf6bd0cf4bdfd4298da04b94464df85b3e6d9333be1ddcc614"
+    },
+    "backend/tests/test_cash_ledger_integration.py": {
+      "bytes": 4701,
+      "sha256": "33147697d05a1d126432811e1d6f24a32c6ef98080e15dab22bf7e5161d8ac95"
+    },
+    "backend/tests/test_n02_lane_recovery.py": {
+      "bytes": 4963,
+      "sha256": "6e06e49147b66e34faa5684ac220d8245c3aa308b9b9a0c8269257725d799be6"
+    },
+    "backend/tests/test_n02_metadata_recovery.py": {
+      "bytes": 8028,
+      "sha256": "3484c28f3070de8d03a5c1ef1dd6590264c85378dc8baf1a00b5c48b6e387942"
+    },
+    "backend/tests/test_operations_ledger.py": {
+      "bytes": 14602,
+      "sha256": "3ba21388f8435357b3782dc2cb1694f6eb3d1c601928f7764baf6a2f51f171ed"
+    },
+    "backend/tests/test_operations_ledger_coalescing.py": {
+      "bytes": 6719,
+      "sha256": "8b06995e01684e564da66198ac11389fdc1c4ea531b3c95270801b2f0ebd590b"
+    },
+    "backend/tests/test_public_source_events.py": {
+      "bytes": 3704,
+      "sha256": "f6a4eccaa832f6e1875208583f646e72519f721dd63defdfd6424a827bf40bf8"
+    },
+    "backend/tests/test_public_sources.py": {
+      "bytes": 17341,
+      "sha256": "f7ec738f495fca0d238a094dd20e23cb9168d39624ab9ce423a027dd17c93c8f"
+    },
+    "backend/volume_monitor.py": {
+      "bytes": 14599,
+      "sha256": "66ff4c8837ea154c7728b3775c8a0c1e349e7746a2254d87f4edd3224c606e64"
+    },
+    "backend/volume_workspace.py": {
+      "bytes": 41425,
+      "sha256": "f555bd502addede8ade3068231322e7ad5c702f83da7d37ee5821a0cb14b2452"
+    }
+  },
+  "public_source_smoke": {
+    "receipt": {
+      "bytes": 2701,
+      "path": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/evidence/public-source-live-smoke.json",
+      "sha256": "4c85c7b21f46582f1d6d6a04d6dcd1453283bd6a3b58ac9b5180c7c25e0f5990"
+    },
+    "result": {
+      "all_source_data_current": true,
+      "apple_identity_currently_available": true,
+      "cached_identifiers": 2,
+      "checked_at_utc": "2026-10-27T06:15:16.236438+00:00",
+      "clock_override_used": false,
+      "document_hashes_verified": true,
+      "documents_persisted": 2,
+      "fixed_public_test_identifiers_only": true,
+      "observations_persisted": 2,
+      "private_user_or_broker_data_read": false,
+      "production_database_used": false,
+      "publication_times_rewritten": false,
+      "real_https_requests": 2,
+      "rows": [
+        {
+          "cache_read_preserved_timestamps_without_network": true,
+          "checked_at": "2026-10-27T06:15:15.794332+00:00",
+          "dataset_published_at": "2026-10-27T00:00:00+00:00",
+          "document_sha256": "204601c52aaacfe2e0c072d2d34be55a4d3d698bbb23f755ddf23a4dc601e660",
+          "entity_updated_at": "2026-03-03T16:34:33+00:00",
+          "expected_exact_filter_total": 1,
+          "expected_exact_filter_total_observed": true,
+          "isin": "US0378331005",
+          "network": {
+            "body_sha256": "204601c52aaacfe2e0c072d2d34be55a4d3d698bbb23f755ddf23a4dc601e660",
+            "bytes": 3446,
+            "dataset_published_at": "2026-10-27T00:00:00Z",
+            "exact_filter_total": 1,
+            "http_status": 200,
+            "seconds": 0.257,
+            "url_sha256": "1ea1d2db3fed3f3235ff5b23c1e7853200b94ea36e64584dad93391c511fe240"
+          },
+          "rating_verified": false,
+          "reason": null,
+          "sample": "public_apple_sample",
+          "state": "available",
+          "trade_permission": false
+        },
+        {
+          "cache_read_preserved_timestamps_without_network": true,
+          "checked_at": "2026-10-27T06:15:16.081518+00:00",
+          "dataset_published_at": "2026-10-27T00:00:00+00:00",
+          "document_sha256": "1cac1cba24bc8dcfb95846e9f8d61178211f461ba004a36e985fca7982a0a0c8",
+          "entity_updated_at": null,
+          "expected_exact_filter_total": 0,
+          "expected_exact_filter_total_observed": true,
+          "isin": "RU0000000003",
+          "network": {
+            "body_sha256": "1cac1cba24bc8dcfb95846e9f8d61178211f461ba004a36e985fca7982a0a0c8",
+            "bytes": 413,
+            "dataset_published_at": "2026-10-27T00:00:00Z",
+            "exact_filter_total": 0,
+            "http_status": 200,
+            "seconds": 0.146,
+            "url_sha256": "bcb25812c4d903ad1dafe8e3cf857cdbd304f25100253c6598afe0db67e31d08"
+          },
+          "rating_verified": false,
+          "reason": "no_exact_isin_mapping",
+          "sample": "synthetic_unassigned_russian_sample",
+          "state": "missing",
+          "trade_permission": false
+        }
+      ],
+      "schema": 1,
+      "source_code_executed_on_timeweb": true,
+      "source_directory": "/var/lib/analyst-ai-build/development/candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f",
+      "status": "passed_contract"
+    }
+  },
+  "schema": 1,
+  "server_id": 9417611,
+  "source_backup_commit": "521d96293a048e4254bec936710bcfbf166b20a0",
+  "source_code_executed_on_timeweb": true,
+  "source_directory": "/var/lib/analyst-ai-build/development/candidate-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f",
+  "source_inventory": {
+    "bytes": 171305,
+    "path": "/var/lib/analyst-ai-build/development/candidate-check-n02-n04-r4-20261027-20261027T061309Z-ea5fd07f/evidence/candidate-inventory.json",
+    "sha256": "7b374aa37e5859c883da3f0441e7869fbfd47d30d4468335c9a729876398badd"
+  },
+  "source_sha256": "cc88859582fd6281a9051d76c8dbe399dfb885cd7eb033a34d691a3561a0998e",
+  "status": "passed",
+  "steps": [
+    {
+      "exit_code": 0,
+      "log_sha256": "9261363b733079a641c2e4cc9bc46ffa1d8336945a87f807b6cf68847dbc9b09",
+      "name": "dependencies",
+      "network_allowed": false,
+      "seconds": 1.471
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "name": "compile-backend",
+      "network_allowed": false,
+      "seconds": 0.568
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "cbf235d0e46ace7832926805d4a396940c0c47678d33f5fa7318749a6def9815",
+      "name": "candidate-targeted-tests",
+      "network_allowed": false,
+      "seconds": 10.347
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "a99faa024062e6cf9810bbd462208875801e850103780e3c691c56f6303dff72",
+      "name": "backend-full-suite",
+      "network_allowed": false,
+      "seconds": 104.888
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "1d751b58d5ede0c661c60a3cc265ca0b684fa7e3bd930781f158422af6f2d189",
+      "name": "health-openapi",
+      "network_allowed": false,
+      "seconds": 1.424
+    },
+    {
+      "exit_code": 0,
+      "log_sha256": "d0a8a92531f944f6289be1c949ec47341bae85073c2ded8b709cfefaa72c60b5",
+      "name": "public-source-live-smoke",
+      "network_allowed": true,
+      "seconds": 0.667
+    }
+  ],
+  "synthetic_test_environment": true,
+  "targeted_junit": {
+    "bytes": 14620,
+    "sha256": "8b02a410215e86951fd3593a77d98ab476e49f14904445d10af64ae18ff0027c"
+  },
+  "targeted_tests": {
+    "errors": 0,
+    "failures": 0,
+    "reported_test_excess": 0,
+    "skipped": 0,
+    "testcase_elements": 94,
+    "tests": 94
+  },
+  "test_python": "/var/lib/analyst-ai-build/development/source49-check-20261027T055218Z-20765533/venv/bin/python",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "reported_test_excess": 1557,
+    "skipped": 0,
+    "testcase_elements": 1860,
+    "tests": 3417
+  },
+  "trading_or_ai_enabled": false
+}

@@ -19,6 +19,12 @@ ENDPOINTS = {
     "servers": "/api/v1/servers?limit=100&offset=0",
     "buckets": "/api/v1/storages/buckets",
 }
+CATALOG_ENDPOINTS = {
+    "presets": "/api/v1/presets/servers",
+    "os": "/api/v1/os/servers",
+    "storage": "/api/v1/presets/storages",
+}
+FLOATING_IPS_PATH = "/api/v1/floating-ips"
 SCHEMA_PATH = Path(__file__).resolve().parents[1] / "integrations/timeweb/projects.openapi.json"
 
 
@@ -86,8 +92,20 @@ def verified_ssl_context():
 def read_resource(token: str, resource: str) -> dict:
     if resource not in ENDPOINTS:
         raise ProbeError("unapproved_endpoint")
+    return read_path(token, ENDPOINTS[resource])
+
+
+def read_catalog(token: str, resource: str) -> dict:
+    if resource not in CATALOG_ENDPOINTS:
+        raise ProbeError("unapproved_catalog_endpoint")
+    return read_path(token, CATALOG_ENDPOINTS[resource])
+
+
+def read_path(token: str, path: str) -> dict:
+    if path not in (*ENDPOINTS.values(), *CATALOG_ENDPOINTS.values(), FLOATING_IPS_PATH):
+        raise ProbeError("unapproved_endpoint")
     token = validated_token(token)
-    request = urllib.request.Request(BASE_URL + ENDPOINTS[resource], headers={
+    request = urllib.request.Request(BASE_URL + path, headers={
         "Authorization": "Bearer " + token,
         "Accept": "application/json",
         "Accept-Encoding": "identity",

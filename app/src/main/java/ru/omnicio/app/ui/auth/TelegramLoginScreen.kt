@@ -3,45 +3,71 @@ package ru.omnicio.app.ui.auth
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import ru.omnicio.app.ui.spatial.SpatialIcon
+import ru.omnicio.app.ui.spatial.SpatialState
 import ru.omnicio.app.ui.spectrum.*
+import ru.omnicio.app.ui.theme.LocalSpectrumMotionPreference
 
 @Composable
 fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: () -> Unit,
     modifier: Modifier = Modifier, loadingLabel: String = "Проверяем сохранённый сеанс…") {
     SpectrumBackground(modifier.fillMaxSize()) {
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
-            Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Analyst AI", style = MaterialTheme.typography.titleMedium, color = LocalSpectrumPalette.current.cyan)
-                SpectrumCapitalOrbit(Modifier.size(184.dp))
-                Text("Капитал.\nПод вашим контролем.", style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                Text("Портфель, решения и спокойный взгляд вперёд.", textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SpectrumCard(emphasized = true) {
-                    Text("1. Вход  ·  2. Счёт  ·  3. Портфель", style = MaterialTheme.typography.labelMedium)
-                    Text("Войти в своё пространство", style = MaterialTheme.typography.titleLarge)
-                    Text("Подтвердите вход через Telegram. Пароль остаётся в Telegram.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    errorMessage?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (loading) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            Text(loadingLabel, Modifier.weight(1f))
-                        }
-                    } else SpectrumPrimaryButton("Войти через Telegram", onLoginClick, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Messages)
+            Column(
+                Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    SpatialIcon("brand", Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.primary, motionAllowed = true)
+                    Text("Analyst AI", style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary)
                 }
-                Text("Личное приложение для приглашённых пользователей", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Ваш инвестиционный аналитик", style = MaterialTheme.typography.headlineLarge,
+                        modifier = Modifier.semantics { heading() })
+                    Text("Портфель, важные изменения и основания решений — в одном месте.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                SpectrumCard {
+                    errorMessage?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
+                    }
+                    if (loading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            SpatialIcon("sources", Modifier.size(28.dp), state = SpatialState.Loading,
+                                tint = MaterialTheme.colorScheme.primary,
+                                motionAllowed = LocalSpectrumMotionPreference.current.enabled)
+                            Text(loadingLabel, Modifier.weight(1f).semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            })
+                        }
+                    } else {
+                        SpectrumPrimaryButton("Войти через Telegram", onLoginClick, Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }

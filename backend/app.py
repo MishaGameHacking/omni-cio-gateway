@@ -26,10 +26,15 @@ from jwt import PyJWKClient
 from pydantic import BaseModel
 
 try:
-    from . import client_updates, broker_connections
+    from . import client_updates, broker_connections, client_diagnostics
+    from .ai_budget import transaction
+    from .schema_migrations import execute_schema
 except ImportError:
     import client_updates
     import broker_connections
+    import client_diagnostics
+    from ai_budget import transaction
+    from schema_migrations import execute_schema
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
 TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
@@ -99,6 +104,7 @@ logger = logging.getLogger(__name__)
 
 class SessionExchange(BaseModel):
     code: str
+    device_name: str | None = None
 
 
 class TInvestTokenPayload(BaseModel):
@@ -113,8 +119,10 @@ def connect() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    with closing(connect()) as db:
-        db.executescript(
+    # Keep the core auth schema and legacy device backfill in one transaction.
+    # Child registries below retain their own explicit startup boundaries.
+    with transaction(connect) as db:
+        execute_schema(db,
             f"""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -155,10 +163,15 @@ def init_db() -> None:
             END;
             """
         )
-        db.commit()
+        try:
+            from .volume_devices import migrate
+        except ImportError:
+            from volume_devices import migrate
+        migrate(db)
 
     client_updates.initialize(connect)
     broker_connections.initialize(connect)
+    client_diagnostics.initialize(connect)
 
 
 def hash_token(value: str) -> str:
@@ -194,6 +207,9 @@ def session_user(authorization: str | None = Header(default=None)) -> sqlite3.Ro
             """,
             (hash_token(raw), int(time.time())),
         ).fetchone()
+        if row is not None:
+            db.execute("UPDATE workspace_session_devices SET last_seen_at=? WHERE token_hash=? AND last_seen_at<?",
+                       (int(time.time()), hash_token(raw), int(time.time()) - 60))
         db.commit()
     if row is None:
         raise HTTPException(status_code=401, detail="invalid_session")
@@ -266,15 +282,36 @@ def mobile_login_result(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Возврат в Analyst AI</title>
 <style>
-  body {{ min-height: 100vh; display: grid; place-items: center; margin: 0;
-          padding: 20px; box-sizing: border-box; background: #151c25;
-          color: #f8fafc; font: 16px/1.5 system-ui, sans-serif; }}
-  main {{ text-align: center; max-width: 440px; }}
-  a {{ display: block; margin-top: 22px; padding: 14px 20px; border-radius: 12px;
-       background: #229ed9; color: white; font-weight: 600; text-decoration: none; }}
-  small {{ color: #a8b4c3; }}
+  :root {{
+    color-scheme: dark;
+    --bg: #050E1C;
+    --surface: #0A1A2C;
+    --text: #EDF5FF;
+    --muted: #ACC3DC;
+    --primary: #A99AFF;
+    --on-primary: #1B0D45;
+    --primary-container: #403199;
+    --on-primary-container: #FFFFFF;
+    --surface-container: #0D2136;
+    --outline: #88A4C5;
+    --outline-variant: #294763;
+    --danger: #FF99B2;
+    --disabled-ink: #99AEC7;
+    --disabled-container: #152B41;
+  }}
+  body {{ min-height:100vh; display:grid; place-items:center; margin:0;
+         padding:20px; box-sizing:border-box; background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%);
+         color:var(--text); font:16px/1.5 system-ui,sans-serif; }}
+  main {{ text-align:center; max-width:440px; }}
+  a,a:visited {{ display:block; margin-top:22px; padding:14px 20px; border-radius:12px;
+               background:var(--primary); color:var(--on-primary); font-weight:600; text-decoration:none; }}
+  a:hover,a:active {{ background:color-mix(in srgb,var(--on-primary) 8%,var(--primary)); }}
+  a:focus-visible {{ outline:3px solid var(--primary); outline-offset:3px; }}
+  small {{ color:var(--muted); }}
+  ::selection {{ color:var(--on-primary-container); background:var(--primary-container); }}
 </style>
 </head>
 <body>
@@ -478,13 +515,17 @@ def telegram_callback(
     "/auth/session",
     responses={
         401: {"description": "The one-time login code is invalid or expired."},
+        422: {"description": "The supplied device name is invalid."},
     },
 )
 def exchange_session(payload: SessionExchange) -> dict:
     now = int(time.time())
+    if payload.device_name is not None and (not isinstance(payload.device_name, str) or len(payload.device_name) > 100 or any(ord(c) < 32 for c in payload.device_name)):
+        raise HTTPException(status_code=422, detail="invalid_device_name")
     code_hash = hash_token(payload.code.strip())
 
     with closing(connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
         purge_expired(db)
         row = db.execute(
             """
@@ -500,17 +541,23 @@ def exchange_session(payload: SessionExchange) -> dict:
         if row is None:
             raise HTTPException(status_code=401, detail="invalid_login_code")
 
-        db.execute("UPDATE login_codes SET used = 1 WHERE code_hash = ?", (code_hash,))
+        consumed = db.execute("UPDATE login_codes SET used = 1 WHERE code_hash = ? AND used = 0 AND expires_at >= ?", (code_hash, now))
+        if consumed.rowcount != 1:
+            raise HTTPException(status_code=401, detail="invalid_login_code")
         session = secrets.token_urlsafe(48)
+        device_id = secrets.token_hex(16)
         db.execute(
             "INSERT INTO sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
             (hash_token(session), row["user_id"], now + SESSION_TTL),
         )
+        db.execute("INSERT INTO workspace_session_devices VALUES (?,?,?,?,?)",
+                   (hash_token(session), device_id, (payload.device_name or "Android").strip(), now, now))
         db.commit()
 
     return {
         "access_token": session,
         "expires_in": SESSION_TTL,
+        "device_id": device_id,
         "user": {
             "telegram_id": row["telegram_id"],
             "name": row["name"],
@@ -668,6 +715,12 @@ except ImportError:
 
 app.include_router(autonomous_ai_router)
 
+try:
+    from .autonomous_controller import router as autonomous_controller_router
+except ImportError:
+    from autonomous_controller import router as autonomous_controller_router
+app.include_router(autonomous_controller_router)
+
 
 try:
     from .portfolio_details import router as portfolio_details_router
@@ -677,9 +730,47 @@ app.include_router(portfolio_details_router)
 
 
 client_updates.install_routes(app, connect, session_user)
+client_diagnostics.install_routes(app, session_user, connect)
 
 try:
     from .portfolio_research import router as portfolio_research_router
 except ImportError:
     from portfolio_research import router as portfolio_research_router
 app.include_router(portfolio_research_router)
+
+# These routes expose real source-backed state and acknowledged jobs. The 3D
+# renderer has no separate API, no frame polling and no trading write access.
+try:
+    from .volume_live import router as volume_live_router
+    from .volume_workspace import router as volume_workspace_router
+    from .volume_state import router as volume_state_router
+    from .volume_market import router as volume_market_router
+    from .volume_jobs import router as volume_jobs_router
+    from .volume_chat import router as volume_chat_router
+    from .volume_notifications import router as volume_notifications_router
+    from .volume_devices import router as volume_devices_router
+    from .volume_plans import router as volume_plans_router
+    from .volume_analysis import router as volume_analysis_router
+    from .volume_monitor import router as volume_monitor_router
+    from .volume_catalogue import router as volume_catalogue_router
+    from .volume_purchases import router as volume_purchases_router
+except ImportError:
+    from volume_live import router as volume_live_router
+    from volume_workspace import router as volume_workspace_router
+    from volume_state import router as volume_state_router
+    from volume_market import router as volume_market_router
+    from volume_jobs import router as volume_jobs_router
+    from volume_chat import router as volume_chat_router
+    from volume_notifications import router as volume_notifications_router
+    from volume_devices import router as volume_devices_router
+    from volume_plans import router as volume_plans_router
+    from volume_analysis import router as volume_analysis_router
+    from volume_monitor import router as volume_monitor_router
+    from volume_catalogue import router as volume_catalogue_router
+    from volume_purchases import router as volume_purchases_router
+
+for volume_router in (volume_live_router, volume_workspace_router, volume_state_router, volume_market_router,
+                      volume_jobs_router, volume_chat_router, volume_notifications_router,
+                      volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router,
+                      volume_catalogue_router, volume_purchases_router):
+    app.include_router(volume_router)

@@ -1,0 +1,261 @@
+{
+  "application_code_sha256": "cc88859582fd6281a9051d76c8dbe399dfb885cd7eb033a34d691a3561a0998e",
+  "application_files_changed": false,
+  "application_imported": false,
+  "configuration_changed": false,
+  "current_source_pointer": "/var/lib/analyst-ai-build/development/current-source-n02-n04-r4-20261027.json",
+  "documentation_commit": "e3b0ee17281a40548d890f821af54c6b118c3601",
+  "files": {
+    "AUTONOMOUS_PORTFOLIO_PROGRESS_2026-10-27.md": {
+      "bytes": 54195,
+      "sha256": "945f49fb551be06af3c658c20b6918d66e6bc0317c40437734b1e8bd33723e2b"
+    },
+    "CURRENT_AGENTS_CHECKPOINT.md": {
+      "bytes": 18408,
+      "sha256": "d63a9cc186b36da4298335cff01d8f6bd6cbc7fad7221625a4f019c3625a49d9"
+    },
+    "N03_RATINGS_SOURCE_AUDIT_2026-10-27.md": {
+      "bytes": 42707,
+      "sha256": "588a05c07faeb33fa44c68fbaed49f2dbb5418f24e918e75732fc1b6677228fd"
+    },
+    "runtime-observation-20261027T063912Z.json": {
+      "bytes": 5424,
+      "sha256": "f6725c410af28a0fecfe08fc481535c4f9cc63042dcd7ae0b1860744657eb296"
+    },
+    "timeweb-2026-10-27/README.md": {
+      "bytes": 6910,
+      "sha256": "fa6e07b88bd9651f34cdff50a55d5eeba6893c29466f23d8c01ebae55157ce8c"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-backend-deployment.json": {
+      "bytes": 3151,
+      "sha256": "705ef1405cccceecc8850f9865ea0e5f1a6774351eb49901972a2ce7c275a0a1"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-candidate-final.json": {
+      "bytes": 10986,
+      "sha256": "fd88dd5c5c9595f7706798bab7b08250042c1df6cf9035bfc33c0b551e8edcc3"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-cbr-public-observation.json": {
+      "bytes": 2229,
+      "sha256": "75b455014dc00e96fdd7aab0fea108e944eac8165a4171ded6720b124f6f6cb8"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-cbr-query-observation.json": {
+      "bytes": 5276,
+      "sha256": "47cbfc2b612eaaa6b38bc226ef98cd51de99891700e14ac230d22ae312bc3842"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-cbr-script-observation.json": {
+      "bytes": 19156,
+      "sha256": "03bce0a1c86ff65df89dcdc1d6c878aa832a37efc3ce9f9bf412e274e39dd959"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-cbr-search-observation.json": {
+      "bytes": 6644,
+      "sha256": "a36baa1e1ffa2ddcdeb27055e0513346ef36c91565e623cb28a0636809069931"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-cbr-transport-observation.json": {
+      "bytes": 1410,
+      "sha256": "165c2f6fe33289dc89d09f4dacd1ca8fedf2d3201bd301834dff952b4876667b"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-deployment-manifest-final.json": {
+      "bytes": 2506,
+      "sha256": "c868fcbca5f56eb1847bb3f5141cdea09cf29360ab8d41e6dfbbd10a40dcff11"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-events-final.json": {
+      "bytes": 5357,
+      "sha256": "d394ce53303a12418e590be178c65c099e45e2b1832cd2b1f239d096272c1508"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-events-timing.json": {
+      "bytes": 3676,
+      "sha256": "29634c6f9c9b59c95bf84a0875779f998857813b0e7e99996194dcc9df4010f2"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-postdeploy-observation.json": {
+      "bytes": 1443,
+      "sha256": "7fbc94cd10dddd4a44a96b50bcf4566e5b8c346d0431f70a643151ea9b65f224"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-public-source-live-final.json": {
+      "bytes": 2701,
+      "sha256": "4c85c7b21f46582f1d6d6a04d6dcd1453283bd6a3b58ac9b5180c7c25e0f5990"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-runtime-readiness.json": {
+      "bytes": 1190,
+      "sha256": "e6a7841a9e0e399158ab09689b83144b6c51c50d0ceff4ce6c7d15c140df1af7"
+    },
+    "timeweb-2026-10-27/evidence/timeweb-source49-baseline.json": {
+      "bytes": 2656,
+      "sha256": "8caedbb6cdd914f5e09d63fda5dd5d4ef41c5b1d32f8b0a14af85919bacc30ac"
+    }
+  },
+  "handoff_directory": "/var/lib/analyst-ai-build/development/handoff-n02-n04-r4-20261027",
+  "pointer": {
+    "bytes": 1377,
+    "sha256": "20ddde310c29e1e236ed5ec62a82ccb858742c634251d15fc5f6b12fcc48c703"
+  },
+  "runtime_observation": {
+    "account_identifiers_returned": false,
+    "active_currency_counts": {
+      "RUB": 1
+    },
+    "active_currency_source": "sql_projection_of_latest_strategy_or_default_rub",
+    "application_imported": false,
+    "broker_requests_sent": false,
+    "cash_amounts_returned": false,
+    "checked_at_utc": "2026-10-27T06:39:12.519436+00:00",
+    "configuration_changed": false,
+    "credential_columns_read": false,
+    "current_broker_binding_verified": false,
+    "database_mode": "read_only",
+    "deployed_at_utc": "2026-10-27T06:17:20+00:00",
+    "event_interval_seconds_from_verified_code": 600,
+    "free_form_errors_returned": false,
+    "isin_or_instrument_identifiers_returned": false,
+    "job_groups_truncated": false,
+    "job_identifiers_returned": false,
+    "job_state_stage_error_groups": [
+      {
+        "count": 8,
+        "error_code": "event_sources_incomplete",
+        "kind": "events",
+        "last_stage": "events_partial",
+        "latest_created_at": "2026-10-27T06:37:32+00:00",
+        "latest_updated_at": "2026-10-27T06:37:34+00:00",
+        "state": "failed"
+      },
+      {
+        "count": 177,
+        "error_code": null,
+        "kind": "refresh",
+        "last_stage": "done",
+        "latest_created_at": "2026-10-27T05:18:49+00:00",
+        "latest_updated_at": "2026-10-27T05:18:51+00:00",
+        "state": "completed"
+      }
+    ],
+    "latest_calendar_checkpoint_reason": "tinvest_unexpected_status",
+    "new_storage_aggregates": {
+      "broker_operation_current_v1": {
+        "initialized": true,
+        "latest_observed_at": "2026-10-27T06:37:34.343567+00:00",
+        "rows": 1
+      },
+      "broker_operation_history_v1": {
+        "initialized": true,
+        "latest_observed_at": "2026-10-27T06:27:32.114121+00:00",
+        "rows": 1
+      },
+      "broker_operation_windows_v1": {
+        "initialized": true,
+        "latest_observed_at": "2026-10-27T06:37:34.343567+00:00",
+        "rows": 2
+      },
+      "public_source_documents_v1": {
+        "initialized": false
+      },
+      "public_source_observations_v1": {
+        "initialized": false
+      }
+    },
+    "portfolio_payloads_returned": false,
+    "schema": 1,
+    "server_id": 9417611,
+    "snapshot_count": 3,
+    "snapshot_due_calculation_is_only_clock_comparison": true,
+    "snapshot_metadata": [
+      {
+        "as_of": "2026-10-27T05:24:04.891142+00:00",
+        "currency": "RUB",
+        "due_by_snapshot_clock": false,
+        "event_age_seconds": 98.341,
+        "event_clock_is_future": false,
+        "event_clock_missing_or_invalid": false,
+        "event_monitor_checked_at": "2026-10-27T06:37:34.178828+00:00",
+        "event_monitor_complete": false,
+        "event_monitor_status_as_saved": {
+          "calendar": "unavailable",
+          "instrument_metadata": null,
+          "news": "available",
+          "operations": "available",
+          "payout_announcements": "available",
+          "public_identity_sources": "not_applicable"
+        },
+        "next_event_due_by_snapshot_clock": "2026-10-27T06:47:34.178828+00:00",
+        "public_sources_as_saved": {
+          "checked_at": "2026-10-27T06:37:34.198681+00:00",
+          "eligible_identifiers": 0,
+          "identifiers_visited": null,
+          "mapped_identifiers": null,
+          "missing_identifiers": 0,
+          "state": "not_applicable"
+        },
+        "saved_at": "2026-10-27T06:37:34+00:00"
+      },
+      {
+        "as_of": "2026-10-25T09:27:31.016539+00:00",
+        "currency": "EUR",
+        "due_by_snapshot_clock": null,
+        "event_age_seconds": null,
+        "event_clock_is_future": false,
+        "event_clock_missing_or_invalid": true,
+        "event_monitor_checked_at": null,
+        "event_monitor_complete": null,
+        "event_monitor_status_as_saved": {
+          "calendar": null,
+          "instrument_metadata": null,
+          "news": null,
+          "operations": null,
+          "payout_announcements": null,
+          "public_identity_sources": null
+        },
+        "next_event_due_by_snapshot_clock": null,
+        "public_sources_as_saved": {
+          "checked_at": null,
+          "eligible_identifiers": null,
+          "identifiers_visited": null,
+          "mapped_identifiers": null,
+          "missing_identifiers": null,
+          "state": null
+        },
+        "saved_at": "2026-10-25T09:27:32+00:00"
+      },
+      {
+        "as_of": "2026-10-25T09:27:25.024585+00:00",
+        "currency": "USD",
+        "due_by_snapshot_clock": null,
+        "event_age_seconds": null,
+        "event_clock_is_future": false,
+        "event_clock_missing_or_invalid": true,
+        "event_monitor_checked_at": null,
+        "event_monitor_complete": null,
+        "event_monitor_status_as_saved": {
+          "calendar": null,
+          "instrument_metadata": null,
+          "news": null,
+          "operations": null,
+          "payout_announcements": null,
+          "public_identity_sources": null
+        },
+        "next_event_due_by_snapshot_clock": null,
+        "public_sources_as_saved": {
+          "checked_at": null,
+          "eligible_identifiers": null,
+          "identifiers_visited": null,
+          "mapped_identifiers": null,
+          "missing_identifiers": null,
+          "state": null
+        },
+        "saved_at": "2026-10-25T09:27:26+00:00"
+      }
+    ],
+    "snapshot_metadata_truncated": false,
+    "source_document_bodies_returned": false,
+    "source_status_is_saved_metadata_not_refetched": true,
+    "status": "observed",
+    "workspace_job_timing": {
+      "count": 185,
+      "created_since_deployment": 2,
+      "latest_created_at": "2026-10-27T06:37:32+00:00",
+      "latest_updated_at": "2026-10-27T06:37:34+00:00",
+      "updated_since_deployment": 2
+    }
+  },
+  "schema": 1,
+  "server_id": 9417611,
+  "status": "saved"
+}
