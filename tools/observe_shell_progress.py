@@ -3,7 +3,7 @@ import json,re,os,datetime
 assert os.environ.get("COMPUTERNAME") == "LAPTOP-NPSGA016"
 rows=[]
 for runner in ("actions-runner","actions-runner-2","actions-runner-3","actions-runner-4"):
-    root=Path("C:/")/runner/"_work/_temp/server-version-client-40672861122-1"
+    root=Path("C:/")/runner/"_work/_temp/server-version-client-40674568527-1"
     steps=root/"shell-build-steps.json"
     if not steps.is_file() or steps.stat().st_size>1048576: continue
     data=json.loads(steps.read_text())
@@ -15,4 +15,4 @@ for runner in ("actions-runner","actions-runner-2","actions-runner-3","actions-r
             result["build_successful"]="BUILD SUCCESSFUL" in text
             result["build_failed"]="BUILD FAILED" in text
     rows.append(result)
-print(json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"build_run":40672861122,"checks":rows}))
+print(json.dumps({"checked_at_utc":datetime.datetime.now(datetime.timezone.utc).isoformat(),"build_run":40674568527,"checks":rows}))
