@@ -45,7 +45,12 @@ def main():
             with (state / "gradle.log").open("xb") as log:
                 process = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--worker"],
                     cwd=root, env=env, stdin=subprocess.PIPE, stdout=log, stderr=subprocess.STDOUT)
-                job.attach(process)
+                try:
+                    job.attach(process)
+                except BaseException:
+                    process.kill()
+                    process.wait(timeout=30)
+                    raise
                 process.stdin.write(b"VERSION_CHECK_READY\n")
                 process.stdin.close()
                 deadline = time.monotonic() + 2500

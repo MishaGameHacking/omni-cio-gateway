@@ -534,6 +534,27 @@ def _ai_configuration() -> dict:
                 "live_inference_verified": False}
 
 
+def _collection_status(enabled, connected, scheduler_enabled, job, snapshot, full, now):
+    """Classify persisted collection state without changing any work."""
+    if not enabled:
+        return "paused", ["automation_paused"]
+    if not connected:
+        return "not_connected", ["tinvest_not_connected"]
+    if not scheduler_enabled:
+        return "disabled", ["analysis_scheduler_disabled"]
+    if job and job["state"] in {"queued", "running"} and not job["cancel_requested"]:
+        if job["state"] == "running" and (job["expires_at"] or 0) <= now:
+            return "attention", ["workspace_collection_delayed"]
+        return "collecting", []
+    if snapshot is None:
+        return "waiting", ["workspace_refresh_required"]
+    if job and job["state"] == "failed":
+        return "attention", ["workspace_collection_failed"]
+    if _age(full, now) is None or _age(full, now) >= FULL_REFRESH_SECONDS * 2:
+        return "attention", ["workspace_collection_delayed"]
+    return "current", []
+
+
 @router.get("/status")
 def status(user: Any = Depends(backend.current_user), response: Response = None) -> dict:
     """Persisted status only. Do not initialize queues, expire leases or fetch data."""
@@ -558,27 +579,9 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
     full = (snapshot or {}).get("collection", {}).get("finished_at")
     current_job = None if job is None else {"state": job["state"], "stage": job["stage"], "updated_at": _iso(job["updated_at"]),
                                            "error_code": job["error_code"], "cancel_requested": bool(job["cancel_requested"])}
-    codes = []
     connected = bool(user["tinvest_token_encrypted"])
-    if not pref["enabled"]:
-        state_name, codes = "paused", ["automation_paused"]
-    elif not connected:
-        state_name, codes = "not_connected", ["tinvest_not_connected"]
-    elif not SCHEDULER_ENABLED:
-        state_name, codes = "disabled", ["analysis_scheduler_disabled"]
-    elif job and job["state"] in {"queued", "running"} and not job["cancel_requested"]:
-        if job["state"] == "running" and (job["expires_at"] or 0) <= now:
-            state_name, codes = "attention", ["workspace_collection_delayed"]
-        else:
-            state_name = "collecting"
-    elif snapshot is None:
-        state_name, codes = "waiting", ["workspace_refresh_required"]
-    elif job and job["state"] == "failed":
-        state_name, codes = "attention", ["workspace_collection_failed"]
-    elif _age(full, now) is None or _age(full, now) >= FULL_REFRESH_SECONDS * 2:
-        state_name, codes = "attention", ["workspace_collection_delayed"]
-    else:
-        state_name = "current"
+    state_name, codes = _collection_status(pref["enabled"], connected, SCHEDULER_ENABLED,
+                                           job, snapshot, full, now)
     if connected and active is None:
         codes.append("strategy_required")
         if state_name == "current":
