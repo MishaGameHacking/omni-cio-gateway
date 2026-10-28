@@ -52,6 +52,7 @@ MAX_REVIEWED_PER_CYCLE = 8
 DISCOVERY_TIME_BUDGET_SECONDS = 120
 LEASE_SECONDS = 900
 AUTO_REQUEST_PREFIX = "auto.full."
+USER_TOKEN_QUERY = "SELECT tinvest_token_encrypted FROM users WHERE id=?"
 
 _MESSAGES = {
     "automation_paused": "Автоматический анализ приостановлен в настройках.",
@@ -223,7 +224,7 @@ def enqueue_collection(user: Any, *, now: float | None = None) -> dict:
 
     def before_insert(db, _):
         assert_enabled_in(db, user_id)
-        owner = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
+        owner = db.execute(USER_TOKEN_QUERY, (user_id,)).fetchone()
         if owner is None or state.broker_key(owner) != key:
             raise HTTPException(409, "monitoring_connection_changed")
         pending = db.execute("""SELECT id FROM workspace_jobs WHERE user_id=?
@@ -255,7 +256,7 @@ def record_initial_observation(user: Any, snapshot: dict, now: int) -> None:
         assert_current_owner_in(db)
         jobs.assert_current_in(db)
         assert_enabled_in(db, user_id)
-        owner = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
+        owner = db.execute(USER_TOKEN_QUERY, (user_id,)).fetchone()
         if owner is None or state.broker_key(owner) != key:
             raise HTTPException(409, "monitoring_connection_changed")
         cursor = db.execute("INSERT OR IGNORE INTO automation_observations VALUES (?,?,?,?)",
@@ -282,7 +283,7 @@ def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
         assert_current_owner_in(db)
         jobs.assert_current_in(db)
         assert_enabled_in(db, user_id)
-        current = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
+        current = db.execute(USER_TOKEN_QUERY, (user_id,)).fetchone()
         if current is None or state.broker_key(current) != key:
             raise HTTPException(409, "monitoring_connection_changed")
         row = db.execute("SELECT * FROM automation_discovery WHERE user_id=?", (user_id,)).fetchone()
@@ -389,6 +390,47 @@ def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
     return base
 
 
+def _load_catalogue_class(user: Any, user_id: int, kind: str) -> tuple[list[dict], dict | None, str | None]:
+    assert_enabled(user_id)
+    assert_monitoring_access(backend.connect)
+    try:
+        observed = catalogue.load_catalogue(user, kind)
+        return observed["items"], observed["source"], None
+    except HTTPException as error:
+        code = error_code(error)
+        if code in {"monitoring_connection_changed", "automation_paused"}:
+            raise
+        return [], None, code
+
+
+def _load_catalogue_candidates(user: Any, user_id: int, config: dict) -> tuple[list[dict], int, list, list[str]]:
+    found, scanned, sources, errors = {}, 0, [], []
+    for kind in ("share", "bond"):
+        items, source, error = _load_catalogue_class(user, user_id, kind)
+        scanned += len(items)
+        if source is not None:
+            sources.append(source)
+        if error is not None:
+            errors.append(error)
+        for item in items:
+            if _catalogue_candidate(item, config):
+                found[item["uid"]] = item
+    return [found[key] for key in sorted(found)], scanned, sources, errors
+
+
+def _review_candidates(user: Any, ordered: list[dict], cursor: int, account: str,
+                       version: int, deadline: float, errors: list[str]) -> list[dict]:
+    batch = [ordered[(cursor + index) % len(ordered)]
+             for index in range(min(MAX_REVIEWED_PER_CYCLE, len(ordered)))]
+    reviewed = []
+    for item in batch:
+        if time.monotonic() >= deadline:
+            errors.append("discovery_time_budget")
+            break
+        reviewed.append(_check_candidate(user, item, account, version))
+    return reviewed
+
+
 def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     user_id = int(user["id"])
     active = state.active_strategy(user_id)
@@ -403,23 +445,8 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     account = _account_for_research(snapshot, config)
     if account is None:
         return _empty_discovery("blocked", ["observed_cash_not_above_reserve"]), cursor
-    found, scanned, sources, errors = {}, 0, [], []
     deadline = time.monotonic() + DISCOVERY_TIME_BUDGET_SECONDS
-    for kind in ("share", "bond"):
-        assert_enabled(user_id)
-        assert_monitoring_access(backend.connect)
-        try:
-            observed = catalogue.load_catalogue(user, kind)
-            scanned += len(observed["items"])
-            sources.append(observed["source"])
-            for item in observed["items"]:
-                if _catalogue_candidate(item, config):
-                    found[item["uid"]] = item
-        except HTTPException as error:
-            if error_code(error) in {"monitoring_connection_changed", "automation_paused"}:
-                raise
-            errors.append(error_code(error))
-    ordered = [found[key] for key in sorted(found)]
+    ordered, scanned, sources, errors = _load_catalogue_candidates(user, user_id, config)
     result = _empty_discovery("partial", ["research_incomplete"])
     result.update(as_of=now_iso(), snapshot_id=snapshot["snapshot_id"], strategy_version=version, sources=sources)
     result["coverage"].update(scanned=scanned, eligible=len(ordered), catalogue_classes_complete=not errors)
@@ -427,12 +454,7 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         result["state"] = "blocked"
         result["reasons"] = [reason("catalogue_unavailable" if errors else "catalogue_no_eligible_instruments")]
         return result, cursor
-    batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, len(ordered)))]
-    for item in batch:
-        if time.monotonic() >= deadline:
-            errors.append("discovery_time_budget")
-            break
-        result["candidates"].append(_check_candidate(user, item, account, version))
+    result["candidates"] = _review_candidates(user, ordered, cursor, account, version, deadline, errors)
     result["coverage"]["reviewed"] = len(result["candidates"])
     result["coverage"]["constraint_checks_passed"] = sum(item["constraints_passed"] for item in result["candidates"])
     result["reasons"] += [reason(code) for code in sorted(set(errors))]
@@ -464,7 +486,7 @@ def observe_and_discover(user: Any, snapshot: dict, current_time: datetime) -> N
         assert_current_owner_in(db)
         jobs.assert_current_in(db)
         assert_enabled_in(db, user_id)
-        current = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
+        current = db.execute(USER_TOKEN_QUERY, (user_id,)).fetchone()
         if current is None or state.broker_key(current) != key:
             raise HTTPException(409, "monitoring_connection_changed")
         changed = db.execute("""UPDATE automation_discovery SET snapshot_id=?,state=?,result_json=?,updated_at=?,
