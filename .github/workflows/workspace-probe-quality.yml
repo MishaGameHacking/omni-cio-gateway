@@ -1,0 +1,22 @@
+name: Read probe revision quality annotations
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-probe-quality.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref='a6c3a41108c683c3b7b2a715aae97fd2fb8e7a1e';
+            const {data}=await github.rest.checks.listForRef({...context.repo,ref});
+            const sonar=data.check_runs.filter(c=>c.name==='SonarCloud Code Analysis'&&c.head_sha===ref);
+            if(sonar.length!==1) throw new Error('Ambiguous Sonar check');
+            const rows=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar[0].id,per_page:100});
+            core.info(JSON.stringify({source:ref,check:sonar[0].id,annotations:rows.map(x=>({path:x.path,line:x.start_line,message:x.message,title:x.title}))}));
