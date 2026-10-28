@@ -3,8 +3,7 @@ on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/workspace-native-progress.yml]
-permissions:
-  checks: read
+permissions: {}
 jobs:
   observe:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -19,7 +18,7 @@ jobs:
               raise RuntimeError("owner_laptop_required")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
               folder = Path("C:/") / runner / "_work/_temp/server-version-client-40750352430-1"
-              for name in ("shell-build-steps.json", "shell-gradle.log"):
+              for name in ("shell-build-steps.json", "shell-build-steps-17-gradle.log"):
                   path = folder / name
                   if not path.is_file(): continue
                   with path.open("rb") as stream:
@@ -28,9 +27,3 @@ jobs:
                   if name.endswith(".json"):
                       value = json.dumps([{"label":s.get("label"),"exit_code":s.get("exit_code")} for s in json.loads(value).get("steps",[])])
                   print("OWNED_BUILD_PROGRESS=" + name + "\n" + value[-24000:])
-      - name: Read exact candidate static-analysis findings
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
-        with:
-          script: |
-            const annotations=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:123036210745,per_page:100});
-            for(const item of annotations) core.info(JSON.stringify({path:item.path,line:item.start_line,title:item.title,message:item.message}));
