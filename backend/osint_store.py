@@ -109,8 +109,11 @@ def add_target(db, source_id: str, item: dict, now: int) -> bool:
 
 def due(connect, now: int) -> bool:
     with closing(connect()) as db:
-        return db.execute("SELECT 1 FROM osint_targets_v1 WHERE next_at<=? AND lease_until<=? LIMIT 1",
-                          (now, now)).fetchone() is not None
+        target = db.execute("SELECT 1 FROM osint_targets_v1 WHERE next_at<=? AND lease_until<=? LIMIT 1",
+                            (now, now)).fetchone()
+        maintenance = db.execute("SELECT 1 FROM osint_revision_v1 WHERE singleton=1 AND last_cleanup<=?",
+                                 (now - 3600,)).fetchone()
+        return target is not None or maintenance is not None
 
 
 def claim(connect, now: int) -> dict | None:

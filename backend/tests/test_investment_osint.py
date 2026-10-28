@@ -415,3 +415,13 @@ def test_transport_can_use_second_checked_public_address(monkeypatch):
     monkeypatch.setattr(network.socket, "create_connection", connect)
     assert network._connect_address(["1.1.1.1", "8.8.8.8"]) is connected
     assert len(calls) == 2
+
+
+def test_retention_remains_scheduled_while_all_publishers_are_backing_off(corpus):
+    with closing(corpus()) as db:
+        db.execute("UPDATE osint_targets_v1 SET next_at=?", (NOW + 86400,))
+        db.commit()
+    assert store.due(corpus, NOW) is True
+    cleanup(corpus, NOW)
+    assert store.due(corpus, NOW + 3599) is False
+    assert store.due(corpus, NOW + 3600) is True
