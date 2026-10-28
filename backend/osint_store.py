@@ -186,6 +186,11 @@ def _save_object(db, title, text, now):
     return digest
 
 
+def _ensure_publication_capacity(db, old):
+    if old is None and db.execute("SELECT publications FROM osint_revision_v1 WHERE singleton=1").fetchone()[0] >= MAX_PUBLICATIONS:
+        raise IntakeError("osint_corpus_capacity")
+
+
 def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if not analysis["relevant"]:
         return False
@@ -208,8 +213,7 @@ def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if old and old["revision_sha"] == revision:
         db.execute("UPDATE osint_publications_v1 SET last_seen=? WHERE id=?", (now, old["id"]))
         return False
-    if not old and db.execute("SELECT publications FROM osint_revision_v1 WHERE singleton=1").fetchone()[0] >= MAX_PUBLICATIONS:
-        raise IntakeError("osint_corpus_capacity")
+    _ensure_publication_capacity(db, old)
     object_sha = _save_object(db, item["title"], item["text"], now)
     values = (source.id, item["url"], item["title"], item["kind"], item["publisher"], int(item["primary"]),
               item.get("published_at"), item.get("discovered_at"), now, now, expiry, object_sha, raw_sha,
