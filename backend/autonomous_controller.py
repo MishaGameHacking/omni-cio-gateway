@@ -260,6 +260,11 @@ def record_initial_observation(user: Any, snapshot: dict, now: int) -> None:
         owner = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
         if owner is None or state.broker_key(owner) != key:
             raise HTTPException(409, "monitoring_connection_changed")
+        try:
+            from .decision_views import prune_obsolete_events
+        except ImportError:
+            from decision_views import prune_obsolete_events
+        prune_obsolete_events(db, user_id, now)
         cursor = db.execute("INSERT OR IGNORE INTO automation_observations VALUES (?,?,?,?)",
                             (user_id, key, now, snapshot["snapshot_id"]))
         if cursor.rowcount:
@@ -452,12 +457,6 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
 
 def observe_and_discover(user: Any, snapshot: dict, current_time: datetime) -> None:
     now, user_id, key = int(time.time()), int(user["id"]), state.broker_key(user)
-    try:
-        from .decision_views import prune_obsolete_events
-    except ImportError:
-        from decision_views import prune_obsolete_events
-    with transaction(backend.connect) as db:
-        prune_obsolete_events(db, user_id, now)
     record_initial_observation(user, snapshot, int(current_time.timestamp()))
     claim = _claim_discovery(user, now)
     if claim is None:

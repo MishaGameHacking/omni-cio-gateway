@@ -44,7 +44,8 @@ def _template(row, active: dict | None, snapshot: dict | None) -> dict:
     account = prior_mandate.get("account_id")
     if account not in account_ids:
         account = next(iter(account_ids)) if len(account_ids) == 1 else None
-    total = decimal((snapshot or {}).get("capital", {}).get("total"))
+    selected = next((row for row in accounts if row.get("id") == account), None)
+    total = decimal((selected or {}).get("value"))
     if (snapshot or {}).get("currency") != "RUB":
         total = None
     old_reserve = decimal(previous.get("reserve", {})) if previous.get("reserve", {}).get("currency") == "RUB" else None
@@ -112,8 +113,14 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
     enabled = tuning.get("enabled") is True
     reserve = decimal(config.get("reserve", {})) or Decimal(0)
     currency = config.get("reserve", {}).get("currency", "RUB")
-    cash = sum((decimal(item) or Decimal(0) for item in (snapshot or {}).get("capital", {}).get("cash", [])
-                if item.get("currency") == currency), Decimal(0))
+    selected_account = config.get("mandate", {}).get("account_id")
+    if selected_account:
+        cash = sum((decimal(item.get("value")) or Decimal(0) for item in (snapshot or {}).get("positions", [])
+                    if item.get("account_id") == selected_account and item.get("instrument_type") == "cash"
+                    and (item.get("value") or {}).get("currency") == currency), Decimal(0))
+    else:
+        cash = sum((decimal(item) or Decimal(0) for item in (snapshot or {}).get("capital", {}).get("cash", [])
+                    if item.get("currency") == currency), Decimal(0))
     available = max(Decimal(0), cash - reserve)
     mode = config.get("mandate", {}).get("asset_mode", "mixed")
     classes = {"bonds": ["bond"], "shares": ["share"], "mixed": ["bond", "share"]}.get(mode, [])

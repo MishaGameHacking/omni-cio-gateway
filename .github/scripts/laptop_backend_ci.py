@@ -197,7 +197,8 @@ def main():
     else:
         need(identity['event_name'] == 'push' and os.environ.get('GITHUB_REF') in {
                  'refs/heads/main', 'refs/heads/codex/server-runtime-2026-10-28',
-                 'refs/heads/codex/investment-osint-2026-10-28'}
+                 'refs/heads/codex/investment-osint-2026-10-28',
+                 'refs/heads/codex/workspace-strategies-2026-10-28'}
              and identity['pr_head_sha'] == identity['pr_base_sha'] == '', 'invalid_main_push_identity')
     root = Path(__file__).resolve().parents[2]
     workspace = Path(os.environ['GITHUB_WORKSPACE']).resolve(strict=True)
