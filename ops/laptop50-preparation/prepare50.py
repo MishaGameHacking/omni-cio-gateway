@@ -73,8 +73,9 @@ def main():
         path=candidate/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_text(text)
     name='app/src/main/java/ru/omnicio/app/ui/home/HomeScreen.kt'
     text=(ROOT/'reference/source'/name).read_text()
-    text=replace_once(text,'                item(key = "automation-state") {',
-        '                item(key = "data-readiness") { HomeSystemReadiness(selectedCurrency) }\n                item(key = "automation-state") {')
+    marker='                if (!disconnected || hasObservation || candidates.isNotEmpty()) item(key = "analysis-results") {'
+    text=replace_once(text,marker,
+        '                item(key = "data-readiness") { HomeSystemReadiness(selectedCurrency) }\n'+marker)
     (candidate/name).write_text(text)
     rows=[]
     for path in sorted(candidate.rglob('*')):

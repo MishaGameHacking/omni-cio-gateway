@@ -151,7 +151,7 @@ jobs:
 
         raw = source.read_bytes()
 
-        assert hashlib.sha256(raw).hexdigest() == ''6211c51db1bebcee83fe0785bc0bb83c69772e909d752d61635b3ca59209d8e2''
+        assert hashlib.sha256(raw).hexdigest() == ''01d69cf75ef41814f9fc62acc0bd88afaf6395e8956509fa0302112bd69b70b0''
 
         target = pathlib.Path(os.environ[''PATCH_DIR'']) / ''n00-integrated-apk50.b64''
 
@@ -169,12 +169,12 @@ jobs:
     - name: 'Stage verified administrative transport: patch-manifest.json'
       shell: cmd
       run: 'py -3 -c "from pathlib import Path; import os; p=Path(os.environ[''PATCH_DIR''])/''patch-manifest.json.b64'';
-        p.open(''w'',encoding=''ascii'').write(''eNpNjDluwzAQAP/COga4XJ76SmAYezE2EkmGxFSG/x6WaQcz83Kn3G0lt8CHYzrtJvu6PoZbXDJM0qhIMUOi6EMPOYohhJ6aQIAMRVXcDH83/bHTLZ8vt9Fqs968vzy2YV8HDdMLPb+Tn+Y4aDuf+zFu551CytPMAUASKAMbi1nFbr7UxOKZK0pupQRrvmlJQTNkTIxCqYWJqoV5VZNdTf89JdTa1JNp5+6x1pI6qXRrkaOCSSRE80gaWVtmilZi5wo+RhRx7+v7D4yLVJc='')"
+        p.open(''w'',encoding=''ascii'').write(''eNpFjDluwzAQAP/COgZ2SS0PfSUIjOUesZFIMiSlMvz3MFWK6WbmGQ652cJhxrfQ+bCrbMtyP8McyBJJ4yLFLDFPED3mSSxhdGqCETMWVQkj/Fn1244wvz/DyouNegW43NfTPnc+TS/8+CIY5rnzejy2/bweN46UhwmouYkXMp+w4uTNJUcWga61srPn1Mhqo0zQnCFBRIx9VL1A/7uqyaam/8+MnaWX0kQ9QSFtRpCsilBmllJjU2kARRFrSpK4VyppsgG5x/D6eP0CZqNTUw=='')"
 
         if errorlevel 1 exit /b 1
 
         py -3 -c "from pathlib import Path; import os,zlib,base64,hashlib; p=Path(os.environ[''PATCH_DIR'']); b=zlib.decompress(base64.b64decode((p/''patch-manifest.json.b64'').read_text()));
-        assert hashlib.sha256(b).hexdigest()==''f59f23f29786d0006867aeecd954904f35adb08c5afb7ded544c14fce6939d66''; (p/''patch-manifest.json'').write_bytes(b)"
+        assert hashlib.sha256(b).hexdigest()==''12a89e37a0def43ab8ca5b13dbd090c96b226828b73fad4249ad9b2c58344e68''; (p/''patch-manifest.json'').write_bytes(b)"
 
         if errorlevel 1 exit /b 1'
       id: setup
