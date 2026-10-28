@@ -31,7 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 6cdf1603bdd9099a6e0d7e871c340a6dce59601d
+          ref: 5c850394959ead8af17ab78b4c1d7756e9eedfa4
           path: native-tools-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
           sparse-checkout: tools/workspace_native.py
@@ -45,6 +45,10 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
+            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40732735843});
+            if(toolsRun.status!=='completed'||toolsRun.conclusion!=='success'||toolsRun.run_attempt!==1||
+               toolsRun.head_sha!=='5c850394959ead8af17ab78b4c1d7756e9eedfa4'||toolsRun.path!=='.github/workflows/workspace-shell-tools-check.yml')
+              throw new Error('Native preparation input checks did not pass');
             const run_id=Number(process.env.EXPECTED_TEST_RUN);
             const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
             if(run.status!=='completed'||run.conclusion!=='success'||run.run_attempt!==1||
@@ -56,6 +60,17 @@ jobs:
               throw new Error('Native input artifact changed');
             const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
             require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'workspace-native-artifact.zip'),Buffer.from(archive.data));
+            const {data:baselineRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40676480217});
+            if(baselineRun.status!=='completed'||baselineRun.conclusion!=='success'||baselineRun.run_attempt!==1||
+               baselineRun.head_sha!=='2d3e08614f15cfb1d9e9428a0d3613672394a92b'||baselineRun.path!=='.github/workflows/server-runtime.yml')
+              throw new Error('Baseline50 build identity changed');
+            const baselineItems=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:40676480217,per_page:100});
+            const baseline=baselineItems.filter(x=>x.name==='server-version-client-40676480217-1'&&!x.expired);
+            if(baseline.length!==1||baseline[0].digest!=='sha256:0303e6d8af4247bf5b33ef41b689e1a83b33bcea963d2b0de35d11485dd730cc')
+              throw new Error('Baseline50 artifact identity changed');
+            const old=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:baseline[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'workspace-baseline-artifact.zip'),Buffer.from(old.data));
+
       - name: Run full unchanged API37 4KB and 16KB suite on exact built APKs
         shell: cmd
         working-directory: native-source-${{ github.run_id }}-${{ github.run_attempt }}
