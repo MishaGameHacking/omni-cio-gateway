@@ -35,6 +35,12 @@ private fun currentServerObservation(raw: Any?, now: Instant, seconds: Int): Boo
     return !age.isNegative && age < Duration.ofSeconds(seconds.toLong())
 }
 
+private fun readOnlyServerMode(payload: JSONObject?, evaluationCurrent: Boolean): Boolean {
+    if (payload == null) return false
+    return evaluationCurrent && payload.opt("execution_mode") == "read_only" &&
+        payload.opt("real_orders_enabled") == false
+}
+
 internal fun serverReadinessSummary(payload: JSONObject?, now: Instant = Instant.now()): ServerReadinessSummary {
     val supported = payload?.opt("schema_version") == 1
     val evaluated = payload?.opt("evaluated_at")
@@ -65,8 +71,7 @@ internal fun serverReadinessSummary(payload: JSONObject?, now: Instant = Instant
         }
         ServerLaneSummary(title, state, serverInstant(rawTime)?.toString())
     }
-    val readOnly = evaluationCurrent && payload?.opt("execution_mode") == "read_only" &&
-        payload.opt("real_orders_enabled") == false
+    val readOnly = readOnlyServerMode(payload, evaluationCurrent)
     return ServerReadinessSummary(
         supported = supported,
         evaluationCurrent = evaluationCurrent,

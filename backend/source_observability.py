@@ -81,6 +81,14 @@ def _lane_basis(snapshot: Mapping, name: str) -> tuple[Any, Any, Any, Any]:
     return observed, section.get("complete"), attempted, coverage_end
 
 
+def _lane_state(exists: bool, quality: dict, complete: Any) -> str:
+    if not exists:
+        return "not_collected"
+    if not quality["current"]:
+        return quality["state"]
+    return "current" if complete is True else "incomplete"
+
+
 def lane_inventory(snapshot: dict | None, *, now: datetime | None = None) -> list[dict]:
     now = clock(now)
     data = mapping(snapshot)
@@ -89,14 +97,7 @@ def lane_inventory(snapshot: dict | None, *, now: datetime | None = None) -> lis
         observed, complete, attempt, covered_through = _lane_basis(data, name)
         quality = freshness(observed, now=now, max_age_seconds=maximum)
         exists = bool(data) and (name == "valuation" or name in data)
-        if not exists:
-            state = "not_collected"
-        elif not quality["current"]:
-            state = quality["state"]
-        elif complete is not True:
-            state = "incomplete"
-        else:
-            state = "current"
+        state = _lane_state(exists, quality, complete)
         result.append({"id": name, "title": title, "state": state,
             "freshness": quality, "coverage_complete": complete is True,
             "coverage_known": type(complete) is bool,
@@ -104,6 +105,32 @@ def lane_inventory(snapshot: dict | None, *, now: datetime | None = None) -> lis
             "covered_through": covered_through if instant(covered_through) else None,
             "valuation_refreshed_by_status_read": False})
     return result
+
+
+def _reference_values(references: Any, ids: set[str], issues: set[str]) -> None:
+    if references is None:
+        return
+    if not isinstance(references, list):
+        issues.add("source_reference_shape_invalid")
+        return
+    for identifier in references:
+        if isinstance(identifier, str) and 0 < len(identifier) <= 200:
+            ids.add(identifier)
+        else:
+            issues.add("source_reference_id_invalid")
+
+
+def _reference_children(value: Any, depth: int, ids: set[str], issues: set[str]) -> list:
+    if isinstance(value, Mapping):
+        _reference_values(value.get("source_ids"), ids, issues)
+        return [(child, depth + 1) for key, child in value.items()
+                if key != "source_ids" and isinstance(child, (Mapping, list))]
+    if isinstance(value, list):
+        if len(value) > MAX_REFERENCE_NODES:
+            issues.add("source_reference_resource_limit")
+            return []
+        return [(child, depth + 1) for child in value]
+    return []
 
 
 def _referenced_ids(snapshot: Mapping) -> tuple[set[str], set[str]]:
@@ -115,37 +142,14 @@ def _referenced_ids(snapshot: Mapping) -> tuple[set[str], set[str]]:
         visited += 1
         if visited > MAX_REFERENCE_NODES or depth > MAX_REFERENCE_DEPTH:
             return ids, issues | {"source_reference_resource_limit"}
-        if isinstance(value, Mapping):
-            references = value.get("source_ids")
-            if references is not None:
-                if not isinstance(references, list):
-                    issues.add("source_reference_shape_invalid")
-                else:
-                    for identifier in references:
-                        if isinstance(identifier, str) and 0 < len(identifier) <= 200:
-                            ids.add(identifier)
-                        else:
-                            issues.add("source_reference_id_invalid")
-            for key, child in value.items():
-                if key != "source_ids" and isinstance(child, (Mapping, list)):
-                    stack.append((child, depth + 1))
-        elif isinstance(value, list):
-            if len(value) > MAX_REFERENCE_NODES:
-                return ids, issues | {"source_reference_resource_limit"}
-            stack.extend((child, depth + 1) for child in value)
+        stack.extend(_reference_children(value, depth, ids, issues))
+        if "source_reference_resource_limit" in issues:
+            return ids, issues
     return ids, issues
 
 
-def provenance_inventory(snapshot: dict | None, *, now: datetime | None = None) -> dict:
-    now, data = clock(now), mapping(snapshot)
-    rows = data.get("sources", [])
-    issues, indexed = set(), {}
-    counts = {"current": 0, "stale": 0, "invalid": 0, "future": 0,
-              "publication_time_unknown": 0, "conflicting_ids": 0}
-    if not isinstance(rows, list) or len(rows) > MAX_SOURCE_ROWS:
-        return {"state": "incomplete", "reasons": ["source_registry_shape_or_limit"],
-                "reference_resolution_complete": False, "financial_facts_verified": False}
-    conflicted = set()
+def _source_index(rows: list, counts: dict, issues: set[str]) -> tuple[dict, set[str]]:
+    indexed, conflicted = {}, set()
     for row in rows:
         if not isinstance(row, dict):
             issues.add("source_record_invalid")
@@ -164,33 +168,54 @@ def provenance_inventory(snapshot: dict | None, *, now: datetime | None = None) 
     counts["conflicting_ids"] = len(conflicted)
     if conflicted:
         issues.add("source_id_conflicting_versions")
+    return indexed, conflicted
+
+
+def _source_clock_state(row: dict, now: datetime) -> str:
+    observed, expires = instant(row.get("observed_at")), instant(row.get("expires_at"))
+    published = instant(row.get("published_at"))
+    if observed is None or expires is None or expires <= observed:
+        return "invalid"
+    if observed > now or published is not None and published > observed:
+        return "future"
+    if row.get("published_at") is not None and published is None:
+        return "invalid"
+    if expires <= now:
+        return "stale"
+    return "current"
+
+
+def _inventory_state(data: Mapping, issues: set[str]) -> str:
+    if not data:
+        return "not_collected"
+    return "incomplete" if issues else "observed"
+
+
+def provenance_inventory(snapshot: dict | None, *, now: datetime | None = None) -> dict:
+    now, data = clock(now), mapping(snapshot)
+    rows = data.get("sources", [])
+    issues = set()
+    counts = {"current": 0, "stale": 0, "invalid": 0, "future": 0,
+              "publication_time_unknown": 0, "conflicting_ids": 0}
+    if not isinstance(rows, list) or len(rows) > MAX_SOURCE_ROWS:
+        return {"state": "incomplete", "reasons": ["source_registry_shape_or_limit"],
+                "reference_resolution_complete": False, "financial_facts_verified": False}
+    indexed, conflicted = _source_index(rows, counts, issues)
     for row in indexed.values():
-        observed, expires = instant(row.get("observed_at")), instant(row.get("expires_at"))
-        published = instant(row.get("published_at"))
         if row.get("published_at") is None:
             counts["publication_time_unknown"] += 1
-        if observed is None or expires is None or expires <= observed:
-            counts["invalid"] += 1
-        elif observed > now or published is not None and published > observed:
-            counts["future"] += 1
-        elif row.get("published_at") is not None and published is None:
-            counts["invalid"] += 1
-        elif expires <= now:
-            counts["stale"] += 1
-        else:
-            counts["current"] += 1
+        counts[_source_clock_state(row, now)] += 1
     needed, reference_issues = _referenced_ids(data)
     issues.update(reference_issues)
     unresolved = needed - indexed.keys()
     if unresolved:
         issues.add("source_references_unresolved")
-    if counts["invalid"]:
-        issues.add("source_clocks_invalid")
-    if counts["future"]:
-        issues.add("source_clocks_in_future")
-    if counts["stale"]:
-        issues.add("some_source_observations_stale")
-    return {"state": "not_collected" if not data else "incomplete" if issues else "observed",
+    for category, reason in (("invalid", "source_clocks_invalid"),
+                             ("future", "source_clocks_in_future"),
+                             ("stale", "some_source_observations_stale")):
+        if counts[category]:
+            issues.add(reason)
+    return {"state": _inventory_state(data, issues),
             "source_count": len(indexed), "referenced_count": len(needed),
             "unresolved_reference_count": len(unresolved), "counts": counts,
             "reasons": sorted(issues), "reference_resolution_complete": not unresolved and not reference_issues and not conflicted,

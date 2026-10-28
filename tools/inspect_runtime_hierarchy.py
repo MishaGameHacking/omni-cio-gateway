@@ -18,6 +18,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = ROOT / ".runtime-inspection"
 MAX_INPUT_BYTES = 2 * 1024 * 1024
+SNAPSHOT_FILE = "snapshot.json"
+STRATEGY_FILE = "strategy.json"
+REPORT_FILE = "hierarchy.json"
 sys.path.insert(0, str(ROOT))
 from backend.application_hierarchy import hierarchy
 from backend.workspace_readiness import build_status
@@ -60,10 +63,10 @@ def _identity(info):
 
 def _input_file(name):
     # Select complete fixed paths, not a concatenated caller-controlled path.
-    if name == "snapshot.json":
-        return EVIDENCE_ROOT / "inputs" / "snapshot.json"
-    if name == "strategy.json":
-        return EVIDENCE_ROOT / "inputs" / "strategy.json"
+    if name == SNAPSHOT_FILE:
+        return EVIDENCE_ROOT / "inputs" / SNAPSHOT_FILE
+    if name == STRATEGY_FILE:
+        return EVIDENCE_ROOT / "inputs" / STRATEGY_FILE
     raise ValueError("unknown_named_evidence_input")
 
 
@@ -99,7 +102,7 @@ def load(name):
 
 
 def save_report(name, text):
-    if name != "hierarchy.json":
+    if name != REPORT_FILE:
         raise ValueError("unknown_named_evidence_output")
     # The checkout must already exist; only the two fixed evidence directories
     # may be created. Reject links before opening or changing any file.
@@ -109,7 +112,7 @@ def save_report(name, text):
     reports = EVIDENCE_ROOT / "reports"
     reports.mkdir(exist_ok=True)
     _directory(reports)
-    destination = reports / "hierarchy.json"
+    destination = reports / REPORT_FILE
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor = os.open(destination, flags, 0o600)
     with os.fdopen(descriptor, "wb") as stream:
@@ -122,10 +125,10 @@ def save_report(name, text):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--snapshot", choices=("snapshot.json",), help="Named snapshot in .runtime-inspection/inputs")
-    parser.add_argument("--strategy", choices=("strategy.json",), help="Named strategy in .runtime-inspection/inputs")
+    parser.add_argument("--snapshot", choices=(SNAPSHOT_FILE,), help="Named snapshot in .runtime-inspection/inputs")
+    parser.add_argument("--strategy", choices=(STRATEGY_FILE,), help="Named strategy in .runtime-inspection/inputs")
     parser.add_argument("--at", help="Required aware ISO timestamp when a snapshot is supplied")
-    parser.add_argument("--output", choices=("hierarchy.json",), help="Create .runtime-inspection/reports/hierarchy.json; never overwrite")
+    parser.add_argument("--output", choices=(REPORT_FILE,), help="Create .runtime-inspection/reports/hierarchy.json; never overwrite")
     args = parser.parse_args()
     if args.snapshot:
         if not args.at:

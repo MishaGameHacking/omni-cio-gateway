@@ -120,6 +120,87 @@ class ObservedWindow:
     complete: bool
 
 
+def _cash_balances(opening: CashBalance, closing: CashBalance, tolerance: str) -> tuple:
+    if not isinstance(opening, CashBalance) or not isinstance(closing, CashBalance):
+        raise AccountingError("accounting_balance_type_invalid")
+    if not isinstance(opening.scope, Scope) or opening.scope != closing.scope:
+        raise AccountingError("accounting_scope_mismatch")
+    opening.scope.validate()
+    begin, end = _time(opening.at), _time(closing.at)
+    if begin >= end or end - begin > timedelta(days=36600):
+        raise AccountingError("accounting_interval_invalid")
+    currency = _currency(opening.currency)
+    if closing.currency != currency:
+        raise AccountingError("accounting_currency_mismatch")
+    first, last, epsilon = _amount(opening.amount), _amount(closing.amount), _amount(tolerance)
+    if not ZERO <= epsilon <= Decimal("0.01"):
+        raise AccountingError("accounting_tolerance_invalid")
+    return begin, end, currency, first, last, epsilon
+
+
+def _balance_issues(opening: CashBalance, closing: CashBalance) -> set[str]:
+    issues = set()
+    if (opening.independent_of_operation_ledger is not True
+            or closing.independent_of_operation_ledger is not True):
+        issues.add("independent_cash_balances_required")
+    if opening.basis != "settled_cash" or closing.basis != "settled_cash":
+        issues.add("settled_cash_basis_required")
+    return issues
+
+
+def _settlement_coverage(windows: list[ObservedWindow], scope: Scope,
+                         begin: datetime, end: datetime, evidence: set[str]) -> bool:
+    covered = []
+    for window in windows:
+        if window.scope != scope:
+            raise AccountingError("accounting_window_scope_mismatch")
+        left, right = _time(window.start), _time(window.end)
+        if left >= right:
+            raise AccountingError("accounting_window_invalid")
+        evidence.add(_identifier(window.evidence_id))
+        if window.complete is True:
+            covered.append((left, right))
+    cursor = begin
+    for left, right in sorted(covered):
+        if left <= cursor < right:
+            cursor = right
+    return cursor >= end
+
+
+def _movement_fingerprint(movement: CashMovement, opening: CashBalance,
+                          evidence: set[str]) -> tuple:
+    if movement.scope != opening.scope:
+        raise AccountingError("accounting_movement_scope_mismatch")
+    _identifier(movement.identifier)
+    evidence.add(_identifier(movement.evidence_id))
+    at = _time(movement.settled_at)
+    amount = _amount(movement.amount)
+    if _currency(movement.currency) != opening.currency:
+        raise AccountingError("accounting_movement_currency_mismatch")
+    if movement.state not in {"settled", "pending", "cancelled", "unknown"}:
+        raise AccountingError("accounting_movement_state_invalid")
+    return at, amount, opening.currency, movement.state
+
+
+def _settled_movements(movements: list[CashMovement], opening: CashBalance,
+                       begin: datetime, end: datetime, evidence: set[str],
+                       issues: set[str]) -> dict[str, Decimal]:
+    seen, included = {}, {}
+    for movement in movements:
+        fingerprint = _movement_fingerprint(movement, opening, evidence)
+        at, amount, _, movement_state = fingerprint
+        if movement.identifier in seen and seen[movement.identifier] != fingerprint:
+            issues.add("conflicting_movement_versions")
+        seen[movement.identifier] = fingerprint
+        if not begin < at <= end:
+            continue
+        if movement_state in {"pending", "unknown"}:
+            issues.add("unresolved_cash_movements")
+        elif movement_state == "settled":
+            included[movement.identifier] = amount
+    return included
+
+
 @isolated_arithmetic
 def reconcile_cash(opening: CashBalance, closing: CashBalance,
                    movements: list[CashMovement], windows: list[ObservedWindow], *,
@@ -130,67 +211,14 @@ def reconcile_cash(opening: CashBalance, closing: CashBalance,
     a tax-liability estimate, available-to-trade calculation or performance test.
     Input windows assert complete SETTLEMENT coverage, not merely order dates.
     """
-    if not isinstance(opening, CashBalance) or not isinstance(closing, CashBalance):
-        raise AccountingError("accounting_balance_type_invalid")
-    if not isinstance(opening.scope, Scope) or opening.scope != closing.scope:
-        raise AccountingError("accounting_scope_mismatch")
-    opening.scope.validate()
-    begin, end = _time(opening.at), _time(closing.at)
-    if not begin < end or end - begin > timedelta(days=36600):
-        raise AccountingError("accounting_interval_invalid")
-    currency = _currency(opening.currency)
-    if closing.currency != currency:
-        raise AccountingError("accounting_currency_mismatch")
-    first, last, epsilon = _amount(opening.amount), _amount(closing.amount), _amount(tolerance)
-    if not ZERO <= epsilon <= Decimal("0.01"):
-        raise AccountingError("accounting_tolerance_invalid")
+    begin, end, currency, first, last, epsilon = _cash_balances(opening, closing, tolerance)
     _rows(movements, CashMovement)
     _rows(windows, ObservedWindow)
     evidence = {_identifier(opening.evidence_id), _identifier(closing.evidence_id)}
-    issues = set()
-    if (opening.independent_of_operation_ledger is not True
-            or closing.independent_of_operation_ledger is not True):
-        issues.add("independent_cash_balances_required")
-    if opening.basis != "settled_cash" or closing.basis != "settled_cash":
-        issues.add("settled_cash_basis_required")
-    covered = []
-    for window in windows:
-        if window.scope != opening.scope:
-            raise AccountingError("accounting_window_scope_mismatch")
-        left, right = _time(window.start), _time(window.end)
-        if not left < right:
-            raise AccountingError("accounting_window_invalid")
-        evidence.add(_identifier(window.evidence_id))
-        if window.complete is True:
-            covered.append((left, right))
-    cursor = begin
-    for left, right in sorted(covered):
-        if left <= cursor < right:
-            cursor = right
-    if cursor < end:
+    issues = _balance_issues(opening, closing)
+    if not _settlement_coverage(windows, opening.scope, begin, end, evidence):
         issues.add("settlement_coverage_incomplete")
-    seen, included = {}, {}
-    for movement in movements:
-        if movement.scope != opening.scope:
-            raise AccountingError("accounting_movement_scope_mismatch")
-        _identifier(movement.identifier)
-        evidence.add(_identifier(movement.evidence_id))
-        at = _time(movement.settled_at)
-        amount = _amount(movement.amount)
-        if _currency(movement.currency) != currency:
-            raise AccountingError("accounting_movement_currency_mismatch")
-        if movement.state not in {"settled", "pending", "cancelled", "unknown"}:
-            raise AccountingError("accounting_movement_state_invalid")
-        fingerprint = (at, amount, currency, movement.state)
-        if movement.identifier in seen and seen[movement.identifier] != fingerprint:
-            issues.add("conflicting_movement_versions")
-        seen[movement.identifier] = fingerprint
-        if not begin < at <= end:
-            continue
-        if movement.state in {"pending", "unknown"}:
-            issues.add("unresolved_cash_movements")
-        elif movement.state == "settled":
-            included[movement.identifier] = amount
+    included = _settled_movements(movements, opening, begin, end, evidence, issues)
     if issues:
         return {"state": "incomplete", "reconciled": False, "reasons": sorted(issues),
                 "currency": currency, "expected_closing": None, "difference": None,
@@ -215,6 +243,23 @@ class FlowValuation:
     evidence_id: str
 
 
+def _flow_valuation(point: FlowValuation, evidence: set[str]) -> tuple:
+    at = _time(point.at)
+    before, after, flow = map(_amount, (point.before_flow, point.after_flow, point.net_external_flow))
+    evidence.add(_identifier(point.evidence_id))
+    if min(before, after) < ZERO or after != before + flow:
+        raise AccountingError("accounting_flow_valuation_not_reconciled")
+    return at, before, after
+
+
+def _twr_segment(previous: tuple, at: datetime, before: Decimal) -> Decimal | None:
+    if at <= previous[0]:
+        raise AccountingError("accounting_valuation_times_not_strictly_ordered")
+    if previous[1] <= ZERO:
+        return None
+    return before / previous[1]
+
+
 @isolated_arithmetic
 def time_weighted_return(points: list[FlowValuation], *, currency: str,
                          all_external_flows_observed: bool,
@@ -232,17 +277,12 @@ def time_weighted_return(points: list[FlowValuation], *, currency: str,
         return {"state": "unavailable", "reason": "two_valuations_required", "return": None}
     factor, previous, evidence = ONE, None, set()
     for point in points:
-        at = _time(point.at)
-        before, after, flow = map(_amount, (point.before_flow, point.after_flow, point.net_external_flow))
-        evidence.add(_identifier(point.evidence_id))
-        if min(before, after) < ZERO or after != before + flow:
-            raise AccountingError("accounting_flow_valuation_not_reconciled")
+        at, before, after = _flow_valuation(point, evidence)
         if previous is not None:
-            if at <= previous[0]:
-                raise AccountingError("accounting_valuation_times_not_strictly_ordered")
-            if previous[1] <= ZERO:
+            segment = _twr_segment(previous, at, before)
+            if segment is None:
                 return {"state": "unavailable", "reason": "zero_invested_capital_segment", "return": None}
-            factor *= before / previous[1]
+            factor *= segment
         previous = (at, after)
     return {"state": "computed_from_supplied_evidence", "method": "exact_flow_twr",
             "return": _text(factor - ONE), "currency": currency,
@@ -256,6 +296,47 @@ class InvestorCashFlow:
     on: date
     amount: str
     evidence_id: str
+
+
+def _group_investor_flows(flows: list[InvestorCashFlow]) -> tuple[list, set[str]]:
+    grouped, evidence = defaultdict(Decimal), set()
+    for flow in flows:
+        if type(flow.on) is not date:
+            raise AccountingError("accounting_calendar_day_required")
+        evidence.add(_identifier(flow.evidence_id))
+        grouped[flow.on] += _amount(flow.amount)
+    return sorted((day, value) for day, value in grouped.items() if value), evidence
+
+
+def _unique_investment_root(rows: list) -> bool:
+    span = (rows[-1][0] - rows[0][0]).days
+    if not 1 <= span <= 36600:
+        raise AccountingError("accounting_xirr_horizon_invalid")
+    signs = [value > ZERO for _, value in rows]
+    changes = sum(a != b for a, b in zip(signs, signs[1:]))
+    return changes == 1 and not signs[0] and signs[-1]
+
+
+def _bounded_xirr_root(npv) -> Decimal | None:
+    left, right = Decimal("0.000000001").ln(), Decimal("10000001").ln()
+    low, high = npv(left), npv(right)
+    if low == ZERO:
+        return left
+    if high == ZERO:
+        return right
+    if low < ZERO or high > ZERO:
+        return None
+    root = (left + right) / 2
+    for _ in range(200):
+        root = (left + right) / 2
+        value = npv(root)
+        if value > ZERO:
+            left = root
+        else:
+            right = root
+        if right - left <= Decimal("1e-35"):
+            break
+    return root
 
 
 @isolated_arithmetic
@@ -273,45 +354,20 @@ def money_weighted_return(flows: list[InvestorCashFlow], *, currency: str,
     _rows(flows, InvestorCashFlow)
     if all_external_flows_observed is not True or terminal_value_reconciled is not True:
         return {"state": "unavailable", "reason": "complete_reconciled_investor_flows_required", "return": None}
-    grouped, evidence = defaultdict(Decimal), set()
-    for flow in flows:
-        if type(flow.on) is not date:
-            raise AccountingError("accounting_calendar_day_required")
-        evidence.add(_identifier(flow.evidence_id))
-        grouped[flow.on] += _amount(flow.amount)
-    rows = sorted((day, value) for day, value in grouped.items() if value)
+    rows, evidence = _group_investor_flows(flows)
     if len(rows) < 2 or rows[0][0] == rows[-1][0]:
         return {"state": "unavailable", "reason": "distinct_nonzero_cashflow_dates_required", "return": None}
-    span = (rows[-1][0]-rows[0][0]).days
-    if not 1 <= span <= 36600:
-        raise AccountingError("accounting_xirr_horizon_invalid")
-    signs = [value > ZERO for _, value in rows]
-    changes = sum(a != b for a,b in zip(signs, signs[1:]))
-    if changes != 1 or signs[0] or not signs[-1]:
+    if not _unique_investment_root(rows):
         return {"state": "unavailable", "reason": "xirr_unique_investment_root_not_established", "return": None}
-    dated = [(Decimal((day-rows[0][0]).days)/Decimal(365), value) for day,value in rows]
+    dated = [(Decimal((day - rows[0][0]).days) / Decimal(365), value) for day, value in rows]
+
     def npv(log_factor):
-        return sum((value*(-years*log_factor).exp() for years,value in dated), ZERO)
-    left, right = Decimal("0.000000001").ln(), Decimal("10000001").ln()
-    low, high = npv(left), npv(right)
-    if low == ZERO:
-        root = left
-    elif high == ZERO:
-        root = right
-    elif low < ZERO or high > ZERO:
+        return sum((value * (-years * log_factor).exp() for years, value in dated), ZERO)
+
+    root = _bounded_xirr_root(npv)
+    if root is None:
         return {"state": "unavailable", "reason": "xirr_root_outside_supported_bounds", "return": None}
-    else:
-        root = (left+right)/2
-        for _ in range(200):
-            root = (left+right)/2
-            value = npv(root)
-            if value > ZERO:
-                left = root
-            else:
-                right = root
-            if right-left <= Decimal("1e-35"):
-                break
     return {"state": "computed_from_supplied_evidence", "method": "actual_365_xirr",
-            "return": _text(root.exp()-ONE), "npv_residual": _text(npv(root)),
+            "return": _text(root.exp() - ONE), "npv_residual": _text(npv(root)),
             "currency": currency, "start": rows[0][0].isoformat(), "end": rows[-1][0].isoformat(),
             "annualized": True, "evidence_ids": sorted(evidence), "tax_liability_estimated": False}

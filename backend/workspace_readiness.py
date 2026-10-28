@@ -63,6 +63,12 @@ def _mandate(snapshot: dict | None, strategy: dict | None) -> dict:
             "limits_saved_are_not_execution_permission": True}
 
 
+def _connection_state(connected: bool, snapshot: dict | None) -> str:
+    if not connected:
+        return "not_connected"
+    return "awaiting_snapshot" if snapshot is None else "restricted_read_only"
+
+
 def build_status(snapshot: dict | None, strategy: dict | None, *, connected: bool,
                  now: datetime | None = None) -> dict:
     if type(connected) is not bool:
@@ -94,7 +100,7 @@ def build_status(snapshot: dict | None, strategy: dict | None, *, connected: boo
     ledger = mapping(data.get("cash_ledger"))
     return {"schema_version": 1, "evaluated_at": now.isoformat(),
             "snapshot_id": data.get("snapshot_id"), "valuation_as_of": data.get("as_of"),
-            "state": "not_connected" if not connected else "awaiting_snapshot" if snapshot is None else "restricted_read_only",
+            "state": _connection_state(connected, snapshot),
             "execution_mode": "read_only", "real_orders_enabled": False,
             "paid_ai_started_by_read": False, "network_started_by_read": False,
             "lanes": lanes, "provenance": provenance, "news": news_inventory(snapshot, now=now),
