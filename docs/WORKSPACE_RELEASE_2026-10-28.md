@@ -3,7 +3,7 @@
 Рабочий backend: **aad0a117074a1b083021f93ef9ff928102b95557**.
 Развёртывание на существующем Timeweb9417611: [40721312988](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40721312988), 15:59:15 UTC.
 **Android51/0.15.0-preview опубликован** через существующий канал Timeweb.
-Публикация [40730944122](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40730944122) SUCCESS;20:58МСК,28.10.2026. Политика обновления, весь HTTPS-файл и health200 проверены.
+Публикация [40730944122](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40730944122) SUCCESS;19:58МСК,28.10.2026. Политика обновления, весь HTTPS-файл и health200 проверены.
 [Проверенный APK51](https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-51-d5d8a3a86c7400515206cab74c04299cd7008bdbc246bd22dddd21e05d0db0c9.apk).
 Установка на физическом телефоне и полная native-матрица ещё не подтверждены.
 
