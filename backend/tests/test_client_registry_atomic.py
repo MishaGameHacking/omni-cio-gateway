@@ -230,7 +230,8 @@ def test_version_reinitialization_preserves_old_unverified_and_other_user_claims
     assert snapshot(path) == before
     rows = before[1][VERSION_TABLE]
     assert rows[1][4] is None  # No new attestation is fabricated by startup.
-    assert rows[2][1] == 202 and rows[2][5] == 1
+    assert rows[2][1] == 202
+    assert rows[2][5] == 1
 
 
 def test_one_transaction_starts_before_first_schema_write(tmp_path, registry):

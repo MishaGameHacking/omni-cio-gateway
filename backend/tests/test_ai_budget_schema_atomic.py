@@ -35,8 +35,9 @@ def test_failed_initializer_rolls_back_all_new_objects(tmp_path):
             return sqlite3.SQLITE_OK
         db.set_authorizer(authorizer)
         return db
+    ledger = MoneyLedger(rejecting_connection)
     with pytest.raises(sqlite3.DatabaseError):
-        MoneyLedger(rejecting_connection).initialize()
+        ledger.initialize()
     assert schema(path) == before
     with closing(connection(path)) as db:
         assert db.execute('SELECT value FROM retained').fetchall() == [('synthetic-sentinel',)]
@@ -98,12 +99,14 @@ def test_schema_helper_does_not_commit_callers_previous_writes(tmp_path):
     path = tmp_path / 'synthetic.sqlite3'
     with closing(connection(path)) as db, db:
         db.execute('CREATE TABLE retained (value TEXT)')
-    with pytest.raises(RuntimeError, match='synthetic-interruption'):
+    def interrupted_transaction():
         with transaction(lambda: connection(path)) as db:
             db.execute('INSERT INTO retained VALUES (?)', ('synthetic-uncommitted',))
             execute_schema(db, 'CREATE TABLE candidate (value TEXT);')
             assert db.in_transaction
             raise RuntimeError('synthetic-interruption')
+    with pytest.raises(RuntimeError, match='synthetic-interruption'):
+        interrupted_transaction()
     with closing(connection(path)) as db:
         assert db.execute('SELECT * FROM retained').fetchall() == []
         assert db.execute("SELECT name FROM sqlite_master WHERE name='candidate'").fetchall() == []
@@ -175,8 +178,9 @@ def test_baseexception_rolls_back_and_closes_connection(tmp_path):
         db = sqlite3.connect(path, factory=InterruptedConnection)
         opened.append(db)
         return db
+    ledger = MoneyLedger(connect)
     with pytest.raises(KeyboardInterrupt):
-        MoneyLedger(connect).initialize()
+        ledger.initialize()
     assert schema(path) == []
     with pytest.raises(sqlite3.ProgrammingError):
         opened[0].execute('SELECT 1')

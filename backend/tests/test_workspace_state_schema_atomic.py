@@ -239,7 +239,8 @@ def test_single_write_transaction_starts_before_first_create(workspace, monkeypa
     monkeypatch.setattr(workspace.backend, 'connect', connect)
     workspace.state.initialize()
     statements = [' '.join(sql.upper().split()) for sql in traced]
-    assert statements[0] == 'BEGIN IMMEDIATE' and statements[-1] == 'COMMIT'
+    assert statements[0] == 'BEGIN IMMEDIATE'
+    assert statements[-1] == 'COMMIT'
     assert statements.count('BEGIN IMMEDIATE') == statements.count('COMMIT') == 1
     assert len(statements[1:-1]) == 7
     assert all(sql.startswith('CREATE ') for sql in statements[1:-1])
@@ -352,8 +353,10 @@ def test_saved_request_is_replayed_without_creating_a_second_goal(workspace):
     assert state.save_goal(request, synthetic_user(101)) == first
     assert state.save_goal(request, synthetic_user(202)) == other
     assert first['id'] != other['id']
+    changed_request = request.model_copy(update={'title': 'Different synthetic goal'})
+    owner = synthetic_user(101)
     with pytest.raises(HTTPException) as caught:
-        state.save_goal(request.model_copy(update={'title': 'Different synthetic goal'}), synthetic_user(101))
+        state.save_goal(changed_request, owner)
     assert caught.value.status_code == 409
     assert snapshot(workspace.path) == before
 

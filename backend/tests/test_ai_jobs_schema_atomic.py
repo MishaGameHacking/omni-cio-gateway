@@ -84,8 +84,9 @@ def test_late_index_failure_rolls_back_new_queue(tmp_path, denied_name):
     factory = denying_factory(path,
         lambda action, first, _second: action == sqlite3.SQLITE_CREATE_INDEX and first == denied_name,
         opened, refusals)
+    queue = AnalysisQueue(factory)
     with pytest.raises(sqlite3.DatabaseError):
-        AnalysisQueue(factory).initialize()
+        queue.initialize()
     assert len(refusals) == 1
     assert materialized(path) == before
     assert_closed(opened[0])
@@ -99,8 +100,9 @@ def test_failed_legacy_alter_also_rolls_back_new_indexes(tmp_path):
     factory = denying_factory(path,
         lambda action, _first, second: action == sqlite3.SQLITE_ALTER_TABLE and second == TABLE,
         opened, refusals)
+    queue = AnalysisQueue(factory)
     with pytest.raises(sqlite3.DatabaseError):
-        AnalysisQueue(factory).initialize()
+        queue.initialize()
     assert len(refusals) == 1
     assert materialized(path) == before
     assert_closed(opened[0])
@@ -121,8 +123,9 @@ def test_denied_commit_rolls_back_and_closes_the_initializer(tmp_path, legacy):
     factory = denying_factory(path,
         lambda action, first, _second: action == sqlite3.SQLITE_TRANSACTION and first == 'COMMIT',
         opened, refusals)
+    queue = AnalysisQueue(factory)
     with pytest.raises(sqlite3.DatabaseError):
-        AnalysisQueue(factory).initialize()
+        queue.initialize()
     assert len(refusals) == 1
     assert materialized(path) == before
     assert_closed(opened[0])
@@ -186,8 +189,9 @@ def test_interrupted_legacy_migration_leaves_all_old_bytes_logically_intact(tmp_
         db = sqlite3.connect(path, factory=InterruptedConnection)
         opened.append(db)
         return db
+    queue = AnalysisQueue(factory)
     with pytest.raises(KeyboardInterrupt):
-        AnalysisQueue(factory).initialize()
+        queue.initialize()
     assert materialized(path) == before
     assert_closed(opened[0])
 

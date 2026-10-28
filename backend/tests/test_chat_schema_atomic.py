@@ -291,8 +291,9 @@ def test_thread_creation_replays_saved_receipt_after_restart(workspace):
     assert workspace.chat.create_thread(request, {'id': 101}) == first
     assert workspace.chat.create_thread(request, {'id': 202}) == other
     assert first['thread_id'] != other['thread_id']
+    changed_request = request.model_copy(update={'title': 'Changed content'})
     with pytest.raises(HTTPException) as caught:
-        workspace.chat.create_thread(request.model_copy(update={'title': 'Changed content'}), {'id': 101})
+        workspace.chat.create_thread(changed_request, {'id': 101})
     assert caught.value.status_code == 409
     assert snapshot(workspace.path) == before
 

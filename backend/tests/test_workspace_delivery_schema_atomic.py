@@ -311,7 +311,8 @@ def test_startup_does_not_dispatch_work_or_report_delivery(modules, monkeypatch)
     modules.jobs.initialize()
     modules.notifications.initialize()
     _, rows = snapshot(modules.path)
-    assert rows and all(not value for value in rows.values())
+    assert rows
+    assert all(not value for value in rows.values())
 
 
 def test_request_id_deduplication_and_user_scope_survive_restart(modules):
@@ -349,5 +350,6 @@ def test_notification_deduplication_does_not_resend_or_cross_users(modules):
                              source_card_id='same-card', event_id='same-event', at=1700000001)
     assert snapshot(modules.path) == before
     notices = before[1]['workspace_notification_outbox']
-    assert len(notices) == 2 and {row[1] for row in notices} == {101, 102}
+    assert len(notices) == 2
+    assert {row[1] for row in notices} == {101, 102}
     assert all(row[8] == 'pending' and row[12] is None for row in notices)

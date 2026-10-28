@@ -202,7 +202,8 @@ def test_restart_preserves_pause_expired_lease_cursor_and_connection_history(con
     assert controller.module.preferences(202)['enabled'] is True
     with pytest.raises(HTTPException) as caught:
         controller.module.assert_enabled(101)
-    assert caught.value.status_code == 409 and caught.value.detail == 'automation_paused'
+    assert caught.value.status_code == 409
+    assert caught.value.detail == 'automation_paused'
     assert snapshot(controller.path) == before
 
 
@@ -276,5 +277,6 @@ def test_event_deduplication_and_user_partition_survive_startup(controller):
                                         'same-identity', 'Changed title', 'Not a new observation', 200)
     assert snapshot(controller.path) == before
     added = [row for row in before[1]['automation_events'] if row[3] == 'synthetic-kind']
-    assert len(added) == 2 and {row[0] for row in added} == {101, 202}
+    assert len(added) == 2
+    assert {row[0] for row in added} == {101, 202}
     assert all(row[5] == 100 for row in added)
