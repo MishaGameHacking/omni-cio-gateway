@@ -15,7 +15,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const ref='67da85cb461c5996277d24fee7bd08efe12eca58';
+            const ref='3aebc7ca3dbb6c29a24ab68e986ec3b7993b0168';
             const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
             for(const check of checks.filter(row=>/sonar/i.test(row.name))) {
               core.info('SONAR_CHECK='+JSON.stringify({id:check.id,sha:check.head_sha,status:check.status,conclusion:check.conclusion}));
