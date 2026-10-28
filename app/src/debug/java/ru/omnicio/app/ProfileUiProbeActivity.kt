@@ -29,6 +29,8 @@ import ru.omnicio.app.ui.workspace.*
 import androidx.compose.runtime.CompositionLocalProvider
 import ru.omnicio.app.ui.spectrum.LocalSpectrumTabScrollTag
 
+private const val THEME_LIFECYCLE_SCREEN = "theme-lifecycle"
+
 /** Debug-only UI fixture. No network calls or authentication bypass in preview. */
 class ProfileUiProbeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,7 +38,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         // Match MainActivity's coordinate system and safeDrawing insets. A
         // non-edge-to-edge fixture is not evidence for the production layout.
         enableEdgeToEdge()
-        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "education", "spatial", "session-context", "balance-privacy", "goal-editor", "theme", "theme-lifecycle") +
+        val allowedScreens = setOf("home", "portfolio", "appearance", "strategy", "assistant", "market", "ux100", "education", "spatial", "session-context", "balance-privacy", "goal-editor", "theme", THEME_LIFECYCLE_SCREEN) +
             businessProbeRoutes.map { "business-$it" } + portfolioProbeRoutes.map { "portfolio-$it" } + automationProbeRoutes.map { "automation-$it" }
         val screen = intent.getStringExtra("spectrum_screen")?.takeIf { it in allowedScreens } ?: "profile"
         val scenario = intent.getStringExtra("spectrum_scenario")?.takeIf { it in (if (screen.startsWith("automation-")) automationProbeScenarios else businessProbeScenarios) } ?: "ready"
@@ -44,7 +46,7 @@ class ProfileUiProbeActivity : ComponentActivity() {
         val themeRequest = if (screen == "theme") ThemeProbeRequest.parse(
             intent.getStringExtra("theme_group"), intent.getStringExtra("theme_mode"),
             intent.getStringExtra("theme_accent"), intent.getStringExtra("theme_motion"), probeRun) else null
-        val lifecycleRequest = if (screen == "theme-lifecycle") ThemeLifecycleRequest.parse(
+        val lifecycleRequest = if (screen == THEME_LIFECYCLE_SCREEN) ThemeLifecycleRequest.parse(
             intent.getStringExtra("theme_lifecycle_session"), intent.getStringExtra("theme_lifecycle_phase"), probeRun) else null
         val lifecycleSession = lifecycleRequest?.let { ThemeLifecycleSession.open(this, it) }
         if (screen == "strategy") getSharedPreferences("strategy_draft_synthetic-ui-test", 0).edit().clear().apply()
@@ -85,14 +87,14 @@ class ProfileUiProbeActivity : ComponentActivity() {
                         appearanceOpen -> AppearanceScreen { appearanceOpen = false }
                         screen == "spatial" -> SpatialRendererProbe()
                         screen == "theme" -> ThemeStateProbe(requireNotNull(themeRequest))
-                        screen == "theme-lifecycle" -> ThemeLifecycleProbe(requireNotNull(lifecycleSession))
+                        screen == THEME_LIFECYCLE_SCREEN -> ThemeLifecycleProbe(requireNotNull(lifecycleSession))
                         screen == "session-context" -> SessionContextProbe()
                         screen == "balance-privacy" -> BalancePrivacyProbe()
                         screen == "goal-editor" -> GoalWorkflowProbe { finish() }
                         screen.startsWith("automation-") -> AutomationWorkspaceProbe(screen, scenario)
                         screen.startsWith("business-") -> BusinessWorkspaceProbe(screen, scenario, onBack = { finish() })
                         screen.startsWith("portfolio-") -> PortfolioWorkspaceProbe(screen, scenario, onBack = { finish() })
-                        screen != "profile" && screen != "education" -> SpectrumDashboardProbe(screen)
+                        screen !in setOf("profile", "education") -> SpectrumDashboardProbe(screen)
                         educationOpen -> EducationScreen(onBack = { educationOpen = false }, onPortfolioClick = {}, onProfileClick = { educationOpen = false })
                         else -> AutomationProbeProvider(automationTransport) { ProfileScreen(
                             user = AnalystUser("synthetic-ui-test", "Тест интерфейса", null, null),

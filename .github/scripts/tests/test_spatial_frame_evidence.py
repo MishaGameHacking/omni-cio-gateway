@@ -160,8 +160,9 @@ class PrimaryLabelRegressionTests(unittest.TestCase):
         self.assertGreaterEqual(actual["rendered_label_contrast"], 4.5)
         with self.assertRaisesRegex(AssertionError, "contrast"):
             evidence.native_label_contrast(image, (0, 0, 100, 100), obsolete)
+        blank = synthetic_image(background=blue)
         with self.assertRaisesRegex(AssertionError, "missing"):
-            evidence.native_label_contrast(synthetic_image(background=blue), (0, 0, 100, 100), white)
+            evidence.native_label_contrast(blank, (0, 0, 100, 100), white)
 
 
 class PlainNativeScreenTests(unittest.TestCase):

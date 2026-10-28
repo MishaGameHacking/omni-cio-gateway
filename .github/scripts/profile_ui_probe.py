@@ -16,6 +16,8 @@ LIGHT_THEME_LABEL = 'Светлая'
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
 THEME_LABEL = "Экран и удобство"
+MOTION_PREFIX = "Движение · "
+MOTION_OFF = "Без движения"
 WORKSPACE_BACK = "Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
@@ -535,7 +537,7 @@ class ProfileProbe:
                 self.tap("Обновления события (2)", "workspace-content")
                 self.find("Уточнение источника")
             elif screen == "appearance":
-                self.choose_motion("Без движения")
+                self.choose_motion(MOTION_OFF)
                 self.find("Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения.")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
@@ -555,21 +557,21 @@ class ProfileProbe:
 
     def open_motion_choices(self):
         # One current-value button opens the actual native radio-choice dialog.
-        choices = ("Живое", "Сдержанное", "Без движения")
+        choices = ("Живое", "Сдержанное", MOTION_OFF)
         tree = self.tree()
-        current = [label for label in choices if matching_node(tree, "Движение · " + label) is not None]
+        current = [label for label in choices if matching_node(tree, MOTION_PREFIX + label) is not None]
         if len(current) != 1:
             self.reveal("Яркое освещение", "workspace-content", direction="start")
             tree = self.tree()
-            current = [label for label in choices if matching_node(tree, "Движение · " + label) is not None]
+            current = [label for label in choices if matching_node(tree, MOTION_PREFIX + label) is not None]
         if len(current) != 1:
             raise AssertionError("Missing or ambiguous current motion selection")
-        self.tap("Движение · " + current[0], "workspace-content", direction="start")
+        self.tap(MOTION_PREFIX + current[0], "workspace-content", direction="start")
 
     def choose_motion(self, label):
         self.open_motion_choices()
         self.tap_visible(label)
-        self.find("Движение · " + label)
+        self.find(MOTION_PREFIX + label)
 
     def themes(self):
         # Stable full-suite stage name; owner replaced theme selection with one style.
@@ -579,7 +581,7 @@ class ProfileProbe:
         self.palette(LIGHT_BACKGROUND)
         self.capture("style-system-day-initial")
         self.tap(THEME_LABEL)
-        self.choose_motion("Без движения")
+        self.choose_motion(MOTION_OFF)
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("style-motion-off")
@@ -587,15 +589,15 @@ class ProfileProbe:
         self.open()
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.find("Движение · Без движения")
+        self.find(MOTION_PREFIX + MOTION_OFF)
         self.open_motion_choices()
         from portfolio_preferences_probe import selected_control
-        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Motion setting was not restored")
+        self.wait_for(lambda: selected_control(self.tree(), MOTION_OFF), "Motion setting was not restored")
         self.capture("style-motion-restored")
         self.tap_visible("Закрыть")
-        self.find("Движение · Без движения")
+        self.find(MOTION_PREFIX + MOTION_OFF)
         self.open_motion_choices()
-        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Dismissed choices changed saved motion")
+        self.wait_for(lambda: selected_control(self.tree(), MOTION_OFF), "Dismissed choices changed saved motion")
         self.tap_visible("Сдержанное")
         self.find("Движение · Сдержанное")
         self.choose_motion("Живое")
