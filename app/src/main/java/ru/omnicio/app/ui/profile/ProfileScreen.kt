@@ -174,8 +174,7 @@ fun ProfileScreen(
                             presentation.value.screenshotsBlocked, onChange = { next ->
                                 presentation.update(presentation.value.copy(screenshotsBlocked = next))
                             })
-                        Text(presentation.saveStatus, style = MaterialTheme.typography.bodySmall)
-                        if (presentation.saveFailed) SpectrumSecondaryButton("Повторить сохранение", presentation.retrySave, Modifier.fillMaxWidth())
+                        SettingsSaveStatus(presentation)
                         SettingsDivider()
                         SettingsLink("Безопасность", "Хранение доступа и режим работы", SpectrumSymbol.Risk,
                             modifier = Modifier.testTag("profile-security-action")) { dialog = "security" }
@@ -268,4 +267,10 @@ private fun SettingsInformation(title: String, body: String, close: () -> Unit) 
         Text(body)
         SpectrumSecondaryButton("Понятно", close, Modifier.fillMaxWidth())
     }
+}
+
+@Composable
+private fun SettingsSaveStatus(presentation: WorkspacePreferenceController) {
+    Text(presentation.saveStatus, style = MaterialTheme.typography.bodySmall)
+    if (presentation.saveFailed) SpectrumSecondaryButton("Повторить сохранение", presentation.retrySave, Modifier.fillMaxWidth())
 }

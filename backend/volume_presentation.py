@@ -4,7 +4,7 @@ from __future__ import annotations
 from contextlib import closing
 import json
 import time
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -68,13 +68,13 @@ def response(value):
 
 
 @router.get("")
-def get(user: Any = Depends(backend.current_user)):
+def get(user: Annotated[Any, Depends(backend.current_user)]):
     with closing(backend.connect()) as db:
         return response(read_in(db, int(user["id"])))
 
 
-@router.put("")
-def put(payload: Write, user: Any = Depends(backend.current_user)):
+@router.put("", responses={409: {"description": "Settings changed; reread before merging the pending fields."}})
+def put(payload: Write, user: Annotated[Any, Depends(backend.current_user)]):
     user_id = int(user["id"])
     with transaction(backend.connect) as db:
         current = read_in(db, user_id)

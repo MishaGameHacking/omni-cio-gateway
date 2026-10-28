@@ -394,12 +394,9 @@ private fun AnalystAiApp(
             AppScreen.entries.firstOrNull { it.name == name }?.let(navigate)
         })) {
         AnalystTheme {
-            val remotePresentation = LocalWorkspacePreferences.current
-            LaunchedEffect(signedIn?.user?.telegramId, remotePresentation.value.screenshotsBlocked) {
-                if (signedIn != null) {
-                    screenshotsBlocked = remotePresentation.value.screenshotsBlocked
-                    onScreenshotsBlockedChange(screenshotsBlocked)
-                }
+            ServerScreenshotPolicy(signedIn != null) { blocked ->
+                screenshotsBlocked = blocked
+                onScreenshotsBlockedChange(blocked)
             }
             CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides goBack) {
                 AnalystAppContent(
@@ -803,5 +800,13 @@ private suspend fun restoreAnalystSession(
                 AuthUiState.SignedOut()
             }
         }
+    }
+}
+
+@Composable
+private fun ServerScreenshotPolicy(signedIn: Boolean, apply: (Boolean) -> Unit) {
+    val blocked = LocalWorkspacePreferences.current.value.screenshotsBlocked
+    LaunchedEffect(signedIn, blocked) {
+        if (signedIn) apply(blocked)
     }
 }
