@@ -65,8 +65,10 @@ def test_invalid_identifier_never_reaches_network(connect, value):
 def test_known_missing_mapping_is_distinct_from_unavailable_and_ambiguous():
     missing = sources.parse_gleif(encoded(document(total=0)), ISIN, NOW)
     ambiguous = sources.parse_gleif(encoded(document(total=2)), ISIN, NOW)
-    assert missing["state"] == "missing" and missing["identity"] is None
-    assert ambiguous["state"] == "ambiguous" and ambiguous["identity"] is None
+    assert missing["state"] == "missing"
+    assert missing["identity"] is None
+    assert ambiguous["state"] == "ambiguous"
+    assert ambiguous["identity"] is None
 
 
 @pytest.mark.parametrize("published", ["2026-10-28T02:00:00Z", "2026-10-23T02:00:00Z"])
@@ -74,7 +76,8 @@ def test_download_today_cannot_refresh_old_or_future_dataset(published):
     value = document()
     value["meta"]["goldenCopy"]["publishDate"] = published
     result = sources.parse_gleif(encoded(value), ISIN, NOW)
-    assert result["state"] == "stale" and result["identity"] is None
+    assert result["state"] == "stale"
+    assert result["identity"] is None
 
 
 @pytest.mark.parametrize("change", ["bad_lei", "mismatch", "future_update", "bad_name", "pagination", "duplicate_keys"])
@@ -101,7 +104,8 @@ def test_lapsed_registration_does_not_become_fresh_issuer(key, value):
     payload = document()
     payload["data"][0]["attributes"]["registration"][key] = value
     result = sources.parse_gleif(encoded(payload), ISIN, NOW)
-    assert result["state"] == "inactive" and result["identity"] is None
+    assert result["state"] == "inactive"
+    assert result["identity"] is None
 
 
 def test_cache_and_immutable_history_do_not_import_reviewed_facts(connect):
@@ -134,14 +138,16 @@ def test_304_keeps_original_bytes_and_publication_but_records_new_observation(co
 def test_304_does_not_resurrect_expired_dataset(connect):
     sources.refresh_isin(connect, ISIN, at=NOW, fetch=good_fetch)
     later = sources.refresh_isin(connect, ISIN, at=NOW + timedelta(days=3), fetch=lambda *args: (304, {}, b""))
-    assert later["state"] == "stale" and later["identity"] is None
+    assert later["state"] == "stale"
+    assert later["identity"] is None
 
 
 def test_429_retry_after_persists_and_failed_source_has_no_old_identity(connect):
     sources.refresh_isin(connect, ISIN, at=NOW, fetch=good_fetch)
     failure = sources.refresh_isin(connect, ISIN, at=NOW + timedelta(hours=6),
         fetch=lambda *args: (429, {"retry-after": "7200"}, b"sensitive external error"))
-    assert failure["state"] == "unavailable" and failure["identity"] is None
+    assert failure["state"] == "unavailable"
+    assert failure["identity"] is None
     assert failure["reason"] == "source_http_429"
     assert failure["next_check_at"] == (NOW + timedelta(hours=8)).isoformat()
     again = sources.refresh_isin(connect, ISIN, at=NOW + timedelta(hours=7),
@@ -186,14 +192,17 @@ def test_snapshot_lane_deduplicates_identifiers_without_mutating_financial_state
     original, calls, checkpoints = deepcopy(snapshot), [], []
     def fetch(url, headers):
         calls.append(url)
-        assert "private-account" not in url and "existing-reviewed" not in url
+        assert "private-account" not in url
+        assert "existing-reviewed" not in url
         return good_fetch(url, headers)
     checkpoint = {}
     result = sources.collect_snapshot_sources(connect, snapshot, checkpoint,
         lambda stage, state: checkpoints.append(deepcopy(state)), at=NOW, fetch=fetch)
-    assert snapshot == original and len(calls) == 1
+    assert snapshot == original
+    assert len(calls) == 1
     assert result["eligible_identifiers"] == result["mapped_identifiers"] == 1
-    assert result["missing_identifiers"] == 1 and result["state"] == "partial"
+    assert result["missing_identifiers"] == 1
+    assert result["state"] == "partial"
     assert result["items"][0]["instrument_uids"] == ["a", "b"]
     assert checkpoint["public_source_cursor"] == ISIN
     assert result["rating_sources_fetched"] is result["reviewed_issuer_identity_replaced"] is False
@@ -211,7 +220,8 @@ def test_snapshot_lane_network_failure_does_not_raise_or_block_other_sources(con
 def test_cached_identity_expiration_is_checked_without_network(connect):
     sources.refresh_isin(connect, ISIN, at=NOW, fetch=good_fetch)
     result = sources.cached_result(connect, ISIN, at=NOW + timedelta(hours=7))
-    assert result["state"] == "stale" and result["identity"] is None
+    assert result["state"] == "stale"
+    assert result["identity"] is None
 
 
 def test_source_transport_rejects_redirects_and_uses_no_environment_auth(monkeypatch):
@@ -231,7 +241,8 @@ def test_source_transport_rejects_redirects_and_uses_no_environment_auth(monkeyp
         def __exit__(self, *args):
             return False
         def stream(self, method, url, headers):
-            assert method == "GET" and url == sources.request_url(ISIN)
+            assert method == "GET"
+            assert url == sources.request_url(ISIN)
             assert headers == {}
             return Response()
     monkeypatch.setattr(sources.httpx, "Client", Client)
@@ -250,15 +261,18 @@ def test_successive_jobs_do_not_starve_tail_when_full_collection_replaces_snapsh
         calls.append(url)
         return good_fetch(url, headers)
     first = sources.collect_snapshot_sources(connect, snapshot, {}, lambda *args: None, at=NOW, fetch=fetch)
-    assert first["identifiers_visited"] == 3 and len(calls) == 3
+    assert first["identifiers_visited"] == 3
+    assert len(calls) == 3
     assert sum(item["state"] == "pending" for item in first["items"]) == 1
     if preserve_snapshot_sources:
         snapshot["public_sources"] = first
     second_checkpoint = {}
     second = sources.collect_snapshot_sources(connect, snapshot, second_checkpoint,
         lambda *args: None, at=NOW + timedelta(minutes=10), fetch=fetch)
-    assert second["mapped_identifiers"] == 4 and len(set(calls)) == 4
-    assert len(calls) == 4 and second["identifiers_visited"] == 1
+    assert second["mapped_identifiers"] == 4
+    assert len(set(calls)) == 4
+    assert len(calls) == 4
+    assert second["identifiers_visited"] == 1
 
 
 def test_due_source_priority_uses_oldest_persisted_deadline_and_skips_fresh(connect):
@@ -278,7 +292,8 @@ def test_due_source_priority_uses_oldest_persisted_deadline_and_skips_fresh(conn
     assert first["identifiers_visited"] == 3
     second = sources.collect_snapshot_sources(connect, snapshot, {}, lambda *args: None,
         at=NOW + timedelta(hours=7, minutes=10), fetch=fetch)
-    assert calls[-1] == sources.request_url(identifiers[3]) and len(calls) == 4
+    assert calls[-1] == sources.request_url(identifiers[3])
+    assert len(calls) == 4
     assert second["identifiers_visited"] == 1
 
 
@@ -298,7 +313,8 @@ def test_provider_timestamp_overflow_is_quarantined_without_aborting_lane(connec
     payload = document()
     payload["meta"]["goldenCopy"]["publishDate"] = stamp
     result = sources.refresh_isin(connect, ISIN, at=NOW, fetch=lambda *args: (200, {}, encoded(payload)))
-    assert result["state"] == "unavailable" and result["identity"] is None
+    assert result["state"] == "unavailable"
+    assert result["identity"] is None
     assert result["reason"] == "source_timestamp_invalid"
 
 
@@ -321,7 +337,8 @@ def test_snapshot_view_expires_identity_and_limits_results_to_current_holdings(c
             "items": [{**result, "instrument_uids": ["sold-position"]}]}}
     original = deepcopy(snapshot)
     view = sources.snapshot_status(snapshot, at=NOW + timedelta(hours=7))
-    assert view["state"] == "partial" and view["mapped_identifiers"] == 0
+    assert view["state"] == "partial"
+    assert view["mapped_identifiers"] == 0
     assert view["items"][0]["state"] == "stale"
     assert view["items"][0]["identity"] is None
     assert view["items"][0]["instrument_uids"] == ["current"]
