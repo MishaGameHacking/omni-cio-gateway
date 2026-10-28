@@ -76,13 +76,14 @@ class ReleaseFilesTests(unittest.TestCase):
         expected = {name: release.digest(b'synthetic old') for name in release.MODULES
                     if name != 'schema_migrations.py'}
         expected['requirements.txt'] = release.digest(b'synthetic requirements')
+        expected['app.py'] = release.digest(b'synthetic app')
         expected.update({f'module_{index}.py': release.digest(b'synthetic baseline') for index in range(50)})
         files = {name: {'before': expected.get(name), 'after': release.digest(b'synthetic new'),
                         'content': 'synthetic new'} for name in release.MODULES}
         bundle = {'schema': 1, 'base_commit': release.BASE, 'host': 'LAPTOP-NPSGA016',
                   'source_commit': 'a' * 40, 'apk_changed': False, 'expected': expected, 'files': files}
         release.validate(bundle)
-        files['app.py']['content'] = 'unverified replacement'
+        files['autonomous_controller.py']['content'] = 'unverified replacement'
         with self.assertRaisesRegex(RuntimeError, 'invalid_module_identity'):
             release.validate(bundle)
 

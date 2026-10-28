@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 1da6e6420b51ebe66c8196e3869a2525f0ffe69f
-  EXPECTED_TEST_RUN: '40650633108'
-  EXPECTED_ARTIFACT_SHA256: 5cef0e4427346d22135a550617ae9fe9588ba24e3d728bb4080894af07e85997
-  EXPECTED_BUNDLE_SHA256: 778ae39d2a1f8ab20feaa16a5e6850c70265191948c8905aaae8fd8df3e4ece5
+  EXPECTED_SOURCE_SHA: 5384abda0bf1b47a50ad136189eeab7e77d51dab
+  EXPECTED_TEST_RUN: '40655645566'
+  EXPECTED_ARTIFACT_SHA256: ef361ecb2b79f50fc097af7c862dbf0abc0064b2e96091ce9d2d65067c8cbd26
+  EXPECTED_BUNDLE_SHA256: 34eaf6e381521948cfef5b6aad6e20b0b32db720e29109ec452a7d094fecdc14
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 1da6e6420b51ebe66c8196e3869a2525f0ffe69f
+          ref: 5384abda0bf1b47a50ad136189eeab7e77d51dab
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -89,7 +89,12 @@ jobs:
         with:
           script: |
             const run_id=Number(process.env.EXPECTED_TEST_RUN);
-            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            let run;
+            for(let attempt=0;attempt<60;attempt++) {
+              ({data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id}));
+              if(run.status==='completed') break;
+              await new Promise(resolve=>setTimeout(resolve,10000));
+            }
             if (run.run_attempt!==1 || run.status!=='completed' || run.conclusion!=='success' ||
                 run.head_sha!==process.env.EXPECTED_SOURCE_SHA || run.event!=='push' ||
                 run.path!=='.github/workflows/server-runtime.yml' || run.head_branch!=='codex/server-runtime-2026-10-28') throw new Error('Laptop verification identity changed');
