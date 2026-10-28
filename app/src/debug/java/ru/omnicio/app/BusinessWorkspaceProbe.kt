@@ -88,7 +88,7 @@ internal fun BusinessWorkspaceProbe(route: String, scenario: String, onBack: () 
     val marker = "business-probe:$initialRoute/$scenario;transport:synthetic;requests:${trace.requests};contract-errors:${trace.errors.size};navigation:$navigation" +
         ";message-posts:${trace.messagePosts};message-request-id:${trace.messageRequestId ?: "none"}" +
         ";by-request-gets:${trace.byRequestGets};recovered-request-id:${trace.recoveredRequestId ?: "none"}" +
-        ";scenario-compares:${trace.scenarioComparisons}"
+        ";scenario-compares:${trace.scenarioComparisons};writes:${trace.mutations}"
     BusinessProbeFrame(disclosure = { compact ->
         BusinessProbeDisclosure(marker, "$initialRoute / $scenario", trace, navigation, compact)
     }) {

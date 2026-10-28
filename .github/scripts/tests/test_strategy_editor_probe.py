@@ -12,14 +12,14 @@ from profile_scroll import reveal_in_list, reveal_resource_in_list
 PACKAGE = "ru.omnicio.app.debug"
 AREA = "workspace-content"
 HORIZON = "strategy-horizon"
-PREVIEW = "Рассчитать влияние"
+PREVIEW = "Укажите значение"
 
 
 class StrategyViewportProbe:
-    """The status and six vertical choices precede the horizon editor.
+    """Clipped frames place the horizon editor below other settings.
 
     These offline frames model that production order at both font scales. Only
-    clipped visible nodes enter a frame. The preview action follows the editor,
+    clipped visible nodes enter a frame. The validation message follows the editor,
     so replacing the empty value also requires traversing back toward the start.
     """
 
@@ -44,6 +44,8 @@ class StrategyViewportProbe:
 
     def tree(self):
         tree = ET.Element("hierarchy", {"keyboard-visible": str(self.keyboard).lower()})
+        ET.SubElement(tree, "node", {"package": PACKAGE, "content-desc":
+            "business-probe:strategy/ready;writes:" + str(int(not self.value and self.invalid_preview))})
         viewport = ET.SubElement(tree, "node", {
             "package": PACKAGE, "resource-id": AREA,
             "bounds": "[0,163][320,616]", "scrollable": "true",
@@ -122,7 +124,7 @@ class StrategyViewportProbe:
 class StrategyEditorTraversalTests(unittest.TestCase):
     def assert_editor_reached_and_revisited(self, font_scale):
         probe = StrategyViewportProbe(font_scale)
-        with patch.object(strategy, "rotate_focused_draft", return_value={"offline": True}) as rotation:
+        with patch.object(strategy.time, "sleep"), patch.object(strategy, "rotate_focused_draft", return_value={"offline": True}) as rotation:
             result = strategy.exercise_strategy_editor(probe, font_scale)
         self.assertEqual(probe.value, "48")
         self.assertEqual(probe.commands, [
@@ -158,7 +160,7 @@ class StrategyEditorTraversalTests(unittest.TestCase):
 
     def test_empty_draft_with_enabled_preview_still_fails(self):
         probe = StrategyViewportProbe(1.0, invalid_preview=True)
-        with patch.object(strategy, "rotate_focused_draft") as rotation:
+        with patch.object(strategy.time, "sleep"), patch.object(strategy, "rotate_focused_draft") as rotation:
             with self.assertRaisesRegex(AssertionError, "Empty strategy horizon permits a server preview"):
                 strategy.exercise_strategy_editor(probe, 1.0)
         self.assertEqual(probe.value, "")

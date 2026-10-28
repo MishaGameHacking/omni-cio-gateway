@@ -183,37 +183,35 @@ class _BusinessCase:
                 self.ready_risk()
 
     def strategy(self):
+        from strategy_editor_probe import exercise_strategy_editor, strategy_writes
+        area = "workspace-content"
         if self.scenario == "empty":
-            self.probe.reveal("Правила ещё не подтверждены", "workspace-content")
+            self.probe.reveal("Активной версии пока нет", area)
             self.checks.append("inactive-rules-explicit")
-        else:
-            self.probe.reveal("Действует версия 3", "workspace-content")
-            if self.scenario == "ready":
-                from strategy_editor_probe import exercise_strategy_editor
-                self.strategy_editor = exercise_strategy_editor(self.probe, self.font_scale)
-                self.checks.extend(("replace-whole-horizon", "empty-horizon-blocks-preview", "native-strategy-draft-rotation"))
-            self.probe.tap("Рассчитать влияние", "workspace-content")
-            self.probe.reveal("Влияние на текущий портфель", "workspace-content")
-            if self.scenario == "partial":
-                self.probe.reveal("Тест: источник части связей отсутствует; применение недоступно.", "workspace-content")
-                from profile_ui_probe import button_label
-
-                self.probe.reveal(CONFIRM_VERSION, "workspace-content")
-                confirm = self.probe.wait_for(lambda: button_label(self.probe.tree(), CONFIRM_VERSION),
-                                              "Strategy confirmation has no native Button")
-                if confirm.get("enabled") != "false":
-                    raise AssertionError("Incomplete strategy preview can be confirmed")
-                self.checks.append("incomplete-preview-blocks-confirm")
-            else:
-                self.probe.tap(CONFIRM_VERSION, "workspace-content")
-                self.probe.reveal("Действует версия 4", "workspace-content", direction="start")
-                self.probe.tap("Версии", "profile-tabs")
-                self.probe.reveal("Версия 2", "workspace-content")
-                self.probe.tap("Проверить возврат к этой версии", "workspace-content")
-                self.probe.reveal("Влияние на текущий портфель", "workspace-content")
-                self.probe.tap(CONFIRM_VERSION, "workspace-content")
-                self.probe.reveal("Действует версия 5", "workspace-content", direction="start")
-                self.checks.extend(("preview-before-confirm", "new-confirmed-version", "rollback-creates-new-version"))
+            return
+        self.probe.reveal("Действует версия 3", area)
+        self.probe.tap("Параметры", "profile-tabs")
+        self.strategy_editor = exercise_strategy_editor(self.probe, self.font_scale)
+        self.checks.extend(("replace-whole-horizon", "empty-horizon-blocks-preview", "native-strategy-draft-rotation"))
+        self.probe.tap("Стратегии", "profile-tabs")
+        if self.scenario == "partial":
+            self.probe.reveal("Тест: источник части связей отсутствует; применение недоступно.", area)
+            self.probe.reveal("Действует версия 3", area, direction="start")
+            if strategy_writes(self.probe.tree()) < 1:
+                raise AssertionError("Incomplete strategy was never checked by transport")
+            self.checks.append("incomplete-preview-blocks-confirm")
+            return
+        self.probe.reveal("Действует версия 4", area, direction="start")
+        if strategy_writes(self.probe.tree()) != 2:
+            raise AssertionError("One strategy edit must issue exactly one preview and one confirmation")
+        self.probe.tap("История", "profile-tabs")
+        self.probe.reveal("Версия 2", area)
+        self.probe.tap("Изменения и возврат", area)
+        self.probe.tap("Проверить возврат к этой версии", area)
+        self.probe.reveal("Действует версия 5", area, direction="start")
+        if strategy_writes(self.probe.tree()) != 5:
+            raise AssertionError("Rollback must be rechecked and create one confirmed version")
+        self.checks.extend(("preview-before-confirm", "new-confirmed-version", "rollback-creates-new-version"))
 
     def plans(self):
         if self.scenario == "empty":
