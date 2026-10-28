@@ -1,0 +1,113 @@
+name: Deliver exact laptop-verified server sources to Timeweb
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/server-runtime-deploy.yml
+      - deploy/server_runtime_release.py
+      - deploy/test_server_runtime_release.py
+      - tools/prepare_server_runtime_transport.py
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: 6fa2630c43027156086d5b814bafc53eb8114404
+  EXPECTED_TEST_RUN: '40648197468'
+  EXPECTED_ARTIFACT_SHA256: 9a92419f38b32ff62e4644d6f86bad62710f2dc6beefff4175a89078be906513
+  EXPECTED_BUNDLE_SHA256: 875c93def2004b7e585f29d7c923a9c1ef654bc4f3808ed2ca9e71ebee9ea135
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6fa2630c43027156086d5b814bafc53eb8114404
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Require exact source quality and preserve outstanding findings
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {newestSonarCheck, assertCleanSonar} = require('./.github/scripts/require_clean_sonar.cjs');
+            const ref = process.env.EXPECTED_SOURCE_SHA;
+            for (const candidate of ['45168fa6ec2a5d98ba72ea013ed2a7b34a4d7201', ref]) {
+              const checks = await github.paginate(github.rest.checks.listForRef, {...context.repo, ref:candidate, per_page:100});
+              const found = newestSonarCheck(checks, candidate);
+              if (found) {
+                const notes = await github.paginate(github.rest.checks.listAnnotations, {...context.repo, check_run_id:found.id, per_page:100});
+                for (const note of notes) core.info('SONAR_FINDING=' + JSON.stringify({sha:candidate,path:note.path,line:note.start_line,message:note.message}));
+              }
+            }
+            let sonar;
+            for (let attempt=0;attempt<18;attempt++) {
+              const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+              sonar=newestSonarCheck(checks,ref);
+              if (sonar?.status==='completed') break;
+              await new Promise(resolve=>setTimeout(resolve,10000));
+            }
+            if (!sonar || sonar.status!=='completed') throw new Error('Exact-source Sonar is not available; deployment has not been authorized by quality checks');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,ref);
+  installer-tests:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: server-installer-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: deploy
+      - name: Check replacement and rollback using synthetic files on the laptop
+        shell: cmd
+        working-directory: server-installer-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
+          if errorlevel 1 exit /b 1
+          py -3 deploy\test_server_runtime_release.py -v
+          if errorlevel 1 exit /b 1
+  deploy:
+    needs: [quality, installer-tests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Download only the exact successful laptop artifact
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=Number(process.env.EXPECTED_TEST_RUN);
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if (run.run_attempt!==1 || run.status!=='completed' || run.conclusion!=='success' ||
+                run.head_sha!==process.env.EXPECTED_SOURCE_SHA || run.event!=='push' ||
+                run.path!=='.github/workflows/server-runtime.yml' || run.head_branch!=='codex/server-runtime-2026-10-28') throw new Error('Laptop verification identity changed');
+            const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+            const matches=items.filter(item=>item.name==='server-runtime-'+run_id+'-1' && !item.expired);
+            if (matches.length!==1 || matches[0].digest!=='sha256:'+process.env.EXPECTED_ARTIFACT_SHA256) throw new Error('Artifact identity changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'server-runtime-artifact.zip'),Buffer.from(archive.data));
+      - name: Verify bundle and prepare the existing bounded transport
+        run: python3 tools/prepare_server_runtime_transport.py
+      - name: Install the verified server modules on the existing Timeweb runtime
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/owner_plan_transport_20261027.py
+      - name: Preserve deployment receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-runtime-deployment-${{ github.run_id }}
+          path: plan-reports/
+          if-no-files-found: warn
+          retention-days: 7
