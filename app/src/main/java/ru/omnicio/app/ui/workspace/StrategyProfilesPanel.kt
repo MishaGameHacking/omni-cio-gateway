@@ -6,6 +6,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 import ru.omnicio.app.ui.spectrum.*
@@ -19,14 +20,17 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
     val activeId = config.optJSONObject("tuning")?.text("profile_id", "")
     val suggested = catalogue?.text("suggested_id", "")
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Пять готовых подходов", style = MaterialTheme.typography.titleLarge)
+        Text("Основа вашей стратегии", style = MaterialTheme.typography.titleLarge)
         Text("Выберите основу. Сервер рассчитает резерв по портфелю и сохранит более строгие действующие лимиты.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (catalogue == null) Text("Профили появятся после обновления серверных данных.")
         profiles.forEach { profile ->
             SpectrumCard(onClick = { selectedId = profile.text("id", "") },
                 emphasized = activeId == profile.text("id", "")) {
-                Text(profile.text("title", ""), style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SpectrumIcon(strategyProfileSymbol(profile.text("id", "")), Modifier.size(48.dp), motionAllowed = false)
+                    Text(profile.text("title", ""), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                }
                 Text(profile.text("description", ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val value = profile.optJSONObject("config")
                 val mandate = value?.optJSONObject("mandate")
@@ -65,4 +69,14 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
         }, Modifier.fillMaxWidth(), enabled && proposed != null)
         SpectrumSecondaryButton("Отмена", { selectedId = null }, Modifier.fillMaxWidth())
     }
+}
+
+
+internal fun strategyProfileSymbol(id: String): SpectrumSymbol = when (id) {
+    "capital" -> SpectrumSymbol.Capital
+    "coupon" -> SpectrumSymbol.Income
+    "balanced" -> SpectrumSymbol.Balanced
+    "growth" -> SpectrumSymbol.Growth
+    "equity" -> SpectrumSymbol.Dividends
+    else -> SpectrumSymbol.Strategy
 }

@@ -16,7 +16,7 @@ fun AutoSaveStatus(record: AutoSaveRecord?, retry: () -> Unit) {
     val text = loadingError ?: when (record?.phase) {
         null -> "Изменения сохраняются автоматически"
         AutoSavePhase.Pending -> "Изменение ожидает сохранения"
-        AutoSavePhase.Invalid -> "Некорректное значение. Применение приостановлено"
+        AutoSavePhase.Invalid -> "Черновик · заполните отмеченные параметры"
         AutoSavePhase.Saving -> "Сохраняем…"
         AutoSavePhase.Saved -> "Сохранено на сервере"
         AutoSavePhase.Failed -> record.error ?: "Сохранение не подтверждено"
@@ -25,3 +25,4 @@ fun AutoSaveStatus(record: AutoSaveRecord?, retry: () -> Unit) {
         color = if (record?.phase == AutoSavePhase.Failed || loadingError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     if (record?.phase == AutoSavePhase.Failed || loadingError != null) SpectrumTextButton("Повторить сохранение", retry, symbol = SpectrumSymbol.Update)
 }
+

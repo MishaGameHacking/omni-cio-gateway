@@ -24,8 +24,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "ff050e1c"
-DARK_BACKGROUND = "ff050e1c"
+LIGHT_BACKGROUND = "fff5f7fb"
+DARK_BACKGROUND = "fff5f7fb"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -410,7 +410,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "ffedf5ff" if expected == DARK_BACKGROUND else "ffedf5ff"
+        foreground = "ff17243a" if expected == DARK_BACKGROUND else "ff17243a"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):

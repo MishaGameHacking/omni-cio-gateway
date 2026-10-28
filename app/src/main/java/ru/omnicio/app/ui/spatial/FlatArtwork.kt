@@ -104,21 +104,16 @@ internal fun DrawScope.drawFlatPrimitive(item: SpatialPrimitive, phase: Float, p
                         scale(1f + .035f * pulse, 1f + .035f * pulse, Offset(50f, 50f))
                     }
                 }) {
-                    if (item.colorMode == SpatialColorMode.Decorative && item.state != SpatialState.Disabled) {
-                        drawCircle(Brush.radialGradient(listOf(artwork.teal.copy(alpha = .14f + .05f * pulse),
-                            artwork.violet.copy(alpha = .07f), Color.Transparent), Offset(50f, 50f), 50f),
-                            radius = 50f, center = Offset(50f, 50f))
-                        drawArc(artwork.teal.copy(alpha = .25f), 205f, 90f, false,
-                            Offset(5f, 5f), Size(90f, 90f), style = Stroke(1.2f))
-                    }
-                    flatIcon(asset.name, artwork, phase, item.state, item.outlineColor)
+                    if (item.colorMode == SpatialColorMode.Decorative && item.state != SpatialState.Disabled)
+                        clayIcon(asset.name, artwork, phase, item.state)
+                    else flatIcon(asset.name, artwork, phase, item.state, item.outlineColor)
                 }
             }
         }
     }
 }
 
-private fun DrawScope.flatIcon(name: String, colors: FlatArtworkColors, phase: Float,
+internal fun DrawScope.flatIcon(name: String, colors: FlatArtworkColors, phase: Float,
     state: SpatialState, outline: Color) {
     val ink = colors.ink
     val teal = colors.teal
@@ -336,6 +331,38 @@ private fun DrawScope.flatIcon(name: String, colors: FlatArtworkColors, phase: F
         "close" -> {line(28f,28f,72f,72f);line(72f,28f,28f,72f)}
         "plus" -> {line(24f,50f,76f,50f);line(50f,24f,50f,76f)}
         "minus" -> line(24f,50f,76f,50f)
+        "chevron_down" -> path(listOf(26f to 38f, 50f to 62f, 74f to 38f))
+        "chevron_up" -> path(listOf(26f to 62f, 50f to 38f, 74f to 62f))
+        "capital" -> {
+            path(listOf(50f to 12f,80f to 24f,76f to 58f,66f to 74f,50f to 86f,34f to 74f,24f to 58f,20f to 24f),teal,true,true)
+            path(listOf(35f to 49f,46f to 61f,67f to 35f),colors.highlight)
+        }
+        "income" -> {
+            box(19f,22f,62f,59f,colors.highlight,true)
+            box(19f,22f,62f,18f,teal,true,5f)
+            circle(51f,61f,16f,amber,true)
+            line(51f,50f,51f,71f,colors.highlight,4f);line(42f,58f,59f,58f,colors.highlight,4f)
+        }
+        "balanced" -> {
+            line(50f,19f,50f,80f,violet,8f);line(25f,81f,75f,81f,violet,8f)
+            line(19f,32f,81f,32f,teal,6f)
+            path(listOf(25f to 34f,12f to 62f,38f to 62f),amber,true,true)
+            path(listOf(75f to 34f,62f to 62f,88f to 62f),teal,true,true)
+            circle(50f,23f,7f,amber,true)
+        }
+        "growth" -> {
+            box(18f,60f,14f,23f,teal,true,4f);box(42f,45f,14f,38f,violet,true,4f)
+            box(66f,31f,14f,52f,teal,true,4f)
+            path(listOf(17f to 44f,40f to 26f,52f to 32f,79f to 12f),amber)
+            path(listOf(62f to 12f,79f to 12f,79f to 28f),amber)
+        }
+        "dividends" -> {
+            box(20f,68f,60f,14f,amber,true,7f)
+            box(28f,52f,52f,14f,amber,true,7f)
+            line(49f,54f,49f,20f,teal,6f)
+            drawOval(teal,Offset(23f,18f),Size(25f,16f))
+            drawOval(violet,Offset(51f,10f),Size(27f,20f))
+        }
         "monogram" -> {
             circle(50f,50f,32f,ink,true)
             if (outline != Color.Unspecified) drawCircle(outline, 30f, Offset(50f,50f), style = Stroke(4f))
@@ -343,3 +370,4 @@ private fun DrawScope.flatIcon(name: String, colors: FlatArtworkColors, phase: F
         else -> {circle(50f,50f,30f,ink);circle(50f,50f,10f,teal,true)}
     }
 }
+

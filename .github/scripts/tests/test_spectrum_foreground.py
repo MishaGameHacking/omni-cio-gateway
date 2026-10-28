@@ -34,8 +34,8 @@ class SpectrumForegroundTests(unittest.TestCase):
             return sum(c * w for c, w in zip(linear, (.2126, .7152, .0722)))
 
         for mode in ('LIGHT', 'DARK'):
-            name = 'Dark'
-            block = theme.split('private val ' + name + 'Colors = ' + name.lower() + 'ColorScheme(', 1)[1].split('\n)', 1)[0]
+            name = 'Workspace'
+            block = theme.split('private val ' + name + 'Colors = ' + 'lightColorScheme(', 1)[1].split('\n)', 1)[0]
             tokens = dict(re.findall(r'\b(background|onBackground)\s*=\s*Color\(0x(FF[0-9A-Fa-f]{6})\)', block))
             with self.subTest(mode=mode):
                 self.assertEqual(backgrounds[mode], tokens['background'].lower())
@@ -47,3 +47,4 @@ class SpectrumForegroundTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -94,7 +94,7 @@ fun ProfileScreen(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Настройки", style = MaterialTheme.typography.headlineLarge,
                                 modifier = Modifier.semantics { heading() })
-                            Text("Правила работы вашей системы", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Подключения, стратегия и безопасность", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -146,25 +146,17 @@ fun ProfileScreen(
                             navigate(WorkspaceRoute.NotificationSettings)
                         }
                         SettingsDivider()
-                        SettingsLink("Устройства", "Активные сеансы и отзыв доступа", SpectrumSymbol.Profile) {
+                        SettingsLink("Устройства", "Активные сеансы и отзыв доступа", SpectrumSymbol.Devices) {
                             navigate(WorkspaceRoute.Devices)
                         }
                     }
                 }
                 item(key = "appearance-settings") {
                     SettingsGroup("Интерфейс") {
-                        SettingsLink("Оформление", "Единый стиль · движение и удобство", SpectrumSymbol.Settings) {
+                        SettingsLink("Экран и удобство", "Движение, отклик и видимость сумм", SpectrumSymbol.Appearance) {
                             navigate(WorkspaceRoute.Appearance)
                         }
-                        SettingsDivider()
-                        SettingsToggle("Анимация", "Учитывает системное отключение движения",
-                            presentation.value.motion != MotionLevel.OFF) { next ->
-                            presentation.update(presentation.value.copy(motion = if (next) MotionLevel.LIVE else MotionLevel.OFF))
-                        }
-                        SettingsDivider()
-                        SettingsToggle("Отклик касаний", "Короткая вибрация при действии", presentation.value.haptics) { next ->
-                            presentation.update(presentation.value.copy(haptics = next))
-                        }
+
                     }
                 }
                 item(key = "privacy-settings") {
@@ -213,7 +205,7 @@ fun ProfileScreen(
 @Composable
 private fun SettingsGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
     SpectrumCard {
-        Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
         content()
     }
 }
@@ -226,10 +218,10 @@ private fun SettingsDivider() {
 @Composable
 private fun SettingsLink(title: String, subtitle: String, symbol: SpectrumSymbol,
     modifier: Modifier = Modifier, danger: Boolean = false, onClick: () -> Unit) {
-    Row(modifier.fillMaxWidth().heightIn(min = 64.dp)
-        .clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp),
+    Row(modifier.fillMaxWidth().heightIn(min = 56.dp)
+        .clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        SpatialIcon(symbol.asset, Modifier.size(28.dp),
+        SpatialIcon(symbol.asset, Modifier.size(36.dp),
             tint = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             motionAllowed = false)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -246,9 +238,9 @@ private fun SettingsLink(title: String, subtitle: String, symbol: SpectrumSymbol
 private fun SettingsToggle(title: String, subtitle: String, checked: Boolean, enabled: Boolean = true,
     modifier: Modifier = Modifier, onChange: (Boolean) -> Unit) {
     val largeText = LocalDensity.current.fontScale > 1.3f
-    Column(modifier.fillMaxWidth().heightIn(min = 64.dp)
+    Column(modifier.fillMaxWidth().heightIn(min = 56.dp)
         .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
-        .padding(vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        .padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
@@ -274,3 +266,4 @@ private fun SettingsSaveStatus(presentation: WorkspacePreferenceController) {
     Text(presentation.saveStatus, style = MaterialTheme.typography.bodySmall)
     if (presentation.saveFailed) SpectrumSecondaryButton("Повторить сохранение", presentation.retrySave, Modifier.fillMaxWidth())
 }
+

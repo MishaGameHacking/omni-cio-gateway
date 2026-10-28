@@ -38,14 +38,14 @@ class SpectrumProductionTokens(unittest.TestCase):
         source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
         theme = (UI / 'theme/AnalystTheme.kt').read_text(encoding='utf-8')
         tokens = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
-        c = colors(tokens, 'private val DarkColors = darkColorScheme(')
-        s = colors(tokens, 'private val DarkSemantic = AnalystSemanticColors(')
+        c = colors(tokens, 'private val WorkspaceColors = lightColorScheme(')
+        s = colors(tokens, 'private val WorkspaceSemantic = AnalystSemanticColors(')
         self.assertEqual(len(c), 48)
         self.assertEqual(len(s), 19)
-        self.assertNotIn('lightColorScheme(', tokens)
+        self.assertNotIn('darkColorScheme(', tokens)
         self.assertNotIn('when (accent)', tokens)
         self.assertNotIn('isSystemInDarkTheme()', theme)
-        self.assertIn('spectrumPalette(dark = true)', theme)
+        self.assertIn('spectrumPalette(dark = false)', theme)
         self.assertIn('val colors = palette.colors', theme)
         self.assertIn('colorScheme = colors', theme)
         self.assertIn('val resolved = analystColors(dark, accent)', source)
@@ -74,11 +74,11 @@ class SpectrumProductionTokens(unittest.TestCase):
                         with self.subTest(surface=surface,tint=tint,step=step,ink=ink):
                             self.assertGreaterEqual(contrast(c[ink],fill),4.5)
         button = source.split('fun SpectrumPrimaryButton(', 1)[1].split('fun SpectrumSecondaryButton', 1)[0]
-        self.assertIn('MaterialTheme.colorScheme.primaryContainer else', button)
-        self.assertIn('MaterialTheme.colorScheme.onPrimaryContainer else', button)
+        self.assertIn('MaterialTheme.colorScheme.primary else', button)
+        self.assertIn('MaterialTheme.colorScheme.onPrimary else', button)
         self.assertIn('semantic.disabledInk', button)
         self.assertIn('role = Role.Button', button)
-        self.assertIn('heightIn(min = 54.dp)', button)
+        self.assertIn('heightIn(min = 48.dp)', button)
         surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
         self.assertIn('spatialSurfaceColors(palette, color, state', surface)
         self.assertIn('LocalContentColor provides resolved.foreground', surface)
@@ -100,8 +100,8 @@ class SpectrumProductionTokens(unittest.TestCase):
             self.assertEqual(bindings['disabled' + state + 'ContentColor'], ('s', 'disabledInk'))
             self.assertEqual(bindings['disabledSelected' + state + 'ContentColor'], ('s', 'disabledInk'))
             self.assertEqual(bindings['disabledSelected' + state + 'ContainerColor'], ('s', 'disabledContainer'))
-        for mode in ('Dark',):
-            source = {'c': colors(tokens, 'private val ' + mode + 'Colors = ' + mode.lower() + 'ColorScheme('),
+        for mode in ('Workspace',):
+            source = {'c': colors(tokens, 'private val ' + mode + 'Colors = ' + 'lightColorScheme('),
                       's': colors(tokens, 'private val ' + mode + 'Semantic = AnalystSemanticColors(')}
             actual = {name: source[kind][role] for name, (kind, role) in bindings.items()}
             for state in ('Day', 'Year'):
@@ -141,3 +141,4 @@ class SpectrumProductionTokens(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -27,7 +27,7 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
             Column(
                 Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
@@ -35,17 +35,27 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    SpatialIcon("brand", Modifier.size(56.dp),
+                    SpatialIcon("brain", Modifier.size(56.dp),
                         tint = MaterialTheme.colorScheme.primary, motionAllowed = true)
                     Text("Analyst AI", style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Ваш инвестиционный аналитик", style = MaterialTheme.typography.headlineLarge,
+                    Text("Ваш портфель.\nЯсная картина.", style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier.semantics { heading() })
-                    Text("Портфель, важные изменения и основания решений — в одном месте.",
+                    Text("Стоимость, выплаты и аналитика на основе данных вашего счёта Т-Инвестиций.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    listOf(SpectrumSymbol.Portfolio to "Активы", SpectrumSymbol.Capital to "Риски",
+                        SpectrumSymbol.Growth to "Стратегия").forEach { (symbol, label) ->
+                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SpectrumIcon(symbol, Modifier.size(56.dp), motionAllowed = false)
+                            Text(label, style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
                 }
                 SpectrumCard {
                     errorMessage?.let {
@@ -66,9 +76,12 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                         }
                     } else {
                         SpectrumPrimaryButton("Войти через Telegram", onLoginClick, Modifier.fillMaxWidth())
+                        Text("Подтвердите вход в Telegram. Токен брокера подключается отдельно после входа.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
         }
     }
 }
+

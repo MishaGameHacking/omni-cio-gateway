@@ -37,9 +37,9 @@ class ApplicationThemeModeTest {
     }
 
     @Test fun applicationPolicyUsesThePlatformApplicationContract() {
-        assertEquals(2, applicationNightMode(ThemeMode.LIGHT))
-        assertEquals(2, applicationNightMode(ThemeMode.DARK))
-        assertEquals(2, applicationNightMode(ThemeMode.SYSTEM))
+        assertEquals(1, applicationNightMode(ThemeMode.LIGHT))
+        assertEquals(1, applicationNightMode(ThemeMode.DARK))
+        assertEquals(1, applicationNightMode(ThemeMode.SYSTEM))
     }
 
     @Test fun undefinedNightBitsAreUnknownRatherThanInventedDaylight() {
@@ -121,3 +121,4 @@ class ApplicationThemeModeTest {
         assertEquals(listOf("register", "current", "unregister"), source.calls)
     }
 }
+

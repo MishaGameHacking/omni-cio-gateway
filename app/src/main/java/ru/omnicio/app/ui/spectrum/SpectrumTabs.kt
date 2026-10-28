@@ -51,7 +51,7 @@ fun SpectrumTabs(
     val measurer = rememberTextMeasurer()
     val measured = labels.map { measurer.measure(AnnotatedString(it), style, softWrap = false, maxLines = 1).size }
     val minimumWidths = measured.map { with(density) { it.width.toDp() + 16.dp }.coerceAtLeast(48.dp) }
-    val height = with(density) { measured.maxOf { it.height }.toDp() + 24.dp }.coerceAtLeast(52.dp)
+    val height = with(density) { measured.maxOf { it.height }.toDp() + 16.dp }.coerceAtLeast(48.dp)
     val gap = 6.dp
     val scroll = rememberScrollState()
     val scrollTag = LocalSpectrumTabScrollTag.current
@@ -86,8 +86,8 @@ fun SpectrumTabs(
                             .semantics { testTagsAsResourceId = true }.testTag("$scrollTag-item-$index") }
                         .selectable(chosen, interactionSource = interaction, indication = null, role = Role.Tab, onClick = click),
                     kind = SpatialSurfaceKind.Chip,
-                    color = if (chosen) palette.colors.primaryContainer else palette.card,
-                    state = when { pressed -> SpatialState.Pressed; chosen || focused -> SpatialState.Selected; else -> SpatialState.Idle },
+                    color = if (chosen) palette.colors.primaryContainer else palette.colors.surfaceContainer,
+                    state = when { pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle },
                     emphasized = chosen,
                     interactive = true,
                 ) {
@@ -105,5 +105,6 @@ fun SpectrumTabs(
         }
     }
 }
+
 
 

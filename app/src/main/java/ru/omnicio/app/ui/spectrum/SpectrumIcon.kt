@@ -16,7 +16,8 @@ enum class SpectrumSymbol(val asset: String) {
     Notifications("notifications"), Market("market"), Goal("goal"),
     Back("back"), Forward("forward"), Search("search"), Check("check"), Close("close"), Calendar("calendar"),
     Settings("settings"), Bookmark("bookmark"),
-    Expand("plus"), Collapse("minus"), Currency("currency"),
+    Expand("plus"), Collapse("minus"), ChevronDown("chevron_down"), ChevronUp("chevron_up"), Currency("currency"),
+    Capital("capital"), Income("income"), Balanced("balanced"), Growth("growth"), Dividends("dividends"),
     Brain("brain"), Decisions("decisions"), Strategy("strategy"), Reports("reports"),
     Timeline("timeline"), Events("events"), Rules("rules"), Appearance("appearance"),
     Devices("devices"), Recent("recent"), NewFeatures("new_features"),
@@ -39,13 +40,9 @@ fun SpectrumIcon(
         SpectrumSymbol.Profile, SpectrumSymbol.Analyst -> palette.cyan
         else -> if (selected) palette.cyan else palette.blue
     }
-    if (tile) SpatialSurface(modifier, SpatialSurfaceKind.Chip,
-        color = palette.containerFor(accent), state = state) {
-        SpatialIcon(symbol.asset, Modifier.fillMaxSize().padding(6.dp), tint = accent,
-            state = state, motionAllowed = motionAllowed, colorMode = SpatialColorMode.Decorative)
-    } else Box(modifier) {
+    Box(modifier) {
         SpatialIcon(symbol.asset, Modifier.fillMaxSize(), tint = accent,
-            state = state, motionAllowed = motionAllowed, colorMode = SpatialColorMode.Decorative)
+            state = state, motionAllowed = motionAllowed,
+            colorMode = if (tile) spatialIconMode(symbol.asset) else SpatialColorMode.Monochrome)
     }
 }
-

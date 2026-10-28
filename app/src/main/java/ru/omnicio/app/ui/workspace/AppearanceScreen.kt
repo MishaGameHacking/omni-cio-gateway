@@ -32,41 +32,26 @@ fun AppearanceScreen(onBack: () -> Unit) {
     val leave = onBack
     RegisterPanelExit(WorkspaceRoute.Appearance, requestExit)
     BackHandler(onBack = leave)
-    WorkspaceDetailPage("Оформление", "Изменения сохраняются автоматически", leave, adaptToIme = true) { padding ->
+    WorkspaceDetailPage("Экран и удобство", "Изменения сохраняются автоматически", leave, adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content").padding(padding).consumeWindowInsets(padding),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             if (compact) item(key = "page-heading") {
-                WorkspacePageHeading("Оформление", "Изменения сохраняются автоматически")
+                WorkspacePageHeading("Экран и удобство", "Изменения сохраняются автоматически")
             }
             item {
-                SpectrumCard(emphasized = true) {
-                    Text("Analyst AI", style = MaterialTheme.typography.titleLarge)
-                    Text("Единый стиль · движение и удобство", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                        SpectrumBrandOrb(Modifier.size(76.dp))
-                        SpectrumAssetMark("share", "А", Modifier.size(64.dp))
-                        SpectrumAssetMark("bond", "Б", Modifier.size(64.dp))
-                    }
-                    Text("Аа · 0123456789", style = MaterialTheme.typography.headlineSmall)
-                    Text("Образцы оформления без финансовых значений. Проверьте удобство чтения и скорость отклика.", style = MaterialTheme.typography.bodySmall)
-                    Text(controller.saveStatus, style = MaterialTheme.typography.labelMedium,
-                        modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-                    if (controller.saveFailed) SpectrumSecondaryButton("Повторить сохранение", controller.retrySave, Modifier.fillMaxWidth())
-
-                }
+                Text(controller.saveStatus, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                if (controller.saveFailed) SpectrumSecondaryButton("Повторить сохранение", controller.retrySave, Modifier.fillMaxWidth())
             }
             item { SpectrumCard {
                 WorkspaceChoices("Движение", MotionLevel.entries.map { it.title }, draft.motion.ordinal) { preview(draft.copy(motion = MotionLevel.entries[it])) }
                 Text(when (draft.motion) {
-                    MotionLevel.LIVE -> "Видимые иконки плавно движутся по кругу и реагируют на касание. Числа и подписи остаются неподвижными."
+                    MotionLevel.LIVE -> "Плавные переходы и отклик при касании. Числа остаются неподвижными."
                     MotionLevel.SUBDUED -> "Короткие спокойные переходы; меньше фонового движения."
                     MotionLevel.OFF -> "Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения."
                 }, style = MaterialTheme.typography.bodySmall)
                 if (!android.animation.ValueAnimator.areAnimatorsEnabled()) Text("Системные анимации отключены. Это ограничение имеет приоритет над выбранным режимом.")
-                WorkspaceToggle("Акцентные карточки", "Мягкие тени и цветные границы карточек", draft.depth) {
-                    preview(draft.copy(depth = it))
-                }
                 WorkspaceToggle("Яркое освещение", "Плотные поверхности и более отчётливые границы", draft.brightLight) { preview(draft.copy(brightLight = it)) }
                 WorkspaceToggle("Отклик касаний", "Лёгкая вибрация при смене раздела", draft.haptics) {
                     preview(draft.copy(haptics = it))
@@ -126,3 +111,4 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
         }
     }
 }
+

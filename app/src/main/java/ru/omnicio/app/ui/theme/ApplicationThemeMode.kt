@@ -35,7 +35,7 @@ val LocalSystemThemeObservation = staticCompositionLocalOf<SystemThemeObservatio
 
 /** App-local override only. Saved LIGHT/SYSTEM values migrate to the single style. */
 @Suppress("UNUSED_PARAMETER")
-internal fun applicationNightMode(mode: ThemeMode): Int = UiModeManager.MODE_NIGHT_YES
+internal fun applicationNightMode(mode: ThemeMode): Int = UiModeManager.MODE_NIGHT_NO
 
 internal fun storedApplicationTheme(context: Context): ThemeMode {
     val name = context.getSharedPreferences("analyst_ai_settings", Context.MODE_PRIVATE)
@@ -204,3 +204,4 @@ fun rememberSystemThemeObservation(): SystemThemeObservation {
     }
     return observation
 }
+

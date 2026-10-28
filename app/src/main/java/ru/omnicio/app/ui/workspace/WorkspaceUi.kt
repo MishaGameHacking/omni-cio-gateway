@@ -23,7 +23,7 @@ data class PortfolioDestination(val section: Int = 1, val accountId: String? = n
     val operationId: String? = null, val operationDate: String? = null)
 
 val workspaceGap: androidx.compose.ui.unit.Dp
-    @Composable get() = if (LocalWorkspacePreferences.current.value.density == InterfaceDensity.COMPACT) 8.dp else 14.dp
+    @Composable get() = if (LocalWorkspacePreferences.current.value.density == InterfaceDensity.COMPACT) 8.dp else 12.dp
 
 @Composable
 fun PrivateValue(value: String): String = if (LocalWorkspacePreferences.current.value.hideHomeBalance) "•••" else value
@@ -60,7 +60,7 @@ fun DetailFold(title: String, modifier: Modifier = Modifier, initiallyOpen: Bool
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SpectrumTextButton(title, onClick = { expanded = !expanded },
             modifier = Modifier.fillMaxWidth().then(headerModifier).semantics { stateDescription = if (expanded) "Развёрнуто" else "Свёрнуто" },
-            symbol = if (expanded) SpectrumSymbol.Collapse else SpectrumSymbol.Expand)
+            symbol = if (expanded) SpectrumSymbol.ChevronUp else SpectrumSymbol.ChevronDown)
         if (expanded) content()
     }
 }
@@ -96,9 +96,9 @@ fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol:
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            onOpenMenu?.let { AnalystMenuButton(it) }
-            Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
             SpectrumIconButton(SpectrumSymbol.Back, "Назад", onBack)
+            Text(title, Modifier.weight(1f).semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            if (symbol != null) SpectrumIcon(symbol, Modifier.size(32.dp), motionAllowed = false)
         }
         if (subtitle.isNotBlank()) Text(subtitle, Modifier.padding(start = 56.dp, end = 8.dp),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -122,3 +122,4 @@ enum class BrokerConnectionState(val title: String) {
     Checking("Проверяем подключение"), Connected("Подключено"), Missing("Не подключено"), Unknown("Статус не получен")
 }
 val LocalBrokerConnection = staticCompositionLocalOf<BrokerConnectionState?> { null }
+

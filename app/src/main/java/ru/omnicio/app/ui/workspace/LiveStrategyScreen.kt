@@ -89,8 +89,8 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                     0 -> item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
                         editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
                     1 -> {
-                        item { SpectrumTabs(listOf("Цель", "Профиль", "Резерв", "Лимиты"),
-                            parameterTab, { parameterTab = it }) }
+                        item { WorkspaceChoices("Раздел", listOf("Цель", "Профиль", "Резерв", "Лимиты"),
+                            parameterTab) { parameterTab = it } }
                         when (parameterTab) {
                             0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
                             1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
@@ -98,13 +98,19 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                             3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
                         }
                     }
-                    else -> resource.data?.records("history").orEmpty().forEach { old -> item {
+                    else -> resource.data?.records("history").orEmpty().forEach { old -> item(key = "history-" + old.optInt("version")) {
                         StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
                     } }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
                 item { WorkspaceActionState(restoreVersion) }
-                if (!validStrategy(config)) item { Text("Выберите обязательные параметры профиля; проверьте горизонт, резерв и лимиты. Черновик сохранён на устройстве.", color = MaterialTheme.colorScheme.error) }
+                if (!validStrategy(config)) item {
+                    SpectrumCard {
+                        Text("Завершите настройку", style = MaterialTheme.typography.titleMedium)
+                        strategyValidationIssues(config).forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+                        SpectrumSecondaryButton("Открыть параметры", { tab = 1; parameterTab = 1 }, Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }
@@ -124,16 +130,46 @@ internal data class StrategyEditorAvailability(val hasEditorState: Boolean, val 
     }
 }
 
-internal fun validStrategy(config: JSONObject): Boolean {
-    val horizon = config.opt("horizon_months") as? Int ?: return false
-    val amount = config.optJSONObject("reserve")?.optString("amount")?.toBigDecimalOrNull()
-    val limits = config.optJSONObject("limits") ?: return false
-    if (config.has("mandate") && (config.optJSONObject("mandate")?.let(::validPortfolioMandate) != true || config.optJSONObject("reserve")?.optString("currency") != "RUB")) return false
-    return horizon in 1..600 && amount != null && amount.signum() >= 0 && limitTitles.keys.all {
-        val number = limits.optString(it).toBigDecimalOrNull()
-        number != null && number.signum() > 0 && number <= java.math.BigDecimal(100)
+internal fun strategyValidationIssues(config: JSONObject): List<String> = buildList {
+    val horizon = config.opt("horizon_months") as? Int
+    if (horizon == null || horizon !in 1..600) add("Горизонт: укажите от 1 до 600 месяцев.")
+    val reserve = config.optJSONObject("reserve")
+    val amount = reserve?.optString("amount")?.toBigDecimalOrNull()
+    if (amount == null || amount.signum() < 0) add("Резерв: укажите сумму от нуля.")
+    val limits = config.optJSONObject("limits")
+    limitTitles.forEach { (key, title) ->
+        val number = limits?.optString(key)?.toBigDecimalOrNull()
+        if (number == null || number.signum() <= 0 || number > java.math.BigDecimal(100))
+            add("$title: лимит должен быть больше 0 и не больше 100%.")
+    }
+    if (config.has("mandate")) {
+        val mandate = config.optJSONObject("mandate")
+        if (mandate == null) add("Инвестиционный профиль: выберите состав и счёт.")
+        else {
+            if (mandate.optString("account_id").isBlank()) add("Счёт: выберите подключённый счёт.")
+            val labels = mapOf("loss_capacity_percent" to "Допустимый убыток", "bond_target_percent" to "Доля облигаций",
+                "share_target_percent" to "Доля акций", "max_discretionary_turnover_percent" to "Предел оборота",
+                "max_trade_cost_percent" to "Предел издержек")
+            labels.forEach { (key, label) ->
+                val number = mandate.optString(key).toBigDecimalOrNull()
+                if (number == null || number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal(100))
+                    add("$label: укажите значение от 0 до 100%.")
+            }
+            listOf(Triple("minimum_rating_level", "Минимальный рейтинг", 0..9),
+                Triple("turnover_window_days", "Период учёта оборота", 1..366),
+                Triple("rebalance_cooldown_days", "Пауза между перераспределениями", 0..365)).forEach { (key, label, range) ->
+                val number = mandate.opt(key) as? Int
+                if (number == null || number !in range) add("$label: выберите допустимое значение.")
+            }
+            if (mandate.opt("reinvest_coupons") !is Boolean) add("Купоны: выберите способ использования.")
+            if (mandate.opt("reinvest_dividends") !is Boolean) add("Дивиденды: выберите способ использования.")
+            if (!validPortfolioMandate(mandate) && isEmpty()) add("Проверьте состав портфеля, сумму долей 100% и основную сессию.")
+        }
+        if (reserve?.optString("currency") != "RUB") add("Для инвестиционного профиля выберите резерв в RUB.")
     }
 }
+
+internal fun validStrategy(config: JSONObject): Boolean = strategyValidationIssues(config).isEmpty()
 
 @Composable
 private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
@@ -189,7 +225,8 @@ private fun StrategyDifference(before: JSONObject?, after: JSONObject) {
     val oldLimits = before?.optJSONObject("limits")
     val newLimits = after.optJSONObject("limits")
     limitTitles.forEach { (key, label) -> if (oldLimits?.opt(key) != newLimits?.opt(key)) Text(label + ": " + (oldLimits?.text(key) ?: UNSPECIFIED_VALUE) + " → " + (newLimits?.text(key) ?: UNSPECIFIED_VALUE) + "%") }
-    Text("Резерв: " + PrivateValue(moneyText(before?.optJSONObject("reserve"))) + " → " + PrivateValue(moneyText(after.optJSONObject("reserve"))))
+    if (before?.optJSONObject("reserve")?.toString() != after.optJSONObject("reserve")?.toString())
+        Text("Резерв: " + PrivateValue(moneyText(before?.optJSONObject("reserve"))) + " → " + PrivateValue(moneyText(after.optJSONObject("reserve"))))
 }
 
 private fun strategyValue(value: String?): String = when (value) {
@@ -204,10 +241,13 @@ private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Bo
         Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
         Text(localMoment(old.text("confirmed_at", "")), style = MaterialTheme.typography.bodySmall)
         val previous = old.optJSONObject("config") ?: JSONObject()
+        DetailFold("Изменения и возврат") {
         StrategyDifference(active?.optJSONObject("config"), previous)
         SpectrumSecondaryButton("Проверить возврат к этой версии", {
             if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
                 .put("rollback_to_version", old.optInt("version")))
         }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
+        }
     }
 }
+

@@ -38,7 +38,7 @@ data class ThemePreference(val mode: ThemeMode, val preview: (ThemeMode) -> Unit
     val cancelPreview: () -> Unit = {}, val applyPreview: () -> Unit = {},
     val systemThemeUnavailable: Boolean = false, val select: (ThemeMode) -> Unit)
 val LocalThemePreference = staticCompositionLocalOf {
-    ThemePreference(ThemeMode.DARK) { }
+    ThemePreference(ThemeMode.LIGHT) { }
 }
 
 data class SpectrumMotionPreference(
@@ -53,52 +53,52 @@ val LocalSpectrumMotionPreference = staticCompositionLocalOf {
 /** Retained for saved legacy callers; the application has one visual style. */
 @Suppress("UNUSED_PARAMETER")
 internal fun displayedThemeDark(mode: ThemeMode, system: SystemThemeObservation,
-    lastDisplayed: Boolean?, appConfigurationDark: Boolean): Boolean = true
+    lastDisplayed: Boolean?, appConfigurationDark: Boolean): Boolean = false
 
 private val AnalystTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 46.sp,
-        lineHeight = 52.sp,
+        fontSize = 38.sp,
+        lineHeight = 44.sp,
         letterSpacing = (-1.2).sp,
     ),
     headlineLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 34.sp,
-        lineHeight = 39.sp,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
         letterSpacing = (-0.4).sp,
     ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Bold,
-        fontSize = 26.sp,
-        lineHeight = 33.sp,
+        fontSize = 24.sp,
+        lineHeight = 30.sp,
     ),
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 21.sp,
+        fontSize = 20.sp,
         lineHeight = 27.sp,
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 17.sp,
+        fontSize = 16.sp,
         lineHeight = 23.sp,
     ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 17.sp,
+        fontSize = 16.sp,
         lineHeight = 25.sp,
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 16.sp,
-        lineHeight = 22.sp,
+        fontSize = 14.sp,
+        lineHeight = 20.sp,
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -109,7 +109,7 @@ private val AnalystTypography = Typography(
     labelLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 16.sp,
+        fontSize = 14.sp,
         lineHeight = 20.sp,
     ),
     labelMedium = TextStyle(
@@ -144,7 +144,7 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         if (inspection) null else context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
     val workspace = LocalWorkspacePreferences.current
-    val dark = true
+    val dark = false
     SideEffect {
         (activity as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -159,12 +159,12 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         activity?.window?.isNavigationBarContrastEnforced = false
     }
     // Legacy preference storage is left intact; it no longer selects a colorway.
-    val themePreference = ThemePreference(ThemeMode.DARK) { }
+    val themePreference = ThemePreference(ThemeMode.LIGHT) { }
     val motionPreference = SpectrumMotionPreference(workspace.value.motion != MotionLevel.OFF) { enabled ->
         workspace.update(workspace.value.copy(motion = if (enabled) MotionLevel.LIVE else MotionLevel.OFF))
         preferences?.edit()?.putBoolean("spectrum_motion", enabled)?.apply()
     }
-    val palette = remember { spectrumPalette(dark = true) }
+    val palette = remember { spectrumPalette(dark = false) }
     val colors = palette.colors
     CompositionLocalProvider(
         LocalEditorRestorationOwner provides editorRestorationOwner,
@@ -191,3 +191,4 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         }
     }
 }
+

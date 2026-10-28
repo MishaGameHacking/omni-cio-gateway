@@ -141,8 +141,8 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
                 self.assertEqual(items["android:windowSplashScreenAnimatedIcon"], "@drawable/omni_launcher_foreground")
                 self.assertEqual(items["android:windowSplashScreenBehavior"], "icon_preferred")
                 self.assertEqual(items["android:forceDarkAllowed"], "false")
-                self.assertEqual(items["android:windowLightStatusBar"], "false")
-                self.assertEqual(items["android:windowLightNavigationBar"], "false")
+                self.assertEqual(items["android:windowLightStatusBar"], "true")
+                self.assertEqual(items["android:windowLightNavigationBar"], "true")
                 for bar in ("statusBarColor", "navigationBarColor", "navigationBarDividerColor"):
                     self.assertEqual(items["android:" + bar], "@android:color/transparent")
                 for value in items.values():
@@ -160,10 +160,10 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
-        self.assertEqual(int(version.group(1)), 51)
+        self.assertEqual(int(version.group(1)), 52)
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn('versionName = "0.15.0"', gradle)
+        self.assertIn('versionName = "0.16.0"', gradle)
         self.assertNotIn('versionName = "0.7.6"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
@@ -187,4 +187,5 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
