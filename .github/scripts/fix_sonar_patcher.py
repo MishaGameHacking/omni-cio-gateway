@@ -11,6 +11,7 @@ value = value.replace(old, new)
 
 start_marker = 'old = """                foreground, background = ("disabledInk", "disabledContainer")'
 end_marker = r'value = value.replace(old, "                foreground, background = _switch_roles(checked, enabled)\n")' + "\n"
+end_marker = end_marker.replace('\\"', '"')
 start = value.find(start_marker)
 end = value.find(end_marker, start)
 if start < 0 or end < 0:
