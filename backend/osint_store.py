@@ -147,6 +147,13 @@ def reserve_host(connect, host: str, delay: int = 3) -> float:
     return max(0.0, at - now)
 
 
+def defer_host(connect, host: str, deadline: int):
+    with transaction(connect) as db:
+        db.execute("""INSERT INTO osint_hosts_v1(host,next_at) VALUES(?,?)
+            ON CONFLICT(host) DO UPDATE SET next_at=MAX(osint_hosts_v1.next_at,excluded.next_at)""",
+            (host, deadline))
+
+
 def robots(connect, host: str, now: int) -> dict | None:
     with closing(connect()) as db:
         row = db.execute("SELECT * FROM osint_hosts_v1 WHERE host=? AND robots_expires>?", (host, now)).fetchone()

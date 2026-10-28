@@ -104,8 +104,10 @@ def _before(url, source, guard, *, robots_required):
     host, now = urlsplit(url).hostname, int(time.time())
     policy = store.robots(backend.connect, host, now)
     if policy is None:
-        status, _, raw, _ = net.request("https://" + host + "/robots.txt", source.hosts,
+        status, metadata, raw, _ = net.request("https://" + host + "/robots.txt", source.hosts,
             maximum=131072, before_request=lambda destination: _throttle(destination, guard))
+        if status in (429, 503):
+            store.defer_host(backend.connect, host, net.retry_at(metadata.get("retry-after"), now, 0, 900))
         store.save_robots(backend.connect, host, raw.decode("utf-8", errors="replace"), status, now)
         policy = {"robots_status": status, "robots_text": raw.decode("utf-8", errors="replace")}
     if policy["robots_status"] not in (200, 404):
@@ -192,8 +194,11 @@ def process(target, guard):
         return store.finish(backend.connect, target, now=now, status="not_modified", next_at=now + interval,
             headers=response_headers, coverage=json.loads(target["coverage_json"]), guard=guard)
     if status != 200:
+        retry = net.retry_at(response_headers.get("retry-after"), now, target["attempts"], interval)
+        if status in (429, 503):
+            store.defer_host(backend.connect, urlsplit(final_url).hostname, retry)
         return store.finish(backend.connect, target, now=now, status="unavailable",
-            next_at=net.retry_at(response_headers.get("retry-after"), now, target["attempts"], interval),
+            next_at=retry,
             headers={}, coverage={"http_status": status}, error="osint_http_" + str(status), guard=guard)
     rows, children, coverage, cursor = _parse(target, source, raw, final_url, now, window)
     state = "partial" if coverage.get("truncated") or coverage.get("needs_ocr") else "ready"

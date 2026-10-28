@@ -380,6 +380,8 @@ def test_retry_after_persists_source_backoff(application, monkeypatch):
         assert saved["next_at"] >= now + 3600
         assert saved["error"] == "osint_http_429"
         assert saved["lease_owner"] is None
+    with pytest.raises(catalogue.IntakeError, match="host_throttled"):
+        store.reserve_host(backend.connect, "www.moex.com")
 
 
 def test_existing_scheduler_collects_for_owner_without_broker(application, monkeypatch):
