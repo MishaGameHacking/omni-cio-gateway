@@ -1,4 +1,4 @@
-name: Read server-aware shell analysis findings
+name: Request pending external server source analysis
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -16,7 +16,7 @@ jobs:
         with:
           script: |
             const baseline='1da6e6420b51ebe66c8196e3869a2525f0ffe69f';
-            const ref='88e1108058ef596a125f0eaf8f15502b58c4a302';
+            const ref='a72a91f7a2690addbcbb416a4c9530ed12c04be4';
             const old=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:baseline,per_page:100});
             const completed=old.filter(c=>c.name==='SonarCloud Code Analysis' && c.status==='completed');
             if (completed.length!==1) throw new Error('External analyzer identity is ambiguous');
