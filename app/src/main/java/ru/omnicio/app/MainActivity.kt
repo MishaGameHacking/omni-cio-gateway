@@ -141,7 +141,8 @@ class MainActivity : ComponentActivity() {
 
         settingsStore = AppSettingsStore(this)
         val initialScreenshotsBlocked = settingsStore.screenshotsBlocked()
-        applyScreenshotPolicy(initialScreenshotsBlocked)
+        // Keep the window protected before any account content can be drawn.
+        applyScreenshotPolicy(true)
         captureTelegramCallback(intent)
         captureNotification(intent)
 
@@ -805,8 +806,16 @@ private suspend fun restoreAnalystSession(
 
 @Composable
 private fun ServerScreenshotPolicy(signedIn: Boolean, apply: (Boolean) -> Unit) {
-    val blocked = LocalWorkspacePreferences.current.value.screenshotsBlocked
-    LaunchedEffect(signedIn, blocked) {
-        if (signedIn) apply(blocked)
+    val presentation = LocalWorkspacePreferences.current
+    val window = androidx.activity.compose.LocalActivity.current?.window
+    val applied = remember(signedIn) { arrayOf<Boolean?>(null) }
+    val blocked = screenCaptureBlocked(signedIn, presentation.serverConfirmed, presentation.value.screenshotsBlocked)
+    SideEffect {
+        if (blocked) window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        else window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (signedIn && presentation.serverConfirmed && applied[0] != presentation.value.screenshotsBlocked) {
+            apply(presentation.value.screenshotsBlocked)
+            applied[0] = presentation.value.screenshotsBlocked
+        }
     }
 }

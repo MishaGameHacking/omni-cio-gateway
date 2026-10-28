@@ -5,6 +5,13 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PresentationSettingsTest {
+    @Test fun captureIsBlockedUntilTheCurrentAccountPolicyIsConfirmed() {
+        assertTrue(screenCaptureBlocked(false, true, false))
+        assertTrue(screenCaptureBlocked(true, false, false))
+        assertTrue(screenCaptureBlocked(true, true, true))
+        assertFalse(screenCaptureBlocked(true, true, false))
+    }
+
     @Test fun everyPreferenceRoundTripsIncludingScreenPrivacy() {
         val expected = WorkspacePreferences(AccentStyle.IRIS, InterfaceDensity.COMPACT, false, true, false,
             false, MotionLevel.OFF, true, true)

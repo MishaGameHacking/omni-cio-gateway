@@ -40,6 +40,7 @@ data class WorkspacePreferenceController(
     val saveFailed: Boolean = false,
     val retrySave: () -> Unit = {},
     val refreshRemote: () -> Unit = {},
+    val serverConfirmed: Boolean = false,
 )
 
 val LocalWorkspacePreferences = staticCompositionLocalOf { WorkspacePreferenceController() }
@@ -70,11 +71,12 @@ private class PresentationState(
     var revision = 0L
     var status by mutableStateOf("Проверяем настройки на сервере…")
     var failed by mutableStateOf(false)
+    var serverConfirmed by mutableStateOf(false)
 
     fun edit(next: WorkspacePreferences) {
         pending = mergeSettings(pending, settingsDifference(value.toSettings(), next.toSettings()))
         value = next; preview = null; revision++
-        status = "Сохраняем на сервере…"; failed = false
+        status = "Сохраняем на сервере…"; failed = false; serverConfirmed = false
     }
 
     fun fail(message: String) { failed = true; status = message }
@@ -91,6 +93,7 @@ private class PresentationState(
         val merged = mergeSettings(remote.value.toSettings(), pending)
         pending = settingsDifference(remote.value.toSettings(), merged)
         value = requireNotNull(presentationSettings(merged))
+        serverConfirmed = pending.length() == 0
     }
 
     private suspend fun cacheBeforeWrite(): Boolean {
@@ -114,6 +117,7 @@ private class PresentationState(
         }
         pending = acknowledgeSettings(pending, sent)
         value = requireNotNull(presentationSettings(mergeSettings(confirmed.value.toSettings(), pending)))
+        serverConfirmed = pending.length() == 0
         return true
     }
 
@@ -186,6 +190,6 @@ fun WorkspacePreferencesProvider(content: @Composable () -> Unit) {
     val controller = WorkspacePreferenceController(value = state.preview ?: state.value,
         preview = { state.preview = it }, cancelPreview = { state.preview = null },
         applyPreview = { state.preview?.let(save) }, update = save, saveStatus = state.status, saveFailed = state.failed,
-        retrySave = { events.trySend(Unit) }, refreshRemote = { events.trySend(Unit) })
+        retrySave = { events.trySend(Unit) }, refreshRemote = { events.trySend(Unit) }, serverConfirmed = state.serverConfirmed)
     CompositionLocalProvider(LocalWorkspacePreferences provides controller, content = content)
 }

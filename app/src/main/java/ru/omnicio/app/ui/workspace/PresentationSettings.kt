@@ -51,3 +51,7 @@ internal fun restoredSettingsPatch(raw: String?): JSONObject {
     if (patch.keys().asSequence().any { !defaults.has(it) }) return JSONObject()
     return if (presentationSettings(mergeSettings(defaults, patch)) == null) JSONObject() else patch
 }
+
+/** A previous account's permissive cache never opens a capture window for an unknown account policy. */
+internal fun screenCaptureBlocked(signedIn: Boolean, serverConfirmed: Boolean, preference: Boolean): Boolean =
+    !signedIn || !serverConfirmed || preference
