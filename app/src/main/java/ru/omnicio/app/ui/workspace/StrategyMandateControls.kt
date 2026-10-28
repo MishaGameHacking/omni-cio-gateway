@@ -65,11 +65,13 @@ internal fun StrategyNumberChoice(title: String, value: String, unit: String, en
     }, enabled = enabled, singleLine = true,
         label = { Text(title) }, trailingIcon = { Text(unit, Modifier.padding(end = 12.dp)) },
         isError = parsed == null,
-        supportingText = {
-            if (parsed == null) Text(if (text.isBlank()) "Укажите значение" else
-                "От $minimum до $maximum $unit" + if (whole) ". Целое число." else "")
-            else if (text != value) Text("Сохранится после завершения ввода")
-        },
+        supportingText = if (parsed == null || text != value) {
+            {
+                if (parsed == null) Text(if (text.isBlank()) "Укажите значение" else
+                    "От $minimum до $maximum $unit" + if (whole) ". Целое число." else "")
+                else Text("Сохранится после завершения ввода")
+            }
+        } else null,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
             keyboardType = if (whole) androidx.compose.ui.text.input.KeyboardType.Number else androidx.compose.ui.text.input.KeyboardType.Decimal,
             imeAction = androidx.compose.ui.text.input.ImeAction.Done),

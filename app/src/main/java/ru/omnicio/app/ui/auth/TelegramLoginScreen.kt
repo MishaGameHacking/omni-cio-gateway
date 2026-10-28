@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -47,16 +48,7 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    listOf(SpectrumSymbol.Portfolio to "Активы", SpectrumSymbol.Capital to "Риски",
-                        SpectrumSymbol.Growth to "Стратегия").forEach { (symbol, label) ->
-                        Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            SpectrumIcon(symbol, Modifier.size(56.dp), motionAllowed = false)
-                            Text(label, style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-                }
+                LoginBenefits()
                 SpectrumCard {
                     errorMessage?.let {
                         Text(it, color = MaterialTheme.colorScheme.error,
@@ -85,3 +77,29 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
     }
 }
 
+
+@Composable
+private fun LoginBenefits() {
+    val benefits = listOf(SpectrumSymbol.Portfolio to "Активы", SpectrumSymbol.Capital to "Риски",
+        SpectrumSymbol.Growth to "Стратегия")
+    if (LocalDensity.current.fontScale > 1.2f) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            benefits.forEach { (symbol, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SpectrumIcon(symbol, Modifier.size(40.dp), motionAllowed = false)
+                    Text(label, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            benefits.forEach { (symbol, label) ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SpectrumIcon(symbol, Modifier.size(56.dp), motionAllowed = false)
+                    Text(label, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    }
+}

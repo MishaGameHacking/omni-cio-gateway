@@ -29,7 +29,7 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
                 emphasized = activeId == profile.text("id", "")) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SpectrumIcon(strategyProfileSymbol(profile.text("id", "")), Modifier.size(48.dp), motionAllowed = false)
-                    Text(profile.text("title", ""), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    Text(profile.text("title", ""), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium.copy(hyphens = androidx.compose.ui.text.style.Hyphens.Auto))
                 }
                 Text(profile.text("description", ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val value = profile.optJSONObject("config")

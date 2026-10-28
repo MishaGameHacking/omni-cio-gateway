@@ -37,7 +37,7 @@ val LocalWideNavigation = staticCompositionLocalOf { false }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
 private val primaryTabs = analystPrimaryDestinations.mapNotNull { it.tab }
 
-/** A compact icon dock; labels remain available to accessibility and tooltips. */
+/** All four destinations stay visible; narrow large-text layouts use two rows. */
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
@@ -48,12 +48,24 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
         color = MaterialTheme.colorScheme.surface) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)
-                .selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically) {
-                primaryTabs.forEach { tab ->
-                    DockDestination(tab, tab == selected.primaryDestination(),
-                        Modifier.weight(1f).testTag("bottom-destination-" + tab.name.lowercase())) { navigate(tab) }
+            BoxWithConstraints(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                val density = LocalDensity.current
+                val measurer = rememberTextMeasurer()
+                val labelStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                val needed = primaryTabs.maxOf {
+                    measurer.measure(AnnotatedString(it.label()), labelStyle, softWrap = false).size.width
+                }
+                val columns = if (with(density) { needed.toDp() + 12.dp } <= maxWidth / 4) 4 else 2
+                Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    primaryTabs.chunked(columns).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            row.forEach { tab ->
+                                DockDestination(tab, tab == selected.primaryDestination(),
+                                    Modifier.weight(1f).testTag("bottom-destination-" + tab.name.lowercase())) { navigate(tab) }
+                            }
+                        }
+                    }
                 }
             }
         }

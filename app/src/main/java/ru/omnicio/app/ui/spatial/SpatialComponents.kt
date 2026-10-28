@@ -93,7 +93,9 @@ fun SpatialField(
     val palette = LocalSpectrumPalette.current
     val state = when { !enabled -> SpatialState.Disabled; error -> SpatialState.Attention; focused -> SpatialState.Selected; else -> SpatialState.Idle }
     SpatialSurface(modifier, SpatialSurfaceKind.Input, color = palette.card,
-        state = state, content = content)
+        state = state) {
+        Box(Modifier.padding(vertical = 6.dp), content = content)
+    }
 }
 
 /** Original animated 2D vectors; labels and interaction stay native. */
