@@ -16,7 +16,7 @@ jobs:
         with:
           script: |
             const baseline='1da6e6420b51ebe66c8196e3869a2525f0ffe69f';
-            const ref='5384abda0bf1b47a50ad136189eeab7e77d51dab';
+            const ref='88e1108058ef596a125f0eaf8f15502b58c4a302';
             const old=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:baseline,per_page:100});
             const completed=old.filter(c=>c.name==='SonarCloud Code Analysis' && c.status==='completed');
             if (completed.length!==1) throw new Error('External analyzer identity is ambiguous');
