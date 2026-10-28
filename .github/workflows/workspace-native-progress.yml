@@ -17,7 +17,7 @@ jobs:
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40763630833-1"
+              folder = Path("C:/") / runner / "_work/_temp/server-version-client-40764615158-1"
               for path in folder.glob("*.log"):
                   with path.open("rb") as stream:
                       stream.seek(max(0, path.stat().st_size - 24000))
