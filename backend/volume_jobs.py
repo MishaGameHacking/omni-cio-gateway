@@ -1,7 +1,7 @@
 """Idempotent workspace jobs with durable checkpoints and honest paid states."""
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, nullcontext
 from contextvars import ContextVar
 from datetime import date, datetime, timezone
 import json
@@ -278,6 +278,14 @@ def _fail_job(job: dict, error: Exception) -> None:
         db.execute("UPDATE workspace_jobs SET state=?,error_code=?,updated_at=? WHERE id=? AND owner=?", (status, code, int(time.time()), job["id"], job["owner"]))
 
 
+def _public_collection(user, payload, checkpoint):
+    try:
+        from .osint_worker import collect
+    except ImportError:
+        from osint_worker import collect
+    return collect(user, payload, checkpoint, progress)
+
+
 def run_job(identifier: str | None = None) -> None:
     job = _claim(identifier)
     if job is None:
@@ -286,11 +294,13 @@ def run_job(identifier: str | None = None) -> None:
     try:
         with closing(backend.connect()) as db:
             user = db.execute("SELECT * FROM users WHERE id=?", (job["user_id"],)).fetchone()
-        if user is None or not user["tinvest_token_encrypted"]:
+        if user is None or (job["kind"] != "osint" and not user["tinvest_token_encrypted"]):
             raise HTTPException(409, "tinvest_not_connected")
         payload, checkpoint = json.loads(job["payload_json"]), json.loads(job["checkpoint_json"])
-        with monitoring_connection(job["user_id"], user["tinvest_token_encrypted"]):
-            result = _perform_job(job, user, payload, checkpoint)
+        access = nullcontext() if job["kind"] == "osint" else monitoring_connection(job["user_id"], user["tinvest_token_encrypted"])
+        with access:
+            result = (_public_collection(user, payload, checkpoint) if job["kind"] == "osint"
+                      else _perform_job(job, user, payload, checkpoint))
             with transaction(backend.connect) as db:
                 assert_current_in(db)
                 db.execute("UPDATE workspace_jobs SET state='completed',stage='done',result_json=?,checkpoint_json='{}',updated_at=? WHERE id=? AND owner=?", (encode(result), int(time.time()), job["id"], job["owner"]))

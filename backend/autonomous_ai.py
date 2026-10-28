@@ -983,13 +983,21 @@ def run_scheduler_cycle() -> dict[str, int]:
     queue = AnalysisQueue(backend.connect)
     try:
         from .background_dispatch import enqueue_cycle
+        from .osint_worker import enqueue_cycle as enqueue_osint
     except ImportError:
         from background_dispatch import enqueue_cycle
+        from osint_worker import enqueue_cycle as enqueue_osint
     with closing(backend.connect()) as db:
-        users = db.execute("SELECT * FROM users WHERE tinvest_token_encrypted IS NOT NULL ORDER BY id").fetchall()
+        users = db.execute("SELECT * FROM users ORDER BY id").fetchall()
     for user in users:
         user_id = int(user["id"])
         if not _automation().preferences(user_id)["enabled"]:
+            continue
+        try:
+            enqueue_osint(user)
+        except HTTPException:
+            logger.info("Public research collection already pending or paused")
+        if not user["tinvest_token_encrypted"]:
             continue
         try:
             enqueue_cycle(user)

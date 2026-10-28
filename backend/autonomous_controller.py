@@ -562,8 +562,10 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
         response.headers["Cache-Control"] = "no-store, private"
     try:
         from .autonomous_ai import SCHEDULER_ENABLED
+        from . import osint_read
     except ImportError:
         from autonomous_ai import SCHEDULER_ENABLED
+        import osint_read
     now, user_id, key = time.time(), int(user["id"]), state.broker_key(user)
     pref = preferences(user_id)
     active = state.active_strategy(user_id)
@@ -602,7 +604,7 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
             "enabled": pref["enabled"], "preference_version": pref["version"],
             "broker_connected": connected, "scheduler_enabled": SCHEDULER_ENABLED, "state": state_name,
             "blockers": [reason(code) for code in codes], "last_observation_at": observed, "last_full_collection_at": full,
-            "current_job": current_job, "dispatch": dispatch,
+            "current_job": current_job, "dispatch": dispatch, "osint": osint_read.status(backend.connect),
             "initial_observation": None if initial is None else {"at": _iso(initial["first_observed_at"]),
                 "snapshot_id": initial["first_snapshot_id"], "summary": "Первый снимок счёта получен и сохранён."},
             "discovery": discovery, "execution": {"mode": "read_only", "real_orders_enabled": False},
