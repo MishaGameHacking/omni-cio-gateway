@@ -191,8 +191,9 @@ private class FlatIconPainter(
                     cubicTo(49f, 22f, 49f, 19f, 46f, 18f); close()
                 }
                 drawPath(left, teal.copy(alpha=.18f)); drawPath(left, teal, style=Stroke(5f,cap=StrokeCap.Round))
+                val rightColor = violet
                 withTransform({ translate(100f,0f); scale(-1f,1f,Offset.Zero) }) {
-                    drawPath(left, violet.copy(alpha=.18f)); drawPath(left, violet, style=Stroke(5f,cap=StrokeCap.Round))
+                    drawPath(left, rightColor.copy(alpha=.18f)); drawPath(left, rightColor, style=Stroke(5f,cap=StrokeCap.Round))
                 }
                 path(listOf(23f to 31f,35f to 37f,35f to 47f),teal)
                 path(listOf(18f to 57f,29f to 54f,37f to 62f),teal)
