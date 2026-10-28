@@ -1,4 +1,4 @@
-name: Request pending external server source analysis
+name: Read completed server shell quality analysis
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
