@@ -113,8 +113,11 @@ def test_buying_power_or_ledger_generated_balance_is_not_independent_reconciliat
 
 @pytest.mark.parametrize('amount',[True,False,1.0,'NaN','Infinity','-Infinity','1e25','1e-10','9'*81])
 def test_invalid_money_is_not_coerced_or_silently_rounded(amount):
+    opening, closing = balances()
+    cash_movement = movement(amount=amount)
+    observed_window = window()
     with pytest.raises(AccountingError):
-        reconcile_cash(*balances(),[movement(amount=amount)],[window()])
+        reconcile_cash(opening, closing, [cash_movement], [observed_window])
 
 
 def test_exact_flow_twr_separates_deposit_from_gain():
