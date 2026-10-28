@@ -119,7 +119,7 @@ for path in Path('/proc').glob('[0-9]*/comm'):
  if name in {'java','adb','qemu-system-x86','emulator','gradle'}:counts[name]=counts.get(name,0)+1
 report['active_build_process_names']=counts
 report['status']='observed'
-directory=ROOT/('post-runtime-observation-'+ENVELOPE['run_id'])
+directory=ROOT/('post-runtime-observation-'+ENVELOPE['run_id']+'-'+str(time.time_ns()))
 directory.mkdir(mode=0o700)
 (directory/'observation.json').write_text(json.dumps(report,indent=2)+'\n')
 print(json.dumps(report,indent=2),flush=True)
