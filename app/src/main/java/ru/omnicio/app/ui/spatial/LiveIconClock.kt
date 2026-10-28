@@ -48,7 +48,7 @@ internal fun rememberLiveDecoration(enabled: Boolean): LiveDecoration {
     var visible by remember { mutableStateOf(false) }
     val active = enabled && visible && motion == SpatialMotion.Live && clock != null
     DisposableEffect(clock, active) {
-        if (active) clock?.attach(owner)
+        if (active) clock!!.attach(owner)
         onDispose { clock?.detach(owner) }
     }
     val still = rememberUpdatedState(0f)
