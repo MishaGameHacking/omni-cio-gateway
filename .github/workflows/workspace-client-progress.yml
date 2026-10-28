@@ -16,7 +16,7 @@ jobs:
           from pathlib import Path
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
-          run = "40723456399"
+          run = "40724497603"
           for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
               folder = Path("C:/") / runner / "_work/_temp" / ("server-version-client-" + run + "-1")
               report = folder / "shell-build-steps.json"
