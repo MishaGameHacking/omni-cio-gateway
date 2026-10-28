@@ -407,7 +407,12 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         return _empty_discovery("blocked", ["observed_cash_not_above_reserve"]), cursor
     found, scanned, sources, errors = {}, 0, [], []
     deadline = time.monotonic() + DISCOVERY_TIME_BUDGET_SECONDS
-    for kind in ("share", "bond"):
+    try:
+        from .strategy_profiles import research_tuning
+    except ImportError:
+        from strategy_profiles import research_tuning
+    tuning = research_tuning(config, snapshot)
+    for kind in tuning["asset_classes"]:
         assert_enabled(user_id)
         assert_monitoring_access(backend.connect)
         try:
@@ -429,7 +434,7 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         result["state"] = "blocked"
         result["reasons"] = [reason("catalogue_unavailable" if errors else "catalogue_no_eligible_instruments")]
         return result, cursor
-    batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, len(ordered)))]
+    batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, tuning['candidate_batch'], len(ordered)))]
     for item in batch:
         if time.monotonic() >= deadline:
             errors.append("discovery_time_budget")
@@ -438,6 +443,7 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     result["coverage"]["reviewed"] = len(result["candidates"])
     result["coverage"]["constraint_checks_passed"] = sum(item["constraints_passed"] for item in result["candidates"])
     result["reasons"] += [reason(code) for code in sorted(set(errors))]
+    result["tuning"] = tuning
     current = state.active_strategy(user_id)
     if not current or current["version"] != version:
         raise HTTPException(409, "strategy_changed")
@@ -446,6 +452,12 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
 
 def observe_and_discover(user: Any, snapshot: dict, current_time: datetime) -> None:
     now, user_id, key = int(time.time()), int(user["id"]), state.broker_key(user)
+    try:
+        from .decision_views import prune_obsolete_events
+    except ImportError:
+        from decision_views import prune_obsolete_events
+    with transaction(backend.connect) as db:
+        prune_obsolete_events(db, user_id, now)
     record_initial_observation(user, snapshot, int(current_time.timestamp()))
     claim = _claim_discovery(user, now)
     if claim is None:
@@ -613,11 +625,16 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
 
 @router.get("/decisions")
 def decisions(user: Any = Depends(backend.current_user)) -> dict:
+    try:
+        from .decision_views import project
+    except ImportError:
+        from decision_views import project
     user_id, key = int(user["id"]), state.broker_key(user)
     with closing(backend.connect()) as db:
         rows = db.execute("""SELECT payload_json FROM automation_events WHERE user_id=? AND broker_key=?
             ORDER BY created_at DESC,id DESC LIMIT 30""", (user_id, key)).fetchall()
     summary = status(user)
-    return {"schema_version": 1, "events": [json.loads(row[0]) for row in rows],
+    views = project(summary["discovery"], [json.loads(row[0]) for row in rows], int(time.time()))
+    return {"schema_version": 1, "views": views, "events": views["history"],
             "state": summary["state"], "blockers": summary["blockers"],
             "discovery": summary["discovery"], "execution": summary["execution"]}

@@ -54,9 +54,14 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
     val events = workspace?.sectionData("events")?.records("items").orEmpty().filter { event ->
         event.stringList("instrument_uids").any { uid -> account.positions.any { it.id == uid } } || event.optionalText("account_id") == account.id
     }
-    LazyColumn(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+    var panel by rememberSaveable(account.id) { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+    SpectrumTabs(listOf("График", "Деньги", "События"), panel, { panel = it },
+        Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+    key(account.id, panel) {
+    LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
         contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
-        item(key = "history") {
+        if (panel == 0) item(key = "history") {
             CompactCard {
                 CurrencyChoice(account.totalValue.currency)
                 if (request.error != null || request.showingPreviousQuery || request.json == null) AccountDataNotice(request)
@@ -77,13 +82,18 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                 }
             }
         }
-        item(key = "period-comparison") { DetailFold("Сравнить два периода") { AccountPeriodComparison(token, account) } }
-        if (events.isNotEmpty()) item(key = "source-events") { DetailFold("События рядом с графиком") {
+        if (panel == 1) item(key = "period-comparison") { DetailFold("Сравнить два периода") { AccountPeriodComparison(token, account) } }
+        if (panel == 2 && events.isNotEmpty()) item(key = "source-events") { CompactCard {
             val destination = LocalPortfolioDestination.current
             Text("Связи относятся к инструментам текущего портфеля. Совпадение даты с изменением баланса не определяет его причину.")
             WorkspaceEvents(events, workspace?.records("sources").orEmpty()) { uid -> destination(PortfolioDestination(accountId = account.id, query = uid)) }
         } }
-        item(key = "cashflow") {
+        if (panel == 2 && events.isEmpty()) item { CompactCard {
+            SectionHeading("События портфеля")
+            Notice("Подтверждённых событий по текущим активам пока нет.")
+        } }
+        if (panel == 1) item(key = "money-period") { PeriodControls(period, setPeriod) }
+        if (panel == 1) item(key = "cashflow") {
             CompactCard {
                 SectionHeading("Движение денег")
                 val scope = selectedPeriod ?: period
@@ -100,7 +110,7 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                 }
             }
         }
-        if (!historyOnly) item(key = "open-positions") {
+        if (!historyOnly && panel == 1) item(key = "open-positions") {
             CompactCard {
                 SectionHeading("Открытые позиции")
                 DataRow("Дневной результат счёта", account.dailyYieldAmount.moneyText(true))
@@ -113,7 +123,9 @@ internal fun AccountAnalytics(token: String, account: PortfolioAccount, historyO
                 Notice("Результат открытых позиций не равен доходу за всю историю счёта. Неоценённые позиции не включены в сумму.")
             }
         }
-        if (!historyOnly) item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
+        if (!historyOnly && panel == 2) item(key = "structure") { CompactCard { SectionHeading("Структура портфеля"); AccountStructure(account) } }
+    }
+    }
     }
 }
 

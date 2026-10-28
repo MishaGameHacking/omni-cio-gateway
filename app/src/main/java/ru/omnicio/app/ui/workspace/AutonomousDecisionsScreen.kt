@@ -5,10 +5,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
@@ -17,7 +17,7 @@ import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.LocalAnalystTabNavigator
 
-/** Server-prepared observations. Reading this screen never starts analysis or an order. */
+/** Three independent views. Reading them never starts paid analysis or an order. */
 @Composable
 fun AutonomousDecisionsScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/automation/decisions")
@@ -25,83 +25,85 @@ fun AutonomousDecisionsScreen(onBack: () -> Unit) {
     val navigateTab = LocalAnalystTabNavigator.current
     val data = resource.data
     val discovery = data?.optJSONObject("discovery")
-    val candidates = discovery?.records("candidates").orEmpty()
-    val events = data?.records("events").orEmpty()
-    WorkspaceDetailPage("Решения", "Проверки и результаты анализа", onBack, SpectrumSymbol.Goal) { padding ->
-        LazyColumn(
-            Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(workspaceGap),
-        ) {
-            item { WorkspaceRequestState(resource) }
-            item {
-                SpectrumCard(emphasized = true) {
-                    Text("Автоматический отбор", style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.semantics { heading() })
-                    Text(discoverySummary(discovery?.text("state", "unknown")),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    discovery?.text("as_of", "")?.takeIf(String::isNotBlank)?.let {
-                        Text("Последний результат: " + relativeObservation(it),
-                            style = MaterialTheme.typography.bodyMedium)
-                    }
-                    val execution = data?.optJSONObject("execution")
-                    Text(if (execution?.text("mode", "") == "read_only" && !execution.optBoolean("real_orders_enabled"))
-                        "Режим: анализ" else "Режим исполнения не подтверждён",
-                        style = MaterialTheme.typography.labelLarge)
-                }
-            }
-            val blockers = data?.records("blockers").orEmpty()
-            if (blockers.isNotEmpty()) item {
-                SpectrumCard {
-                    Text("Что нужно для работы", style = MaterialTheme.typography.titleMedium)
-                    blockers.forEach { blocker ->
-                        blocker.text("message", "").takeIf(String::isNotBlank)?.let { Text(it) }
-                    }
-                    val needsStrategy = blockers.any { it.text("code", "") == "strategy_required" }
-                    SpectrumSecondaryButton(if (needsStrategy) "Настроить стратегию" else "Открыть настройки",
-                        { if (needsStrategy) navigate(WorkspaceRoute.Strategies) else navigateTab(AnalystTab.Profile) },
-                        Modifier.fillMaxWidth())
-                }
-            }
-            if (candidates.isEmpty() && !resource.busy && data != null) item {
-                SpectrumCard {
-                    Text("Проверенных предложений пока нет", style = MaterialTheme.typography.titleLarge)
-                    val reasons = discovery?.records("reasons").orEmpty()
-                    if (reasons.isEmpty()) {
-                        Text("Система покажет результат после получения данных и завершения проверок.",
+    val views = data?.optJSONObject("views")
+    val current = views?.records("current")
+        ?: discovery?.records("candidates").orEmpty().filter { it.optBoolean("evidence_current", false) }
+    val pending = views?.records("pending").orEmpty()
+    val history = views?.records("history") ?: data?.records("events").orEmpty()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selected = (current + pending).firstOrNull { it.text("instrument_uid", "") == selectedId }
+    WorkspaceDetailPage("Решения", "Результаты, проверка данных и журнал", onBack, SpectrumSymbol.Goal) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            SpectrumTabs(listOf("Актуально", "Проверка", "История"), tab,
+                { tab = it }, Modifier.padding(horizontal = 20.dp))
+            key(tab) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()
+                    .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
+                    contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+                    item { WorkspaceRequestState(resource) }
+                    if (tab < 2) item {
+                        Text(if (tab == 0) "На текущих данных · ${current.size}" else "Ожидают обновления · ${pending.size}",
+                            style = MaterialTheme.typography.titleLarge)
+                        Text(if (tab == 0) "Кандидаты для исследования. Покупки и продажи не выполняются."
+                            else "Сервер повторит проверку. Устаревшие сведения не считаются актуальным решением.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        reasons.take(6).forEach { reason ->
-                            reason.text("message", "").takeIf(String::isNotBlank)?.let { Text(it) }
+                    }
+                    val blockers = data?.records("blockers").orEmpty()
+                    if (tab == 0 && blockers.isNotEmpty()) item {
+                        SpectrumCard {
+                            Text("Для продолжения", style = MaterialTheme.typography.titleMedium)
+                            blockers.take(3).forEach { Text(it.text("message", "")) }
+                            val strategy = blockers.any { it.text("code", "") == "strategy_required" }
+                            SpectrumSecondaryButton(if (strategy) "Выбрать стратегию" else "Настройки",
+                                { if (strategy) navigate(WorkspaceRoute.Strategies) else navigateTab(AnalystTab.Profile) },
+                                Modifier.fillMaxWidth())
                         }
                     }
-                }
-            }
-            items(candidates, key = { it.text("instrument_uid", it.toString()) }) { candidate ->
-                ResearchCandidateCard(candidate)
-            }
-            if (events.isNotEmpty()) item {
-                Text("Последние результаты", style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(top = 4.dp).semantics { heading() })
-            }
-            items(events.take(12), key = { it.text("id", it.toString()) }) { event ->
-                SpectrumCard {
-                    Text(event.text("title", "Результат анализа"), style = MaterialTheme.typography.titleMedium)
-                    event.text("summary", "").takeIf(String::isNotBlank)?.let {
-                        Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val rows = if (tab == 0) current else pending
+                    if (tab < 2 && rows.isEmpty() && data != null && !resource.busy) item {
+                        SpectrumCard {
+                            Text(if (tab == 0) "Новых решений пока нет" else "Очередь проверок пуста",
+                                style = MaterialTheme.typography.titleMedium)
+                            Text(discoverySummary(discovery?.text("state", "unknown")),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (tab == 0 && pending.isNotEmpty()) SpectrumTextButton(
+                                "Ожидают проверки: ${pending.size}", { tab = 1 }, symbol = SpectrumSymbol.Forward)
+                        }
                     }
-                    event.text("at", "").takeIf(String::isNotBlank)?.let {
-                        Text(relativeObservation(it), style = MaterialTheme.typography.bodySmall)
+                    if (tab < 2) items(rows, key = { it.text("instrument_uid", it.toString()) }) { row ->
+                        SpectrumCard(onClick = { selectedId = row.text("instrument_uid", "") }) {
+                            Text(row.text("name", "Инструмент"), style = MaterialTheme.typography.titleMedium)
+                            Text(row.text("ticker", ""), style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary)
+                            Text(if (tab == 0) "Открыть проверку и основания" else "Обновление данных · открыть детали",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (tab == 2) {
+                        item { Text("Журнал за 30 дней", style = MaterialTheme.typography.titleLarge) }
+                        if (history.isEmpty() && data != null) item { Text("Событий за этот период нет.") }
+                        items(history, key = { it.text("id", it.toString()) }) { event ->
+                            SpectrumCard {
+                                Text(event.text("title", "Результат анализа"), style = MaterialTheme.typography.titleMedium)
+                                Text(event.text("summary", ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(localMoment(event.text("at", "")), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                 }
             }
         }
     }
+    if (selectedId != null) WorkspaceDialog("Проверка инструмента", { selectedId = null }) {
+        if (selected != null) ResearchCandidateDetails(selected)
+        else Text("Результат обновлён или больше не актуален. Откройте текущий список.")
+    }
 }
 
 @Composable
-private fun ResearchCandidateCard(candidate: JSONObject) {
+private fun ResearchCandidateDetails(candidate: JSONObject) {
     SpectrumCard {
         val ticker = candidate.text("ticker", "")
         Text(candidate.text("name", ticker.ifBlank { "Инструмент" }),

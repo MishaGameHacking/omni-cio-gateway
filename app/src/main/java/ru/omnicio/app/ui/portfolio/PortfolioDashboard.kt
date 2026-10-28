@@ -48,7 +48,7 @@ internal fun PortfolioDashboard(
     Column(modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
         SpectrumPageHeader(
             title = "Портфель",
-            subtitle = "Счета и активы",
+            subtitle = when (selectedSection) { 1 -> "Ваши инструменты"; 2 -> "История капитала"; else -> "Распределение и счета" },
             symbol = SpectrumSymbol.Portfolio,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )

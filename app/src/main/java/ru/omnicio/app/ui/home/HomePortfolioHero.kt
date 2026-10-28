@@ -24,7 +24,7 @@ internal fun HomePortfolioHero(state: PortfolioUiState, currency: PortfolioCurre
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SpectrumIcon(SpectrumSymbol.Portfolio, Modifier.size(40.dp), selected = true)
-            Text("Мой портфель", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
+            Text("Капитал", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
         }
         if (snapshot != null) {
             Text(snapshot.totalValue.moneyText(), style = MaterialTheme.typography.headlineLarge,
@@ -40,7 +40,7 @@ internal fun HomePortfolioHero(state: PortfolioUiState, currency: PortfolioCurre
                 Text("Оценка в ${snapshot.totalValue.currency}; запрошена ${currency.name}", style = MaterialTheme.typography.bodySmall)
             if (error != null) Text("Сохранённый срез · $error", color = MaterialTheme.colorScheme.error)
             if (snapshot.warnings.isNotEmpty()) SpectrumBadge("Есть ограничения данных", accent = LocalSpectrumPalette.current.amber)
-            SpectrumPrimaryButton("Открыть портфель", onPortfolio, Modifier.fillMaxWidth())
+            SpectrumTextButton("Счета и активы", onPortfolio, Modifier.fillMaxWidth(), symbol = SpectrumSymbol.Forward)
         } else when (state) {
             PortfolioUiState.Loading, PortfolioUiState.ApiConnected -> {
                 SpectrumLoadingIndicator(description = "Получаем портфель")

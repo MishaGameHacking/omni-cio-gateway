@@ -40,6 +40,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     var hasEditorState by rememberSaveable(userId) { mutableStateOf(false) }
     var loaded by remember(userId) { mutableStateOf(false) }
     var tab by rememberSaveable(userId) { mutableIntStateOf(0) }
+    var parameterTab by rememberSaveable(userId) { mutableIntStateOf(0) }
     val version = active?.optInt("version") ?: 0
     val config = remember(configText) { JSONObject(configText) }
     LaunchedEffect(resource.data, auto?.ready) {
@@ -74,7 +75,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Профиль", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Стратегии", "Параметры", "История"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
@@ -85,10 +86,18 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                     AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) }
                 }
                 when (tab) {
-                    0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
-                    1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
-                    2 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
-                    3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
+                    0 -> item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
+                        editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
+                    1 -> {
+                        item { SpectrumTabs(listOf("Цель", "Профиль", "Резерв", "Лимиты"),
+                            parameterTab, { parameterTab = it }) }
+                        when (parameterTab) {
+                            0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
+                            1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
+                            2 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
+                            3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
+                        }
+                    }
                     else -> resource.data?.records("history").orEmpty().forEach { old -> item {
                         StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
                     } }
