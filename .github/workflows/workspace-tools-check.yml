@@ -1,0 +1,27 @@
+name: Verify workspace delivery tools on owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-tools-check.yml, deploy/workspace_release.py, deploy/test_workspace_release.py]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: workspace-installer-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: deploy
+      - name: Verify replacement and rollback with synthetic files on laptop
+        shell: cmd
+        working-directory: workspace-installer-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
+          if errorlevel 1 exit /b 1
+          py -3 -m py_compile deploy\workspace_release.py
+          if errorlevel 1 exit /b 1
+          py -3 deploy\test_workspace_release.py -v
+          if errorlevel 1 exit /b 1
