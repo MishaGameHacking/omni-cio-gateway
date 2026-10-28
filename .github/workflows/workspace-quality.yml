@@ -1,0 +1,24 @@
+name: Inspect exact workspace source quality
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-quality.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Read exact-source Sonar findings
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref='67da85cb461c5996277d24fee7bd08efe12eca58';
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            for(const check of checks.filter(row=>/sonar/i.test(row.name))) {
+              core.info('SONAR_CHECK='+JSON.stringify({id:check.id,sha:check.head_sha,status:check.status,conclusion:check.conclusion}));
+              const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:check.id,per_page:100});
+              for(const note of notes) core.info('SONAR_FINDING='+JSON.stringify({path:note.path,line:note.start_line,title:note.title,message:note.message}));
+            }
