@@ -9,7 +9,7 @@ from __future__ import annotations
 from contextlib import closing
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import HTTPException
 
@@ -174,6 +174,15 @@ def automatic_analysis_gate(user: Any, job_context: tuple | None, now: datetime)
     return None if current["regular_price_polling_allowed"] else current
 
 
+def _execute_lanes(result: dict, actions: list[tuple[str, Callable[[], dict]]]) -> dict:
+    for name, action in actions:
+        try:
+            result["lanes"][name] = action()
+        except HTTPException as error:
+            result["lanes"][name] = {"state": "deferred", "http_status": error.status_code}
+    return result
+
+
 def enqueue_cycle(user: Any, *, now: datetime | None = None) -> dict:
     """A cheap persisted-data decision. A failed lane cannot starve another."""
     clock = now or datetime.now(timezone.utc)
@@ -191,9 +200,4 @@ def enqueue_cycle(user: Any, *, now: datetime | None = None) -> dict:
     observed_age = _age((snapshot or {}).get("as_of"), clock)
     if snapshot is not None and window["regular_price_polling_allowed"] and (observed_age is None or observed_age >= PRICE_INTERVAL):
         actions.append(("analysis", lambda: _enqueue_analysis(current, automatic=True, now=clock)))
-    for name, action in actions:
-        try:
-            result["lanes"][name] = action()
-        except HTTPException as error:
-            result["lanes"][name] = {"state": "deferred", "http_status": error.status_code}
-    return result
+    return _execute_lanes(result, actions)
