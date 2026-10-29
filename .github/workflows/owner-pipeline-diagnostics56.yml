@@ -1,0 +1,112 @@
+name: Проверить данные и предварительную проверку чата без платных вызовов
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-pipeline-diagnostics56.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40954726120'
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+  OWNER_SUPPLIED_AI_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
+  EXPECTED_SUPPLIED_PROBE_SHA: 5c12bd815c65f9e4aece011f4a99330fb538ceb3
+  EXPECTED_SUPPLIED_PROBE_RUN: '40953689640'
+  OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
+jobs:
+  connect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require tested administration, successful probe and deployed budget controls
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            for(const [id,sha,path] of [
+              [e.EXPECTED_AI_ADMIN_TOOLS_RUN,e.EXPECTED_AI_ADMIN_TOOLS_SHA,'.github/workflows/owner-ai-admin-tools55.yml'],
+              [e.EXPECTED_SUPPLIED_PROBE_RUN,e.EXPECTED_SUPPLIED_PROBE_SHA,'.github/workflows/owner-ai-recheck55.yml'],
+              ['40919271605','b8ecdce47e1ecaff06190e46b1fc912687132b6b','.github/workflows/workspace-deploy.yml']]) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(id)});
+              if(r.head_sha!==sha||r.conclusion!=='success'||r.status!=='completed'||r.path!==path||r.run_attempt!==1)
+                throw new Error('Exact successful evidence required');
+            }
+            for(const [name,digest] of Object.entries(JSON.parse(e.OWNER_AI_EXPECTED_BUDGET_SOURCES))) {
+              const {data:f}=await github.rest.repos.getContent({...context.repo,path:'backend/'+name,ref:'b69169abb4e750985ba79bf4c08f8f0f1a2ef596'});
+              if(require('node:crypto').createHash('sha256').update(Buffer.from(f.content,'base64')).digest('hex')!==digest)
+                throw new Error('Budget source identity changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+          sparse-checkout: |
+            tools/owner_ai_admin_transport.py
+            tools/admin_owner55_ai.py
+            tools/adopt_supplied_owner55_ai.py
+            tools/owner55_ai_guest.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/activate_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/owner_plan_transport_20261027.py
+            deploy/stage_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            tools/provision_owner55_bootstrap.py
+            deploy/provision_owner55_bootstrap.py
+            tools/sync_owner55_ai_key.py
+            deploy/sync_owner55_ai_key.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/prepare_owner_vm.py
+            deploy/access_owner_vm.py
+            tools/timeweb_ci_capacity.py
+            tools/timeweb_actions_probe.py
+            tools/timeweb_ci_catalog.py
+          sparse-checkout-cone-mode: false
+      - name: Read only fixed flags and counters from the owner database
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput,source_proof
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          remote='import json, os, sqlite3, subprocess, time\nfrom pathlib import Path\n\ndef run():\n    out = dict(status=\'blocked\', server_id=9417611, estimate_available=False,\n        estimate_reason=\'uninspected\', snapshot_age_seconds=-1, documents=0, reports=0,\n        failing_targets=0, due_targets=0, strategy_configured=False, automation_enabled=False,\n        discovery_state=\'unknown\', refresh_state=\'unknown\', refresh_error=\'none\',\n        snapshot_positions=0, sources_partial=0, news_items=0)\n    try:\n        if os.getuid() != 0: return out\n        STAGING[\'verify_sources\'](ENVELOPE[\'payload\'][\'source_sha256\'])\n        settings=STAGING[\'parse_environment\'](STAGING[\'configuration_snapshot\']()[0])\n        path=Path(\'/var/lib/analyst-ai/backend.db\')\n        if Path(settings.get(\'DATABASE_PATH\',str(path)))!=path or path.resolve(strict=True)!=path:return out\n        db=sqlite3.connect(path.as_uri()+\'?mode=ro\',uri=True,timeout=5)\n        db.row_factory=sqlite3.Row\n        db.execute(\'PRAGMA query_only=ON\')\n        try:\n            owner=db.execute(\'SELECT u.id FROM users u JOIN installation_owner o ON o.telegram_sub=u.telegram_sub WHERE o.singleton=1\').fetchone()\n            if owner is None:return out\n            uid=owner[0];now=int(time.time())\n            def count(sql,args=()):return int(db.execute(sql,args).fetchone()[0])\n            out[\'documents\']=count(\'SELECT count(*) FROM osint_publications_v1 WHERE expires_at>?\',(now,))\n            out[\'reports\']=count("SELECT count(*) FROM osint_publications_v1 WHERE expires_at>? AND kind=\'report\'",(now,))\n            out[\'failing_targets\']=count("SELECT count(*) FROM osint_targets_v1 WHERE status IN (\'unavailable\',\'partial\')")\n            out[\'due_targets\']=count(\'SELECT count(*) FROM osint_targets_v1 WHERE next_at<=? AND lease_until<=?\',(now,now))\n            out[\'strategy_configured\']=bool(count(\'SELECT count(*) FROM workspace_strategy_versions WHERE user_id=?\',(uid,)))\n            pref=db.execute(\'SELECT enabled FROM automation_preferences WHERE user_id=?\',(uid,)).fetchone()\n            out[\'automation_enabled\']=pref is None or bool(pref[0])\n            row=db.execute("SELECT payload_json,created_at FROM workspace_snapshots WHERE user_id=? AND currency=\'RUB\'",(uid,)).fetchone()\n            if row:\n                snap=json.loads(row[0]);out[\'snapshot_age_seconds\']=max(0,now-row[1])\n                out[\'snapshot_positions\']=len(snap.get(\'positions\',[]))\n                out[\'sources_partial\']=len(snap.get(\'warnings\',[]))\n                out[\'news_items\']=len(snap.get(\'news\',[])) if isinstance(snap.get(\'news\'),list) else 0\n            row=db.execute(\'SELECT state FROM automation_discovery WHERE user_id=?\',(uid,)).fetchone()\n            if row and row[0] in {\'waiting\',\'blocked\',\'partial\',\'current\',\'running\',\'complete\',\'ready\',\'paused\'}:out[\'discovery_state\']=row[0]\n            row=db.execute("SELECT state,error_code FROM workspace_jobs WHERE user_id=? AND kind=\'refresh\' ORDER BY updated_at DESC LIMIT 1",(uid,)).fetchone()\n            if row:\n                if row[0] in {\'queued\',\'running\',\'completed\',\'failed\',\'uncertain\',\'cancelled\'}:out[\'refresh_state\']=row[0]\n                out[\'refresh_error\']=\'none\' if row[1] is None else \'present\'\n        finally:db.close()\n        pid=subprocess.run([\'systemctl\',\'show\',\'analyst-ai-owner.service\',\'--property=MainPID\',\'--value\'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()\n        if not pid.isdigit() or int(pid)<=1:return out\n        entries=Path(\'/proc/\'+pid+\'/environ\').read_bytes().split(b\'\\0\')\n        env={k.decode():v.decode() for k,v in (x.split(b\'=\',1) for x in entries if x)}\n        argv=Path(\'/proc/\'+pid+\'/cmdline\').read_bytes().split(b\'\\0\')\n        interpreter=Path(argv[0].decode())\n        if not str(interpreter).startswith(\'/opt/analyst-ai/\') or not interpreter.is_file():return out\n        if not interpreter.name.startswith(\'python\'):interpreter=interpreter.with_name(\'python\')\n        child=\'\'\'import json,sqlite3,sys,os\nsys.path.insert(0,\'/opt/analyst-ai/backend\')\nimport app, volume_chat as chat\nfrom ai_guarded_client import configured_route\nfrom ai_budget import configured_limits\nfrom ai_broker_access import broker_binding\ndef connect():\n d=sqlite3.connect(\'file:/var/lib/analyst-ai/backend.db?mode=ro\',uri=True);d.row_factory=sqlite3.Row;d.execute(\'PRAGMA query_only=ON\');return d\napp.connect=connect\nout={\'available\':False,\'reason\':\'unknown\'}\ntry:\n with connect() as db:user=db.execute(\'SELECT u.* FROM users u JOIN installation_owner o ON o.telegram_sub=u.telegram_sub WHERE o.singleton=1\').fetchone()\n context=chat.Context(mode=\'portfolio\').model_dump(mode=\'json\')\n question=\'Объясни состояние моего инвестиционного портфеля\'\n plan=chat._chat_plan(int(user[\'id\']),question,\'auto\',None,context=context)\n messages,packet=chat.model_messages(user,question,context)\n route=configured_route(plan.tier,os.environ,input_bytes=chat._encoded_size(messages),max_output_tokens=plan.max_output_tokens)\n broker_binding(connect,int(user[\'id\']))\n out={\'available\':all(x>0 for x in configured_limits(os.environ)),\'reason\':\'ready\'}\nexcept Exception as e:\n code=getattr(e,\'code\',getattr(e,\'detail\',None))\n allowed={\'workspace_refresh_required\',\'chat_context_too_large\',\'ai_route_unavailable\',\'ai_pricing_stale\',\'ai_ruble_budget_not_enabled\',\'ai_broker_connection_required\',\'ai_broker_binding_unavailable\',\'ai_external_processing_not_approved\',\'chat_out_of_scope\',\'ai_key_missing\',\'ai_region_not_allowed\',\'ai_model_not_allowed\'}\n out[\'reason\']=code if isinstance(code,str) and code in allowed else type(e).__name__ if type(e).__name__ in {\'KeyError\',\'TypeError\',\'ValueError\',\'OperationalError\',\'GuardError\',\'ChatPolicyError\',\'HTTPException\',\'CatalogError\'} else \'unknown\'\nprint(json.dumps(out))\n\'\'\'\n        result=subprocess.run([str(interpreter),\'-c\',child],env=env,capture_output=True,text=True,timeout=30)\n        if result.returncode!=0:out[\'estimate_reason\']=\'process_failed\'\n        else:\n            value=json.loads(result.stdout)\n            if type(value[\'available\']) is not bool:return out\n            out.update(estimate_available=value[\'available\'],estimate_reason=value[\'reason\'])\n        out[\'status\']=\'inspected\'\n    except BaseException:pass\n    return out\n\nif __name__==\'__main__\':print(json.dumps(run()),flush=True)\n'
+          stage=Path('deploy/stage_owner55_ai.py').read_text()
+          operation=chr(10).join([
+              'support={"__name__":"read_only_stage"}',
+              'exec(compile('+repr(stage)+',"stage","exec"),support)',
+              'exec(compile('+repr(remote)+',"owner-diagnostics","exec"),{"STAGING":support,"ENVELOPE":ENVELOPE,"__name__":"__main__"})'])
+          contract={k:bool for k in ['estimate_available','strategy_configured','automation_enabled']}
+          contract.update({k:int for k in ['server_id','snapshot_age_seconds','documents','reports','failing_targets','due_targets','snapshot_positions','sources_partial','news_items']})
+          contract.update(status={'blocked','inspected'},estimate_reason={'uninspected','ready','unknown','process_failed','workspace_refresh_required','chat_context_too_large','ai_route_unavailable','ai_pricing_stale','ai_ruble_budget_not_enabled','ai_broker_connection_required','ai_broker_binding_unavailable','ai_external_processing_not_approved','chat_out_of_scope','ai_key_missing','ai_region_not_allowed','ai_model_not_allowed','KeyError','TypeError','ValueError','OperationalError','GuardError','ChatPolicyError','HTTPException','CatalogError'},discovery_state={'unknown','waiting','blocked','partial','current','running','complete','ready','paused'},refresh_state={'unknown','queued','running','completed','failed','uncertain','cancelled'},refresh_error={'none','present'})
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{'source_sha256':source_proof(os.environ)},None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'blocked','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:
+              receipt={'status':'blocked','error_code':'diagnostic_preflight_failed'}
+          print('OWNER_PIPELINE_DIAGNOSTICS='+json.dumps(receipt,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='inspected' else 1)
+          PY
+
+
