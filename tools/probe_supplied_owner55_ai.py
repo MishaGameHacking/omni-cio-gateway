@@ -30,9 +30,13 @@ def need(value, code):
         raise ProbeError(code)
 
 
-def selected_key(api):
+def selected_key(api, report=None):
     rows = provision.keys(api)
     matches = [row for row in rows if row.get('name') == KEY_NAME]
+    if report is not None:
+        report['cloud_ai_key_count'] = len(rows)
+        report['designated_key_count'] = len(matches)
+        report['expected_project_key_count'] = sum(row.get('project_id') == 2941515 for row in rows)
     need(len(matches) == 1, 'designated_key_not_unique')
     row = matches[0]
     provision.validate_created_metadata(row, KEY_NAME, row['id'])
@@ -136,12 +140,24 @@ def probe(api, gateway, report, *, now=None):
     report['stage'] = 'model_pricing'
     pricing = provision.pricing(api, datetime.now(timezone.utc) if now is None else now)
     report['stage'] = 'key_metadata'
-    key_id = selected_key(api)
-    report['stage'] = 'key_limits'
-    observed_limits = limits(api, key_id)
-    report.update(key_id=key_id, provider_daily_cap_rub=observed_limits['day']['amount'],
-                  provider_monthly_cap_rub=observed_limits.get('month', {}).get('amount'),
-                  provider_fallback_disabled=True, pricing_verified=True)
+    # Cloud administration and inference use different credentials. A missing
+    # administration entry must not falsely classify the supplied inference key
+    # as invalid. This owner-requested, single synthetic probe may still check
+    # the actual Gateway. It never installs a key or changes any limits.
+    try:
+        key_id = selected_key(api, report)
+    except ProbeError as error:
+        if str(error) != 'designated_key_not_unique':
+            raise
+        key_id = None
+        report['provider_metadata_verified'] = False
+    if key_id is not None:
+        report['stage'] = 'key_limits'
+        observed_limits = limits(api, key_id)
+        report.update(key_id=key_id, provider_daily_cap_rub=observed_limits['day']['amount'],
+                      provider_monthly_cap_rub=observed_limits.get('month', {}).get('amount'),
+                      provider_fallback_disabled=True, provider_metadata_verified=True)
+    report['pricing_verified'] = True
     report['stage'] = 'gateway_models'
     models = gateway.request('/models').get('data')
     need(isinstance(models, list) and any(isinstance(row, dict) and row.get('id') == provision.MODEL

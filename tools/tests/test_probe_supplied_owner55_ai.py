@@ -89,10 +89,13 @@ class ProbeTests(unittest.TestCase):
     def test_opaque_short_or_punctuated_key_is_validated_by_provider_not_guessed_locally(self):
         for value in ['synthetic:key', 'synthetic!key', 'short']:
             self.assertEqual(probe.Gateway(value).secret, value)
-    def test_unique_owner_designated_key_required(self):
+    def test_unmatched_administration_inventory_does_not_claim_key_identity(self):
         with mock.patch.object(probe.provision, 'keys', return_value=[]):
-            with self.assertRaisesRegex(probe.ProbeError, 'designated_key_not_unique'): self.invoke()
-        self.assertEqual(self.gateway.calls, [])
+            result = self.invoke()
+        self.assertFalse(result['provider_metadata_verified'])
+        self.assertEqual(result['cloud_ai_key_count'], 0)
+        self.assertNotIn('key_id', result)
+        self.assertEqual(len(self.gateway.calls), 2)
     def test_http_rejection_discards_private_error_body(self):
         gateway = probe.Gateway(fixtures.SECRET)
         error = probe.urllib.error.HTTPError(probe.GATEWAY+'/chat/completions', 401,
