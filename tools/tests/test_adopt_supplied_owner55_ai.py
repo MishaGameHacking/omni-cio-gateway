@@ -1,5 +1,6 @@
 """Existing-key adoption must preserve identity and existing usage periods."""
 from pathlib import Path
+import tempfile
 import sys
 import unittest
 from unittest import mock
@@ -125,3 +126,145 @@ class AdoptionTests(unittest.TestCase):
             ('PUT',adopt.provision.KEYS+'/'+fixtures.KEY_ID+'/regenerate',{})]:
             with self.subTest(method=method), self.assertRaises((adopt.AdoptionError,adopt.activation.ActivationError)):
                 api.request(method,path,body)
+
+
+class RecoveryTests(unittest.TestCase):
+    def setUp(self):
+        self.api = fixtures.FakeAPI()
+        self.calls = []
+        self.fail_resume = False
+        self.current = {'configuration_state':'paused','key_matches_supplied':True,
+            'key_identity_matches':True,'process_configuration_loaded':True,
+            'health_verified':True,'auth_boundary_verified':True,'gateway_metadata_verified':True}
+        patch = mock.patch.object(adopt,'inspect_runtime',side_effect=lambda *args:dict(self.current))
+        patch.start(); self.addCleanup(patch.stop)
+
+    def transfer(self, operation, payload, secret, contract):
+        self.assertEqual(secret, fixtures.SECRET)
+        self.calls.append(payload['action'])
+        if payload['action'] == 'repair':
+            self.assertEqual(self.api.values, {'day':'0','month':'0'})
+            return {'status':'repaired','inference_called':False}
+        self.assertEqual(payload['action'],'resume')
+        self.assertEqual(self.api.values, {'day':'100','month':'2900'})
+        if self.fail_resume: raise RuntimeError('synthetic private timeout')
+        return {'status':'activated','inference_called':False}
+
+    def invoke(self, resume=False):
+        return adopt.recover(self.api,self.transfer,{},fixtures.KEY_ID,fixtures.SECRET,resume=resume)
+
+    def test_repair_keeps_provider_blocked_and_never_resets_usage_limits(self):
+        result = self.invoke()
+        self.assertEqual(result['status'],'repaired')
+        self.assertTrue(result['provider_zero_limits_verified'])
+        self.assertTrue(all(row[0]=='GET' for row in self.api.calls))
+
+    def test_unverified_paused_process_cannot_restore_provider_limits(self):
+        self.current['process_configuration_loaded'] = False
+        with self.assertRaisesRegex(adopt.AdoptionError,'paused_runtime_not_verified'):
+            self.invoke(resume=True)
+        self.assertEqual(self.calls,[])
+        self.assertTrue(all(row[0]=='GET' for row in self.api.calls))
+
+    def test_resume_restores_only_reviewed_caps_after_paused_proof(self):
+        result = self.invoke(resume=True)
+        writes = [row for row in self.api.calls if row[0]!='GET']
+        self.assertEqual([row[2] for row in writes],[{'money_limit':100},{'money_limit':2900}])
+        self.assertEqual(result['daily_cap_rub'],'95')
+        self.assertEqual(result['monthly_cap_rub'],'2900')
+        self.assertFalse(result['key_created'])
+        self.assertEqual(self.calls,['resume'])
+
+    def test_unknown_resume_outcome_blocks_both_periods_with_readback(self):
+        self.fail_resume = True
+        with self.assertRaises(adopt.AdoptionError) as raised: self.invoke(resume=True)
+        self.assertTrue(raised.exception.blocked)
+        self.assertEqual(self.api.values,{'day':'0','month':'0'})
+        self.assertFalse(any(row[0] in {'POST','PUT','DELETE'} for row in self.api.calls))
+
+    def test_partial_limit_restore_is_blocked_without_runtime_resume(self):
+        self.api.fail_nonzero = 'month'
+        with self.assertRaises(adopt.AdoptionError) as raised: self.invoke(resume=True)
+        self.assertTrue(raised.exception.blocked)
+        self.assertEqual(self.api.values,{'day':'0','month':'0'})
+        self.assertEqual(self.calls,[])
+
+    def test_identity_mismatch_prevents_any_write(self):
+        self.api.key_id = fixtures.DAY
+        with self.assertRaises(adopt.activation.ActivationError): self.invoke()
+        self.assertTrue(all(row[0]=='GET' for row in self.api.calls))
+        self.assertEqual(self.calls,[])
+
+
+class RemoteRecoveryTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.settings = {**fixtures.remote.ENABLED,'TIMEWEB_AI_TOKEN':fixtures.SECRET,
+            'ANALYST_OWNER_AI_KEY_ID':fixtures.KEY_ID}
+        self.raw = fixtures.stage.replacement_environment(b'UNRELATED_SECRET=synthetic-existing\n',self.settings)
+        self.unset = ''
+        self.namespace = {'__name__':'recovery_test'}
+        exec(compile(adopt.RUNTIME_REPAIR,'recovery','exec'),self.namespace)
+        self.support = {'LOCK':Path(temporary.name)/'test.lock','verify_sources':mock.Mock(),
+            'configuration_snapshot':lambda:(self.raw,None),'parse_environment':fixtures.stage.parse_environment,
+            'replacement_environment':fixtures.stage.replacement_environment,
+            'atomic_configuration':mock.Mock(side_effect=self.write)}
+        self.active = {'ENABLED':fixtures.remote.ENABLED,'verify_environment_file':mock.Mock(),
+            'systemctl':mock.Mock(side_effect=lambda *args:self.unset if args[0]=='show' else ''),
+            'public_feed_pid':mock.Mock(return_value='1234'),
+            'verify_running_configuration':mock.Mock(),'readiness_after_restart':mock.Mock()}
+        self.namespace.update(STAGING=self.support,ACTIVATION=self.active)
+
+    def write(self, raw, expected):
+        self.assertEqual(expected[0],self.raw)
+        self.raw = raw
+
+    def invoke(self, action='repair'):
+        with mock.patch.object(self.namespace['os'],'getuid',return_value=0):
+            return self.namespace['run']({'payload':{'action':action,'source_sha256':{},'key_id':fixtures.KEY_ID},
+                'secret':fixtures.SECRET})
+
+    def test_repair_pauses_paid_work_preserves_key_and_verifies_restarted_process(self):
+        result = self.invoke()
+        self.assertEqual(result['status'],'repaired')
+        actual = fixtures.stage.parse_environment(self.raw)
+        self.assertEqual(actual['AI_EXTERNAL_PROCESSING_APPROVED'],'false')
+        self.assertEqual(actual['TIMEWEB_AI_TOKEN'],fixtures.SECRET)
+        self.assertEqual(actual['UNRELATED_SECRET'],'synthetic-existing')
+        self.assertTrue(result['process_configuration_loaded'])
+        self.assertFalse(result['inference_called'])
+        expected = self.active['readiness_after_restart'].call_args.args[0]
+        self.assertEqual(expected['TIMEWEB_AI_TOKEN'],fixtures.SECRET)
+        self.assertEqual(expected['AI_EXTERNAL_PROCESSING_APPROVED'],'false')
+        self.assertNotIn(fixtures.SECRET,str(result))
+
+    def test_unit_that_explicitly_unsets_key_is_not_silently_overridden(self):
+        self.unset = 'UNRELATED TIMEWEB_AI_TOKEN'
+        result = self.invoke()
+        self.assertEqual(result['phase'],'unit_unsets_inference_key')
+        self.assertEqual(result['status'],'blocked')
+        self.support['atomic_configuration'].assert_not_called()
+
+    def test_resume_requires_existing_paused_state_before_write(self):
+        result = self.invoke('resume')
+        self.assertEqual(result['status'],'blocked')
+        self.assertEqual(result['phase'],'paused_process')
+        self.support['atomic_configuration'].assert_not_called()
+
+    def test_successful_resume_verifies_paused_process_before_enabling(self):
+        self.raw = fixtures.stage.replacement_environment(self.raw,{'AI_EXTERNAL_PROCESSING_APPROVED':'false'})
+        result = self.invoke('resume')
+        self.assertEqual(result['status'],'activated')
+        self.active['verify_running_configuration'].assert_called_once()
+        self.assertEqual(fixtures.stage.parse_environment(self.raw)['AI_EXTERNAL_PROCESSING_APPROVED'],'true')
+
+    def test_failed_readiness_returns_sanitized_stage_and_no_success(self):
+        self.active['readiness_after_restart'].side_effect=RuntimeError('PRIVATE '+fixtures.SECRET)
+        result=self.invoke()
+        self.assertEqual(result['status'],'blocked')
+        self.assertEqual(result['phase'],'runtime_verification')
+        self.assertTrue(result['configuration_changed'])
+        self.assertFalse(result['process_configuration_loaded'])
+        self.assertNotIn('PRIVATE',str(result))
+        self.assertNotIn(fixtures.SECRET,str(result))

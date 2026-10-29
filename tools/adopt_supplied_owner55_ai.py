@@ -48,6 +48,8 @@ def run(envelope):
         result['configuration_state']='staged_disabled'
     if all(settings.get(k)==v for k,v in ACTIVATION['ENABLED'].items()):
         result['configuration_state']='active'
+    if all(settings.get(k)==v for k,v in {**ACTIVATION['ENABLED'],'AI_EXTERNAL_PROCESSING_APPROVED':'false'}.items()):
+        result['configuration_state']='paused'
     selected={k:v for k,v in settings.items() if k.startswith(('AI_','TIMEWEB_AI_','ANALYST_OWNER_AI_'))}
     try:
         pid=ACTIVATION['systemctl']('show','analyst-ai-owner.service','--property=MainPID','--value')
@@ -94,7 +96,7 @@ def inspect_runtime(transfer, sources, key_id, secret):
         'auth_boundary_verified','gateway_metadata_verified','configuration_changed','field_masks_verified']
     contract={name:bool for name in fields}
     contract.update(status={'runtime_inspected'},server_id=int,missing_fields_mask=int,different_fields_mask=int,
-        configuration_state={'other','staged_disabled','active'},
+        configuration_state={'other','staged_disabled','active','paused'},
         last_failed_check={'none','service_active','environment_file_verified','process_configuration_loaded',
                            'health_verified','auth_boundary_verified','gateway_metadata_verified'})
     return transfer(operation,{'source_sha256':sources,'key_id':key_id},secret,contract)
@@ -112,6 +114,7 @@ def need(condition, code):
 
 
 class API(activation.ActivationAPI):
+    PATCH_AMOUNTS = {0, 100, 2900}
     def request(self, method, path, body=None):
         if method == 'POST':
             need(re.fullmatch(re.escape(provision.KEYS)+r'/[0-9a-f-]{36}/entity-limits', path)
@@ -119,6 +122,104 @@ class API(activation.ActivationAPI):
                  'only_missing_month_limit_may_be_created')
             return provision.CloudAPI.request(self, method, path, body)
         return super().request(method, path, body)
+
+
+RUNTIME_REPAIR = '''
+import fcntl,hmac,json,os
+def run(envelope):
+    result={'status':'blocked','server_id':9417611,'phase':'identity',
+      'configuration_changed':False,'service_restarted':False,'process_configuration_loaded':False,
+      'health_verified':False,'auth_boundary_verified':False,'key_matches_supplied':False,
+      'public_feed_unchanged':False,'inference_called':False}
+    try:
+        payload=envelope['payload']; kind=payload['action']
+        if os.getuid()!=0 or kind not in {'repair','resume'}: return result
+        with STAGING['LOCK'].open('a') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            STAGING['verify_sources'](payload['source_sha256'])
+            original=STAGING['configuration_snapshot']()
+            settings=STAGING['parse_environment'](original[0])
+            if settings.get('ANALYST_OWNER_AI_KEY_ID')!=payload['key_id']: return result
+            result['key_matches_supplied']=hmac.compare_digest(settings.get('TIMEWEB_AI_TOKEN',''),envelope['secret'])
+            if not result['key_matches_supplied']: return result
+            if any(settings.get(k)!=v for k,v in ACTIVATION['ENABLED'].items() if k!='AI_EXTERNAL_PROCESSING_APPROVED'):
+                return result
+            result['phase']='unit_metadata'
+            ACTIVATION['verify_environment_file']()
+            unset=ACTIVATION['systemctl']('show','analyst-ai-owner.service','--property=UnsetEnvironment','--value')
+            if any(word.partition('=')[0]=='TIMEWEB_AI_TOKEN' for word in unset.split()):
+                result['phase']='unit_unsets_inference_key'; return result
+            feed=ACTIVATION['public_feed_pid']()
+            expected={k:v for k,v in settings.items() if k.startswith(('AI_','TIMEWEB_AI_','ANALYST_OWNER_AI_'))}
+            if kind=='resume':
+                result['phase']='paused_process'
+                if settings.get('AI_EXTERNAL_PROCESSING_APPROVED')!='false': return result
+                ACTIVATION['verify_running_configuration'](expected)
+            changes={'TIMEWEB_AI_TOKEN':envelope['secret'],'AI_EXTERNAL_PROCESSING_APPROVED':'true' if kind=='resume' else 'false'}
+            expected.update(changes)
+            result['phase']='configuration_write'
+            desired=STAGING['replacement_environment'](original[0],changes)
+            STAGING['atomic_configuration'](desired,original)
+            result['configuration_changed']=True
+            if STAGING['configuration_snapshot']()[0]!=desired: return result
+            result['phase']='restart'
+            ACTIVATION['systemctl']('restart','analyst-ai-owner.service')
+            result['service_restarted']=True
+            result['phase']='runtime_verification'
+            ACTIVATION['readiness_after_restart'](expected)
+            result.update(process_configuration_loaded=True,health_verified=True,auth_boundary_verified=True)
+            result['public_feed_unchanged']=ACTIVATION['public_feed_pid']()==feed
+            if not result['public_feed_unchanged']: return result
+            result.update(status='activated' if kind=='resume' else 'repaired',phase='complete')
+    except BaseException: pass
+    return result
+if __name__=='__main__': print(json.dumps(run(ENVELOPE)),flush=True)
+'''
+
+
+def repair_operation():
+    root=Path(__file__).resolve().parents[1]
+    staging=(root/'deploy/stage_owner55_ai.py').read_text()
+    active=(root/'deploy/activate_owner55_ai.py').read_text()
+    return ('support={"__name__":"owner_staging"}\nexec(compile('+repr(staging)+',"staging","exec"),support)\n'
+        'active={"__name__":"owner_active","STAGING":support}\nexec(compile('+repr(active)+',"activation","exec"),active)\n'
+        'exec(compile('+repr(RUNTIME_REPAIR)+',"runtime-repair","exec"),'
+        '{"STAGING":support,"ACTIVATION":active,"ENVELOPE":ENVELOPE,"__name__":"__main__"})\n')
+
+
+def recover(api,transfer,sources,key_id,secret,*,resume=False):
+    provision.require_gateway_key(secret)
+    activation.owned_key(api,key_id,'owner-supplied')
+    identities=activation.limit_ids(api.request('GET',provision.KEYS+'/'+key_id+'/entity-limits'),
+                                   key_id,{'day':'0','month':'0'})
+    contract={name:bool for name in ['configuration_changed','service_restarted','process_configuration_loaded',
+        'health_verified','auth_boundary_verified','key_matches_supplied','public_feed_unchanged','inference_called']}
+    contract.update(status={'blocked','activated','repaired'},server_id=int,
+        phase={'identity','unit_metadata','unit_unsets_inference_key','paused_process','configuration_write',
+               'restart','runtime_verification','complete'})
+    if not resume:
+        receipt=transfer(repair_operation(),{'action':'repair','key_id':key_id,'source_sha256':sources},secret,contract)
+        activation.verify_limits(api,key_id,identities,{'day':'0','month':'0'})
+        return {**receipt,'provider_zero_limits_verified':True}
+    current=inspect_runtime(transfer,sources,key_id,secret)
+    need(current['configuration_state']=='paused' and current['key_matches_supplied']
+         and current['key_identity_matches'] and current['process_configuration_loaded']
+         and current['health_verified'] and current['auth_boundary_verified']
+         and current['gateway_metadata_verified'],'paused_runtime_not_verified')
+    try:
+        for period in ('day','month'):
+            api.request('PATCH',provision.KEYS+'/'+key_id+'/entity-limits/'+identities[period],
+                        {'money_limit':int(PROVIDER_LIMITS[period])})
+        activation.verify_limits(api,key_id,identities,PROVIDER_LIMITS)
+        receipt=transfer(repair_operation(),{'action':'resume','key_id':key_id,'source_sha256':sources},secret,contract)
+        need(receipt['status']=='activated','runtime_resume_not_verified')
+        activation.verify_limits(api,key_id,identities,PROVIDER_LIMITS)
+        return {**receipt,'daily_cap_rub':'95','monthly_cap_rub':'2900',
+            'provider_daily_limit_rub':'100','provider_30_day_limit_rub':'2900',
+            'key_created':False,'key_rotated':False}
+    except BaseException:
+        raise AdoptionError('resume_requires_inspected_recovery',
+            blocked=activation.block_provider(api,key_id,identities)) from None
 
 
 def inventory(api, expected_id=None):
@@ -220,7 +321,7 @@ def main():
         with redirect_stdout(DiscardedOutput()), redirect_stderr(DiscardedOutput()):
             require_admin_guard()
             action = os.environ.get('OWNER_SUPPLIED_AI_ACTION')
-            need(action in {'inspect', 'adopt_activate', 'inspect_runtime'}, 'reviewed_adoption_action_required')
+            need(action in {'inspect', 'adopt_activate', 'inspect_runtime','repair_runtime','resume_runtime'}, 'reviewed_adoption_action_required')
             api = API(os.environ['TIMEWEB_CLOUD_TOKEN'])
             sources = source_proof(os.environ)
             if action == 'inspect':
@@ -231,10 +332,13 @@ def main():
             elif action == 'inspect_runtime':
                 report = inspect_runtime(transport_admin, sources, os.environ.get('OWNER_SUPPLIED_AI_KEY_ID'),
                                          os.environ['TIMEWEB_AI_TOKEN'])
+            elif action in {'repair_runtime','resume_runtime'}:
+                report=recover(api,transport_admin,sources,os.environ.get('OWNER_SUPPLIED_AI_KEY_ID'),
+                               os.environ['TIMEWEB_AI_TOKEN'],resume=action=='resume_runtime')
             else:
                 report = adopt(api, transport_admin, sources, os.environ['TIMEWEB_AI_TOKEN'],
                                os.environ.get('OWNER_SUPPLIED_AI_KEY_ID'))
-            code = 0
+            code = 1 if report.get('status')=='blocked' else 0
     except AdoptionError as error:
         report.update(reason=error.code, provider_zero_limits_verified=error.blocked)
     except PrivateTransportError as error:

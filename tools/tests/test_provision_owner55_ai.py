@@ -3,6 +3,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
 import importlib.util
 import io
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -227,6 +228,16 @@ class ProvisionTests(unittest.TestCase):
 
 
 class StagingFormatTests(unittest.TestCase):
+    def test_systemd_assignment_keeps_opaque_punctuation_in_one_quoted_value(self):
+        # Shell quote concatenation is not accepted by systemd EnvironmentFile.
+        secret = 'synthetic\'"\\$`opaque:credential'
+        original = b'UNRELATED_SECRET=synthetic-existing\n'
+        result = stage.replacement_environment(original, {'TIMEWEB_AI_TOKEN': secret})
+        assignment = result.decode().splitlines()[1].partition('=')[2]
+        self.assertEqual(json.loads(assignment), secret)
+        self.assertEqual(stage.parse_environment(result)['TIMEWEB_AI_TOKEN'], secret)
+        self.assertTrue(result.startswith(original))
+
     def test_remote_preflight_does_not_return_unknown_exception_text(self):
         with mock.patch.object(stage.os, 'getuid', return_value=0, create=True), \
              mock.patch.object(stage, 'LOCK') as lock:

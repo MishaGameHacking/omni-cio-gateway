@@ -133,7 +133,9 @@ def replacement_environment(raw, changes):
     for key, value in sorted(changes.items()):
         need(isinstance(value, str) and '\n' not in value and '\r' not in value and '\0' not in value,
              'unsafe_environment_value')
-        lines.append(key + '=' + shlex.quote(value))
+        # EnvironmentFile is not a shell. Shell quote concatenation (notably
+        # apostrophes) may make systemd discard a credential assignment.
+        lines.append(key + '=' + json.dumps(value, ensure_ascii=False))
     result = ('\n'.join(lines) + '\n').encode('utf-8')
     actual = parse_environment(result)
     need(all(actual.get(key) == value for key, value in changes.items()), 'environment_serialization_mismatch')

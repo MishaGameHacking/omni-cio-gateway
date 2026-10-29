@@ -130,9 +130,10 @@ def verify_running_configuration(expected):
 
 
 def readiness_after_restart(expected):
-    verify_running_configuration(expected)
     for attempt in range(10):
         try:
+            # Type=simple may report started before the child has completed exec.
+            verify_running_configuration(expected)
             need(read_get(PUBLIC + '/health') == {'status': 'ok'}, 'ai_runtime_health_invalid')
             read_get(PUBLIC + '/workspace/live?wait=0', allowed_status=401)
             return

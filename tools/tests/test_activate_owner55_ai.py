@@ -165,6 +165,26 @@ class ActivationTests(unittest.TestCase):
 
 
 class RemoteActivationTests(unittest.TestCase):
+    def test_readiness_retries_service_exec_race_before_claiming_loaded(self):
+        with mock.patch.object(remote, 'verify_running_configuration',
+                side_effect=[RuntimeError('ai_process_configuration_not_loaded'), None]) as verify, \
+             mock.patch.object(remote, 'read_get', return_value={'status':'ok'}) as get, \
+             mock.patch.object(remote.time, 'sleep') as sleep:
+            remote.readiness_after_restart({'AI_EXTERNAL_PROCESSING_APPROVED':'false'})
+        self.assertEqual(verify.call_count, 2)
+        self.assertEqual(get.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_readiness_does_not_hide_persistent_missing_configuration(self):
+        with mock.patch.object(remote, 'verify_running_configuration',
+                side_effect=RuntimeError('ai_process_configuration_not_loaded')) as verify, \
+             mock.patch.object(remote, 'read_get') as get, \
+             mock.patch.object(remote.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'ai_process_configuration_not_loaded'):
+                remote.readiness_after_restart({'TIMEWEB_AI_TOKEN':SECRET})
+        self.assertEqual(verify.call_count, 10)
+        get.assert_not_called()
+
     def setUp(self):
         self.payload = {'key_id': KEY_ID, 'model': activation.MODEL,
                         'limit_ids': {'day': DAY, 'month': MONTH},

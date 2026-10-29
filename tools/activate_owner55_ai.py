@@ -40,12 +40,13 @@ def limit_patch_path(path):
 
 
 class ActivationAPI(provision.CloudAPI):
+    PATCH_AMOUNTS = {0, 95, 2900}
     def request(self, method, path, body=None):
         if method == 'GET':
             return super().request(method, path, body)
         need(method == 'PATCH' and limit_patch_path(path) and isinstance(body, dict)
              and set(body) == {'money_limit'} and type(body['money_limit']) is int
-             and body['money_limit'] in {0, 95, 2900}, 'activation_endpoint_not_allowlisted')
+             and body['money_limit'] in self.PATCH_AMOUNTS, 'activation_endpoint_not_allowlisted')
         request = urllib.request.Request(provision.BASE + path, method='PATCH',
             data=json.dumps(body, allow_nan=False).encode(),
             headers={'Authorization': 'Bearer ' + self._token, 'Accept': 'application/json',
