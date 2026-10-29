@@ -1,0 +1,23 @@
+name: Read candidate54 build progress on owner laptop
+on:
+  push:
+    branches: [codex/strategy53-delivery-tools-2026-10-29]
+    paths: [.github/workflows/observe54-build.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: observe54-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: tools/observe54_build.py
+          sparse-checkout-cone-mode: false
+      - shell: cmd
+        working-directory: observe54-${{ github.run_id }}
+        env:
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+        run: py -3 tools/observe54_build.py
