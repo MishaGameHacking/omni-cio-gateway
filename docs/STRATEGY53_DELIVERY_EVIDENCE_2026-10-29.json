@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "published_at_utc": "2026-10-29T08:08:10.000Z",
+  "source_commit": "45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8",
+  "runtime_source_commit": "4a154b14771fc882b30727620926604ab198d28c",
+  "build_run_id": 40836262680,
+  "backend_deployment_run_id": 40834604423,
+  "render_run_id": 40836351461,
+  "delivery_run_id": 40839832904,
+  "delivery_workflow_commit": "d53b0ca401ff18bd20328419efab9bcba1d60f61",
+  "laptop_host": "LAPTOP-NPSGA016",
+  "tests": {
+    "backend": {
+      "passed": 2254,
+      "subtests_passed": 1557,
+      "warnings": 1
+    },
+    "host": {
+      "tests": 1267,
+      "skipped": 3
+    },
+    "tools": {
+      "tests": 52,
+      "failed": 0
+    },
+    "node": {
+      "tests": 61,
+      "failed": 0
+    },
+    "alignment_static": {
+      "tests": 11,
+      "failed": 0
+    },
+    "mesh": {
+      "tests": 15,
+      "skipped": 1
+    },
+    "jvm": {
+      "suites": 43,
+      "tests": 248,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "lint": {
+      "errors": 0,
+      "warnings": 97,
+      "hints": 5
+    },
+    "sonar": {
+      "new_issues": 0,
+      "accepted_issues": 0,
+      "security_hotspots": 0
+    }
+  },
+  "visual_review": {
+    "schema": 1,
+    "reviewed_at_utc": "2026-10-29T07:52:46Z",
+    "source_commit": "45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8",
+    "render_run_id": 40836351461,
+    "render_workflow_commit": "e39b668f7e5bb9bd94509f877b15dd2331d6363a",
+    "render_artifact_id": 12881610990,
+    "render_artifact_sha256": "8b4f73d7a306a8a5cdcca84b232142d317a694ca8c5398e2c284ae8511d3322c",
+    "execution_host": "LAPTOP-NPSGA016",
+    "fixture": "synthetic-Layoutlib-no-network",
+    "rendered_images": 25,
+    "byte_identical_to_previously_reviewed_images": 25,
+    "previous_review_source": "4a154b14771fc882b30727620926604ab198d28c",
+    "directly_reinspected": [
+      "Rail53_rail53-graphite_37a33aae_0.png",
+      "Settings53_settings53-graphite_4b5ae316_0.png",
+      "Plan53_plan53-light_f88cf6fd_0.png"
+    ],
+    "review_result": "no new layout defects observed in inspected screenshots",
+    "limits": [
+      "Static Layoutlib renders do not verify touch, lifecycle or app links.",
+      "Whole native emulator matrix has not passed for version53.",
+      "The instrument handoff to the physical T-Invest app remains unverified.",
+      "The plan preview does not prove expiration behavior; the fixture timestamp was not expired at render time."
+    ],
+    "native_acceptance": false,
+    "physical_phone_verified": false,
+    "baseline_updated": false
+  },
+  "publication_verification": {
+    "publication": {
+      "apk_bytes": 29971755,
+      "apk_sha256": "26078a02e1b563af4c8584a391f14fbad27c483af332ec511da1dfb2f2069351",
+      "client_artifact_sha256": "f1c6519f963d7c0d2c9633eb29fe801fa8b430ffe39b8861aa7ccaf6c6d55302",
+      "delivery_run_id": "40839832904",
+      "members": {
+        "apk-verification.json": {
+          "bytes": 17051,
+          "sha256": "b25534511a357682e4cf0e79675553c472a2bd1e7ebf5f86488609fd807ae28c"
+        },
+        "app-preview.apk": {
+          "bytes": 29971755,
+          "sha256": "26078a02e1b563af4c8584a391f14fbad27c483af332ec511da1dfb2f2069351"
+        },
+        "build-result.json": {
+          "bytes": 10709,
+          "sha256": "30dbf7689c2ab4496b0aa287ee4a2f42a317a79e44debc6800aed428da160e43"
+        }
+      },
+      "payload_bytes": 29999871,
+      "payload_sha256": "241079e80a19ac12885e6c35cf4d3e06d88a90e75d4a2148ae8e6fe1eaa1a091",
+      "runtime_deploy_run_id": "40834604423",
+      "runtime_source_commit": "4a154b14771fc882b30727620926604ab198d28c",
+      "runtime_test_run_id": "40833239415",
+      "source_commit": "45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8",
+      "test_run_id": "40836262680",
+      "status": "published",
+      "version_code": 53,
+      "version_name": "0.17.0-preview",
+      "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+      "published_at": 1793261290,
+      "url": "https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-53-26078a02e1b563af4c8584a391f14fbad27c483af332ec511da1dfb2f2069351.apk",
+      "previous_version_code": 52,
+      "physical_phone_verified": false,
+      "full_native_matrix_passed": false,
+      "backend_deployment_performed": false
+    },
+    "https_policy_verified": true,
+    "https_entire_apk_verified": true,
+    "backend_health": 200,
+    "physical_phone_verified": false
+  },
+  "temporary_transport_key_removed": true,
+  "notes": [
+    "No physical phone validation.",
+    "Full native matrix is not passed.",
+    "No real order submitted and no paid AI enabled.",
+    "No portfolio profitability or maximum-loss guarantee."
+  ]
+}
