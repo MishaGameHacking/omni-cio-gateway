@@ -10,8 +10,8 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_TOOLS_SHA: b4ec8b4e4f6b2a54b688a99ca86715d35dda77c8
-  EXPECTED_TOOLS_RUN: '40933374727'
+  EXPECTED_TOOLS_SHA: c82d830cd0c3261ab98b34339263bb93f53b726e
+  EXPECTED_TOOLS_RUN: '40933948716'
 jobs:
   verify:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
