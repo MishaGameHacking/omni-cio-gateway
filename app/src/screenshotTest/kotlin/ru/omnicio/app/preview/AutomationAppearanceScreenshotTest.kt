@@ -259,3 +259,58 @@ fun Rail53() {
         }
     } }
 }
+
+
+@PreviewTest
+@Preview(name = "analytics54-dark", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "analytics54-light", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "analytics54-large-text", widthDp = 320, heightDp = 1500, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Overview() = Analytics54Fixture("overview")
+
+@PreviewTest
+@Preview(name = "analytics54-value", widthDp = 390, heightDp = 1400, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Value() = Analytics54Fixture("value")
+
+@PreviewTest
+@Preview(name = "analytics54-structure", widthDp = 390, heightDp = 1100, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Structure() = Analytics54Fixture("structure")
+
+/** Pure production rendering: no API requests, account access or trade execution. */
+@Composable
+private fun Analytics54Fixture(page: String) {
+    check(LocalInspectionMode.current)
+    fun money(amount: Long) = ru.omnicio.app.data.portfolio.MoneyAmount(ru.omnicio.app.data.portfolio.ApiDecimal(amount, 0), "RUB")
+    val total = money(12000)
+    val positions = listOf(
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-share", "Тестовая акция", "TEST", null, money(6000), null, instrumentType = "share", company = "Тестовая компания", sector = "Технологии"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-bond", "Тестовая облигация", "TESTB", null, money(4800), null, instrumentType = "bond", company = "Тестовый эмитент", sector = "Промышленность"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-cash", "Деньги", "RUB", null, money(1200), null, instrumentType = "cash"),
+    )
+    val account = ru.omnicio.app.data.portfolio.PortfolioAccount("synthetic-layout", "Тестовый счёт", total, null, positions,
+        allocations = listOf("Акции" to 50L, "Облигации" to 40L, "Деньги" to 10L).map { (name, share) ->
+            ru.omnicio.app.data.portfolio.PortfolioAllocation(name, ru.omnicio.app.data.portfolio.ApiDecimal(share, 0)) })
+    val analytics = JSONObject().put("currency", "RUB").put("complete", true)
+        .put("history", JSONArray().apply { listOf(8000, 10000, 9500, 12000).forEachIndexed { i, value ->
+            put(JSONObject().put("date", "2026-10-${25+i}T12:00:00Z").put("value", value.toString())) } })
+        .put("summary", JSONArray().put(JSONObject().put("category", "coupons")
+            .put("amount", JSONObject().put("amount", "120").put("currency", "RUB"))))
+    val payments = JSONObject().put("complete", true).put("items", JSONArray())
+    val data = ru.omnicio.app.ui.portfolio.AnalyticsViewData(listOf(account),
+        listOf(ru.omnicio.app.ui.portfolio.AccountData(analytics, null, false)),
+        listOf(ru.omnicio.app.ui.portfolio.AccountData(payments, null, false)),
+        total, "RUB", ru.omnicio.app.ui.portfolio.PortfolioPeriod(null, null), "2026-10-29T12:00:00Z")
+    CompositionLocalProvider(LocalWorkspacePreferences provides WorkspacePreferenceController(WorkspacePreferences(motion = MotionLevel.OFF))) {
+        AnalystTheme {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize()) {
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                    ru.omnicio.app.ui.portfolio.AnalyticsHeader(page, listOf(account), true, {}, {})
+                    ru.omnicio.app.ui.portfolio.AnalyticsPages(page, data, false, null, null, {}, 0, {}, {}, {}, {}, null, null) { _, _ -> }
+                }
+            }
+        }
+    }
+}

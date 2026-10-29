@@ -143,7 +143,7 @@ private fun AnalyticsPosition(snapshot: PortfolioSnapshot?, accountId: String?, 
 }
 
 @Composable
-private fun AnalyticsHeader(page: String, accounts: List<PortfolioAccount>, enabled: Boolean, back: () -> Unit, chooseAccount: () -> Unit) {
+internal fun AnalyticsHeader(page: String, accounts: List<PortfolioAccount>, enabled: Boolean, back: () -> Unit, chooseAccount: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         if (page != "overview") TextButton(onClick = back) { Text("‹ Назад") }
         Spacer(Modifier.weight(1f))
@@ -161,14 +161,14 @@ private fun AnalyticsConnection(state: PortfolioUiState, connect: () -> Unit) {
     }
 }
 
-private data class AnalyticsViewData(val accounts: List<PortfolioAccount>, val requests: List<AccountData>, val payments: List<AccountData>,
+internal data class AnalyticsViewData(val accounts: List<PortfolioAccount>, val requests: List<AccountData>, val payments: List<AccountData>,
     val total: MoneyAmount?, val currency: String, val period: PortfolioPeriod, val asOf: String?) {
     val current: Boolean get() = accounts.isNotEmpty() && requests.size == accounts.size &&
         requests.all { it.json != null && !it.showingPreviousQuery && it.error == null }
 }
 
 @Composable
-private fun AnalyticsPages(page: String, data: AnalyticsViewData, refreshing: Boolean, error: String?, message: String?, clearMessage: () -> Unit,
+internal fun AnalyticsPages(page: String, data: AnalyticsViewData, refreshing: Boolean, error: String?, message: String?, clearMessage: () -> Unit,
     mode: Int, selectMode: (Int) -> Unit, selectPeriod: (PortfolioPeriod) -> Unit, open: (String) -> Unit, chooseAccount: () -> Unit,
     assetKind: String?, assetSector: String?, position: (String, String) -> Unit) {
     LazyColumn(Modifier.fillMaxSize().testTag("portfolio-content"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
