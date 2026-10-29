@@ -89,14 +89,17 @@ jobs:
                       "status": status if isinstance(status, str) and status in {"passed", "failed", "running"} else None,
                       "steps": len(steps), "finished": sum(row.get("finished_at") is not None for row in steps),
                       "failed": sum(type(row.get("exit_code")) is int and row["exit_code"] != 0 for row in steps)})
-              log = path / "gradle.log"
-              if safe(log):
+              result["gradle"] = []
+              for log in [path / "gradle.log", *sorted(path.glob("shell-build-steps-*-gradle.log"))[:4]]:
+                  if not safe(log):
+                      continue
                   with log.open("rb") as stream:
                       stream.seek(max(0, log.stat().st_size - 256 * 1024))
                       tail = stream.read(256 * 1024).decode("utf-8", errors="replace")
                   tasks = re.findall(r"^> Task (:[A-Za-z0-9:_-]+)(?: (UP-TO-DATE|FROM-CACHE|FAILED|NO-SOURCE|SKIPPED))?\s*$", tail, re.MULTILINE)
-                  result["recent_gradle_tasks"] = tasks[-12:]
-                  result["build_status"] = re.findall(r"^BUILD (SUCCESSFUL|FAILED) in [0-9hms .]+$", tail, re.MULTILINE)[-1:]
+                  result["gradle"].append({"log": log.name, "metadata": metadata(log),
+                      "recent_tasks": tasks[-12:],
+                      "build_status": re.findall(r"^BUILD (SUCCESSFUL|FAILED) in [0-9hms .]+$", tail, re.MULTILINE)[-1:]})
               return result
 
           roots = [root for root in Path("C:/").glob("actions-runner*")
