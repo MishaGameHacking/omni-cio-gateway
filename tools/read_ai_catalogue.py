@@ -20,8 +20,8 @@ try:
     result=[]
     for row in rows:
         parameters=row.get("parameter_values") or {}
-        result.append({key:row.get(key) for key in ("id","name","slug","provider")} | {
-            "parameters":{key:parameters.get(key) for key in ("cost_in","cost_out","context_window","max_tokens","context_length","max_output_tokens")}})
+        if row.get("id") in (5, 29, 39, 41, 75, 99, 121):
+            result.append(row)
     report={"status":"available","models":result}
 except (urllib.error.URLError, ValueError, TypeError):
     report={"status":"unavailable"}
