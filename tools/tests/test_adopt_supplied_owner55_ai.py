@@ -239,10 +239,10 @@ class RemoteRecoveryTests(unittest.TestCase):
         self.assertEqual(expected['AI_EXTERNAL_PROCESSING_APPROVED'],'false')
         self.assertNotIn(fixtures.SECRET,str(result))
 
-    def test_unit_that_explicitly_unsets_key_is_not_silently_overridden(self):
+    def test_unknown_unit_metadata_blocks_without_configuration_write(self):
         self.unset = 'UNRELATED TIMEWEB_AI_TOKEN'
         result = self.invoke()
-        self.assertEqual(result['phase'],'unit_unsets_inference_key')
+        self.assertEqual(result['phase'],'unit_inspection')
         self.assertEqual(result['status'],'blocked')
         self.support['atomic_configuration'].assert_not_called()
 
@@ -268,3 +268,39 @@ class RemoteRecoveryTests(unittest.TestCase):
         self.assertFalse(result['process_configuration_loaded'])
         self.assertNotIn('PRIVATE',str(result))
         self.assertNotIn(fixtures.SECRET,str(result))
+
+    def test_unit_patch_only_removes_target_and_preserves_other_restrictions(self):
+        original=(b'[Service]\nNoNewPrivileges=true\nUnsetEnvironment=UNRELATED TIMEWEB_AI_TOKEN TIMEWEB_CLOUD_TOKEN\n'
+                  b'Environment=UNCHANGED=value\n[Other]\nUnsetEnvironment=TIMEWEB_AI_TOKEN\n')
+        desired,count=self.namespace['patch_unit'](original)
+        self.assertEqual(count,1)
+        self.assertEqual(desired,original.replace(b'UNRELATED TIMEWEB_AI_TOKEN TIMEWEB_CLOUD_TOKEN',
+                                                  b'UNRELATED TIMEWEB_CLOUD_TOKEN'))
+
+    def test_sole_key_directive_is_removed_without_resetting_earlier_restrictions(self):
+        raw=b'[Service]\nUnsetEnvironment=UNRELATED\nUnsetEnvironment=TIMEWEB_AI_TOKEN\n'
+        desired,count=self.namespace['patch_unit'](raw)
+        self.assertEqual(desired,b'[Service]\nUnsetEnvironment=UNRELATED\n')
+        self.assertEqual(count,1)
+
+    def test_complex_unit_syntax_requires_separate_review(self):
+        for raw in (b'[Service]\nUnsetEnvironment="TIMEWEB_AI_TOKEN"\n',
+                    b'[Service]\nUnsetEnvironment=TIMEWEB_AI_TOKEN=bound-value\n'):
+            with self.subTest(raw=raw), self.assertRaisesRegex(RuntimeError,'unsupported_unit_unset_syntax'):
+                self.namespace['patch_unit'](raw)
+
+    def test_unit_plan_refuses_concurrent_metadata_change_before_writes(self):
+        self.namespace['unset_names']=mock.Mock(return_value={'UNRELATED'})
+        self.namespace['write_unit']=mock.Mock()
+        with self.assertRaisesRegex(RuntimeError,'unit_changed_before_write'):
+            self.namespace['apply_unit_plan']([],{'TIMEWEB_AI_TOKEN','UNRELATED'})
+        self.namespace['write_unit'].assert_not_called()
+
+    def test_unit_apply_requires_exact_remaining_restrictions_after_reload(self):
+        self.namespace['unset_names']=mock.Mock(side_effect=[{'TIMEWEB_AI_TOKEN','UNRELATED'},set()])
+        self.namespace['unit_snapshot']=mock.Mock(return_value=(b'original','identity'))
+        self.namespace['write_unit']=mock.Mock()
+        with self.assertRaisesRegex(RuntimeError,'unit_unset_change_not_verified'):
+            self.namespace['apply_unit_plan']([(Path('/unit'),(b'original','identity'),b'desired')],
+                                             {'TIMEWEB_AI_TOKEN','UNRELATED'})
+        self.active['systemctl'].assert_called_once_with('daemon-reload')
