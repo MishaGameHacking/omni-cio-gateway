@@ -20,16 +20,25 @@ class StrategyMandateControlsTest {
         assertFalse(draft.has("loss_capacity_percent"))
         assertFalse(validPortfolioMandate(draft))
     }
-    @Test fun fractionalAllocationAndZeroRiskRemainValidWithoutFloatConversion() {
-        val value=JSONObject("""{"asset_mode":"mixed","base_currency":"RUB","account_id":"account-a",
+    private fun fractionalMandate() = JSONObject("""{"asset_mode":"mixed","base_currency":"RUB","account_id":"account-a",
             "loss_capacity_percent":"0","bond_target_percent":"60.125","share_target_percent":"39.875",
-            "minimum_rating_level":9,"max_discretionary_turnover_percent":"0","turnover_window_days":30,
+            "minimum_rating_level":8,"max_discretionary_turnover_percent":"0","turnover_window_days":30,
             "max_trade_cost_percent":"0.01","rebalance_cooldown_days":30,"reinvest_coupons":true,
             "reinvest_dividends":false,"allowed_sessions":["main"]}""")
+
+    @Test fun fractionalAllocationAndZeroRiskRemainValidWithoutFloatConversion() {
+        val value = fractionalMandate()
         assertTrue(validPortfolioMandate(value))
         value.put("asset_mode","bonds")
         assertFalse(validPortfolioMandate(value))
         value.put("asset_mode","mixed").put("reinvest_dividends",JSONObject.NULL)
         assertFalse(validPortfolioMandate(value))
     }
+
+    @Test fun minimumRatingAcceptsBbbButRejectsBbbMinus() {
+        val value = fractionalMandate()
+        assertTrue(validPortfolioMandate(value.put("minimum_rating_level", 8)))
+        assertFalse(validPortfolioMandate(value.put("minimum_rating_level", 9)))
+    }
 }
+
