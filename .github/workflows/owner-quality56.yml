@@ -1,0 +1,23 @@
+name: Read exact candidate 56 quality findings
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-quality56.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref='7dacef6e95b0b351589b6909e46af3fc6c890d7f';
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=checks.filter(x=>x.name==='SonarCloud Code Analysis').sort((a,b)=>b.id-a.id)[0];
+            if(!sonar) throw new Error('No source quality report');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            for(const note of notes) core.info('SOURCE_FINDING='+JSON.stringify({ref,path:note.path,line:note.start_line,title:note.title,message:note.message}));
+            core.info('SOURCE_FINDING_COUNT='+notes.length);
