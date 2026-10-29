@@ -113,7 +113,7 @@ class NativeBaselineInputs(unittest.TestCase):
 
     def test_payload_identity_is_checked_independently(self):
         _, raw = package([(self.member, b"modified apk")])
-        with self.assertRaisesRegex(RuntimeError, "baseline51_changed"):
+        with self.assertRaisesRegex(RuntimeError, "baseline52_changed"):
             self.read(raw)
 
     def test_oversized_member_is_rejected_before_read(self):
@@ -124,3 +124,4 @@ class NativeBaselineInputs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
