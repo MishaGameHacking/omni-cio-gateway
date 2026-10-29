@@ -43,6 +43,7 @@ private val primaryTabs = analystPrimaryDestinations.mapNotNull { it.tab }
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
     onProfileClick: () -> Unit, modifier: Modifier = Modifier) {
     if (LocalWideNavigation.current) return
+    if (LocalRailVisible.current) return
     val navigate = LocalAnalystTabNavigator.current
     Surface(modifier.fillMaxWidth().zIndex(1f).clipToBounds().testTag("analyst-bottom-bar"),
         color = MaterialTheme.colorScheme.surface) {
@@ -123,4 +124,3 @@ fun AnalystSideRail(selected: AnalystTab, selectedWorkspace: ru.omnicio.app.ui.w
         }
     }
 }
-
