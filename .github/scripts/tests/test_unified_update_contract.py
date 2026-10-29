@@ -41,10 +41,33 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertNotIn('registerActivityLifecycleCallbacks', source)
         self.assertNotIn('UpdateCheckStore', source)
 
-    def test_telegram_return_is_preserved(self):
-        source = self.source('MainActivity.kt')
-        for token in ('captureTelegramCallback', 'AUTH_SCHEME = "analystai"', 'AUTH_HOST = "auth"', 'exchangeTelegramCode(code)', 'sessionStore.save(result.value)'):
-            self.assertIn(token, source)
+    def test_password_entry_keeps_owner_migration_and_locked_offline_access(self):
+        main = self.source('MainActivity.kt')
+        restoration = self.source('data/backend/OwnerSessionRestoration.kt')
+        lifecycle = self.source('ui/auth/OwnerAccessLifecycle.kt')
+        offline = self.source('ui/workspace/OfflineSnapshotAccess.kt')
+        for retired in ('captureTelegramCallback', 'exchangeTelegramCode(', 'TelegramLoginScreen('):
+            self.assertNotIn(retired, main)
+        for entry in ('OwnerAccessScreen(', 'OwnerDeviceUnlock(', 'AuthUiState.Migration'):
+            self.assertIn(entry, main)
+        # A pre-password owner may enroll, but a cached identity never opens
+        # the application; the saved credential must be verified by the server.
+        self.assertIn('backend::fetchMe, backend::ownerAccessStatus, sessionStore::clear', main)
+        self.assertIn('validate(storedToken)', restoration)
+        self.assertLess(restoration.index('validate(storedToken)'), restoration.index('status()'))
+        self.assertIn('!result.value.configured -> OwnerSessionAccess.Migration(storedToken)', restoration)
+        self.assertIn('passwordRequested -> OwnerSessionAccess.Password(validatedAccessToken = storedToken)', restoration)
+        self.assertNotIn('loadCachedUser', restoration)
+        self.assertIn('if (gate.complete(ticket)) current.value = restored', main)
+        # Leaving the foreground invalidates access before asynchronous results
+        # can reopen it, including the update gate's separate frozen reader.
+        stop = lifecycle.split('Lifecycle.Event.ON_STOP ->', 1)[1].split('else -> Unit', 1)[0]
+        self.assertLess(stop.index('gate.background()'), stop.index('currentBackground()'))
+        self.assertIn('rememberOwnerAccessLifecycle { state.value = AuthUiState.Locked }', main)
+        self.assertIn('unlocked = false; open = false; cached = null', offline)
+        self.assertIn('!blocked && lifecycle.foreground', offline)
+        self.assertIn('if (open && permitted && unlocked)', offline)
+        self.assertNotIn('rememberSaveable', offline)
 
 
     def test_spectrum_primary_navigation_and_internal_destinations(self):
@@ -54,7 +77,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
         self.assertIn('SpectrumGlyphButton',bar)
         self.assertNotIn('AnalystMenuButton(openMenu)',bar)
-        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Аналитика','Portfolio'),
+        for tab,label,screen in (('Home','Система','Home'),('Portfolio','Аналитика','Portfolio'),
                                  ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
             self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
             self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
@@ -137,5 +160,6 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

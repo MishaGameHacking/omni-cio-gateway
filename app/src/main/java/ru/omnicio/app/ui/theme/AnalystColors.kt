@@ -132,6 +132,12 @@ private val GraphiteColors = darkColorScheme(
     error = Color(0xFFFFA7B5), onError = Color(0xFF5D1328),
     errorContainer = Color(0xFF4D2031), onErrorContainer = Color(0xFFFFDCE3),
     scrim = Color(0xFF000000),
+    primaryFixed = Color(0xFFC7F6FF), primaryFixedDim = Color(0xFF68DDF2),
+    onPrimaryFixed = Color(0xFF042C35), onPrimaryFixedVariant = Color(0xFF123845),
+    secondaryFixed = Color(0xFFE8DDFF), secondaryFixedDim = Color(0xFFB7A2FF),
+    onSecondaryFixed = Color(0xFF291656), onSecondaryFixedVariant = Color(0xFF30234F),
+    tertiaryFixed = Color(0xFFF0DCFF), tertiaryFixedDim = Color(0xFFD1ABFF),
+    onTertiaryFixed = Color(0xFF3B165B), onTertiaryFixedVariant = Color(0xFF362448),
 )
 private val GraphiteSemantic = WorkspaceSemantic.copy(
     success = Color(0xFF74E3B7), onSuccess = Color(0xFF003825),
