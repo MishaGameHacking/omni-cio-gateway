@@ -10,8 +10,8 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_TOOLS_SHA: c73b4645cb2a7f5500d49cf4614f2fbf7888b55a
-  EXPECTED_TOOLS_RUN: '40934864573'
+  EXPECTED_TOOLS_SHA: eaec2a667ba98f8ab95347ca03bce99d0f18fb4e
+  EXPECTED_TOOLS_RUN: '40936385593'
 jobs:
   verify:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -36,11 +36,22 @@ jobs:
             tools/owner_ai_private_transport.py
           sparse-checkout-cone-mode: false
       - name: Check provider authentication, bounded JSON generation and usage
-        shell: cmd
+        shell: py -3 {0}
         working-directory: supplied-ai-probe55-${{ github.run_id }}
         env:
           TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUTF8: '1'
           PYTHONIOENCODING: utf-8
-        run: py -3 tools\probe_supplied_owner55_ai.py
+        run: |
+          import json, subprocess, sys
+          result = subprocess.run([sys.executable, "tools/probe_supplied_owner55_ai.py"],
+              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=180)
+          lines = [line for line in result.stdout.splitlines() if line.startswith("OWNER_AI_SUPPLIED_PROBE=")]
+          if len(lines) != 1:
+              raise SystemExit("Expected sanitized probe receipt is missing")
+          receipt = json.loads(lines[0].partition("=")[2])
+          print(lines[0], flush=True)
+          if result.returncode != 0 or receipt.get("runtime_response_model_matches") is not True:
+              raise SystemExit("Supplied key or exact runtime response contract is not verified")
+
