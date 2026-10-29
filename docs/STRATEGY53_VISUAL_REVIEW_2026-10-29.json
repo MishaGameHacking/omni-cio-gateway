@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "reviewed_at_utc": "2026-10-29T07:52:46Z",
+  "source_commit": "45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8",
+  "render_run_id": 40836351461,
+  "render_workflow_commit": "e39b668f7e5bb9bd94509f877b15dd2331d6363a",
+  "render_artifact_id": 12881610990,
+  "render_artifact_sha256": "8b4f73d7a306a8a5cdcca84b232142d317a694ca8c5398e2c284ae8511d3322c",
+  "execution_host": "LAPTOP-NPSGA016",
+  "fixture": "synthetic-Layoutlib-no-network",
+  "rendered_images": 25,
+  "byte_identical_to_previously_reviewed_images": 25,
+  "previous_review_source": "4a154b14771fc882b30727620926604ab198d28c",
+  "directly_reinspected": [
+    "Rail53_rail53-graphite_37a33aae_0.png",
+    "Settings53_settings53-graphite_4b5ae316_0.png",
+    "Plan53_plan53-light_f88cf6fd_0.png"
+  ],
+  "review_result": "no new layout defects observed in inspected screenshots",
+  "limits": [
+    "Static Layoutlib renders do not verify touch, lifecycle or app links.",
+    "Whole native emulator matrix has not passed for version53.",
+    "The instrument handoff to the physical T-Invest app remains unverified.",
+    "The plan preview does not prove expiration behavior; the fixture timestamp was not expired at render time."
+  ],
+  "native_acceptance": false,
+  "physical_phone_verified": false,
+  "baseline_updated": false
+}

@@ -1,4 +1,4 @@
-name: Publish preview52 after laptop build and visual review
+name: Publish strategy53 preview after laptop build and visual review
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,13 +9,13 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
-  EXPECTED_TEST_RUN: '40757238094'
-  EXPECTED_RUNTIME_DEPLOY_RUN: '40721312988'
-  EXPECTED_RUNTIME_SOURCE_SHA: aad0a117074a1b083021f93ef9ff928102b95557
-  EXPECTED_RUNTIME_TEST_RUN: '40718753255'
-  EXPECTED_CLIENT_ARTIFACT_SHA256: 790e913040bcf222d0102a98c7651ede41fc586fca815322c8df035b6ce343c4
-  EXPECTED_APK_SHA256: 49cca6b9f3bd1c27f4283e17149475cce27f1e4d7ab8595ae1f1a7e14dae5654
+  EXPECTED_SOURCE_SHA: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
+  EXPECTED_TEST_RUN: '40836262680'
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40834604423'
+  EXPECTED_RUNTIME_SOURCE_SHA: 4a154b14771fc882b30727620926604ab198d28c
+  EXPECTED_RUNTIME_TEST_RUN: '40833239415'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: f1c6519f963d7c0d2c9633eb29fe801fa8b430ffe39b8861aa7ccaf6c6d55302
+  EXPECTED_APK_SHA256: 26078a02e1b563af4c8584a391f14fbad27c483af332ec511da1dfb2f2069351
 jobs:
   deliver:
     permissions:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 94fe75e7bf09d8cec33123f7081d14b9be17bae0
+          ref: 6fe51b138314b5c815e67a9e0f2ec402d85b3493
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5fa082e0464f11c1cc4de0a977e20601e6e3ba7d
+          ref: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
           path: .source-quality
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
@@ -59,9 +59,9 @@ jobs:
             if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
             for(const [run_id,sha,path] of [
                 [Number(process.env.EXPECTED_TEST_RUN),ref,'.github/workflows/workspace-redesign.yml'],
-                [40757305810,'416a43f1eb3d1f7115a0c7a92f82ea10748f620d','.github/workflows/workspace-redesign-visual.yml'],
-                [40753466731,'94fe75e7bf09d8cec33123f7081d14b9be17bae0','.github/workflows/workspace-shell-tools-check.yml'],
-                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'ad710d8ef0e54071cb5ecdc39d2ba9e8441e1a6d','.github/workflows/workspace-deploy.yml']]) {
+                [40836351461,'e39b668f7e5bb9bd94509f877b15dd2331d6363a','.github/workflows/workspace-redesign-visual.yml'],
+                [40827968294,'6fe51b138314b5c815e67a9e0f2ec402d85b3493','.github/workflows/workspace-shell-tools-check.yml'],
+                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'6266034f8331fab658e16a15ffcc6c00f9664be3','.github/workflows/workspace-deploy.yml']]) {
               const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
               if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
                 throw new Error('Required exact verification is not successful');
@@ -94,4 +94,5 @@ jobs:
           path: plan-reports/
           retention-days: 7
           if-no-files-found: warn
+
 
