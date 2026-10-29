@@ -995,3 +995,14 @@ def test_duplicate_notifications_do_not_interrupt_twice(fixture):
     assert len(events) == 2
     assert {item["body"] for item in events} == {"70%", "90%"}
     assert all(item["visual"]["share_percent"] is None for item in events)
+
+
+def test_material_events_remain_enabled_without_scheduled_briefs(fixture):
+    prefs = {**notifications.DEFAULTS, "briefs_enabled": False, "quiet_start": "00:00", "quiet_end": "00:00"}
+    at = int(datetime(2026, 10, 29, 12, tzinfo=timezone.utc).timestamp())
+    assert notifications.eligibility(prefs, "brief", at)[0] == "suppressed"
+    for kind in ("risk", "portfolio", "news"):
+        assert notifications.eligibility(prefs, kind, at)[0] == "pending"
+    assert notifications.eligibility({**prefs, "enabled": False}, "portfolio", at)[0] == "suppressed"
+    assert notifications.eligibility({**prefs, "critical_enabled": False}, "risk", at)[0] == "suppressed"
+

@@ -125,7 +125,7 @@ def _iso(value: int | None) -> str | None:
 
 
 def eligibility(preferences: dict, kind: str, at: int) -> tuple[str, int, str | None]:
-    if not preferences["enabled"] or (kind == "risk" and not preferences["critical_enabled"]) or (kind != "risk" and not preferences["briefs_enabled"]):
+    if not preferences["enabled"] or (kind == "risk" and not preferences["critical_enabled"]) or (kind == "brief" and not preferences["briefs_enabled"]):
         return "suppressed", at, "rule_disabled"
     zone = ZoneInfo(preferences["timezone"])
     local = datetime.fromtimestamp(at, zone)
