@@ -132,6 +132,9 @@ def configure_app(app: FastAPI, connect: Callable, initialize: Callable,
     async def integrity_error(request: Request, error: sqlite3.IntegrityError):
         if str(error) == DENIED:
             return _denial(request)
+        if str(error) == "owner_password_login_required":
+            return JSONResponse({"detail": "owner_password_login_required"}, status_code=401,
+                                headers={"Cache-Control": NO_STORE})
         if original_integrity is not None:
             return await original_integrity(request, error)
         return JSONResponse({"detail": "database_integrity_error"}, status_code=500,
@@ -145,7 +148,12 @@ def create_app() -> FastAPI:
     identity = OwnerIdentity.from_environment()
     try:
         from . import telegram_browser_app as browser
+        from .owner_password_routes import install
     except ImportError:
         import telegram_browser_app as browser
-    return configure_app(browser.app, browser.legacy.connect, browser.legacy.init_db, identity)
+        from owner_password_routes import install
+    configured = configure_app(browser.app, browser.legacy.connect, browser.legacy.init_db, identity)
+    install(configured, browser.legacy, identity)
+    return configured
+
 

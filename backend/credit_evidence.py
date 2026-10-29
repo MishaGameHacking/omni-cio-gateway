@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+import hashlib
+import json
 from decimal import Context, Decimal, DecimalException, InvalidOperation, ROUND_HALF_EVEN, localcontext
 from typing import Iterable, Mapping
 from urllib.parse import urlsplit
@@ -84,6 +86,18 @@ LEVELS = ('AAA', 'AA+', 'AA', 'AA-', 'A+', 'A', 'A-', 'BBB+', 'BBB', 'BBB-',
           'BB+', 'BB', 'BB-', 'B+', 'B', 'B-', 'CCC', 'CC', 'C', 'SD', 'RD', 'D')
 AGENCIES = {'ACRA': 'acra-ratings.ru', 'EXPERT_RA': 'raexpert.ru',
             'NKR': 'ratings.ru', 'NRA': 'ra-national.ru'}
+MINIMUM_CREDIT_GRADE = 'BBB'
+MAXIMUM_CREDIT_LEVEL = LEVELS.index(MINIMUM_CREDIT_GRADE)
+BROKER_RATING_URL = 'https://developer.tbank.ru/invest/api/instruments-service-bond-by'
+BROKER_RATING_MAX_AGE = timedelta(days=366)
+BROKER_RATING_OBSERVATION_TTL = timedelta(hours=24)
+AGENCY_ALIASES = {
+    'acra': 'ACRA', 'акра': 'ACRA',
+    'аналитическое кредитное рейтинговое агентство': 'ACRA',
+    'expert_ra': 'EXPERT_RA', 'expert ra': 'EXPERT_RA', 'эксперт ра': 'EXPERT_RA',
+    'nkr': 'NKR', 'ncr': 'NKR', 'нкр': 'NKR', 'национальные кредитные рейтинги': 'NKR',
+    'nra': 'NRA', 'нра': 'NRA', 'национальное рейтинговое агентство': 'NRA',
+}
 RATING_UNAVAILABLE = 'Рейтинг отсутствует, отозван, просрочен или относится к другой шкале.'
 INVALID_RATING = 'Некорректная запись рейтинга исключена из оценки.'
 
@@ -98,6 +112,8 @@ class Rating:
     status: str
     outlook: str
     source: Source
+    evidence_basis: str = 'agency_publication'
+    is_under_watch: bool = False
 
     def level(self) -> int | None:
         if (self.scale != 'RU_NATIONAL_LONG_TERM' or not isinstance(self.agency, str)
@@ -109,7 +125,10 @@ class Rating:
         except ValueError:
             return None
         root = AGENCIES[self.agency]
-        if host != root and host != 'www.' + root:
+        primary = self.evidence_basis == 'agency_publication' and host in {root, 'www.' + root}
+        broker = (self.evidence_basis == 't_invest_bond_rating'
+                  and self.source.url == BROKER_RATING_URL and self.subject_kind == 'issue')
+        if not primary and not broker:
             return None
         symbol = _national_rating_symbol(self.agency, self.grade)
         return LEVELS.index(symbol) if symbol in LEVELS else None
@@ -120,7 +139,7 @@ class Rating:
 
 def _rating_identity(rating: Rating) -> tuple:
     return (rating.grade, rating.status, rating.outlook, rating.source.url,
-            rating.source.expires_at)
+            rating.source.expires_at, rating.is_under_watch)
 
 
 def _subject_matches(rating: Rating, issuer_id: str | None, instrument_id: str) -> bool:
@@ -137,7 +156,8 @@ def _rating_moment(rating: Rating, at: datetime) -> tuple | None:
 
 
 def _remember_latest(latest: dict, rating: Rating, moment: tuple) -> None:
-    key = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
+    # A freshly fetched broker copy must not replace a primary-source withdrawal.
+    key = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id, rating.evidence_basis)
     previous = latest.get(key)
     if previous is None or moment > previous[0]:
         latest[key] = (moment, [rating])
@@ -154,7 +174,7 @@ def _latest_ratings(ratings: Iterable[Rating], issuer_id: str | None,
             continue
         if not _subject_matches(rating, issuer_id, instrument_id):
             continue
-        identity = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id)
+        identity = (rating.agency, rating.scale, rating.subject_kind, rating.subject_id, rating.evidence_basis)
         if any(not isinstance(value, str) for value in identity):
             warnings.append(INVALID_RATING)
             continue
@@ -170,6 +190,7 @@ def _current_rating(simultaneous: list[Rating], at: datetime, warnings: list[str
         warnings.append('Получены противоречивые рейтинги с одинаковой датой. Они не используются до проверки источника.')
         return None
     if (first.status != 'active' or not isinstance(first.outlook, str)
+            or type(first.is_under_watch) is not bool
             or not all(item.source.valid(at) for item in simultaneous)):
         warnings.append(RATING_UNAVAILABLE)
         return None
@@ -196,7 +217,7 @@ def credit_assessment(ratings: Iterable[Rating], *, issuer_id: str | None,
         row = _current_rating(simultaneous, at, warnings)
         if row is not None:
             current.append(row)
-    current.sort(key=lambda item: (item['agency'], item['scale'], item['subject_kind'], item['subject_id']))
+    current.sort(key=lambda item: (item['agency'], item['scale'], item['subject_kind'], item['subject_id'], item['evidence_basis']))
     return _credit_result(current, warnings, bond)
 
 
@@ -206,9 +227,74 @@ def _credit_result(current: list[dict], warnings: list[str], bond: bool) -> dict
         warnings.append('Нет проверенного рейтинга этого выпуска.' if bond else 'Нет проверенного рейтинга компании.')
     return {'ratings': current, 'warnings': sorted(set(warnings)),
             'has_required_rating': bool(relevant),
-            'watch': any(r['outlook'] in {'negative', 'developing', 'watch_negative'} for r in current),
+            'watch': any(r['is_under_watch'] or r['outlook'] in {'negative', 'developing', 'watch_negative'} for r in current),
+            'minimum_grade': MINIMUM_CREDIT_GRADE,
+            'within_rating_floor': bool(relevant) and not warnings and all(
+                0 <= r['level_within_agency'] <= MAXIMUM_CREDIT_LEVEL for r in current),
             'default_probability': None,
             'explanation': 'Рейтинг — мнение о способности вернуть долг, не обещание дохода и не точный процент риска.'}
+
+
+def broker_bond_ratings(meta: dict, *, instrument_id: str, observed_at: str,
+                       at: datetime) -> tuple[list[Rating], list[str]]:
+    """Normalize the official Bond.ratings field, never broker riskLevel.
+
+    The rating belongs to the returned bond. It does not establish the issuer's
+    rating or issuer identity. Observation and agency assignment dates remain
+    distinct, and neither LLM output nor an unmarked international scale qualifies.
+    """
+    _assessment_time(at)
+    if 'ratings' not in meta:
+        return [], []  # Older API observations retain the primary-source path.
+    if meta.get('uid') != instrument_id or not isinstance(meta.get('ratings'), list):
+        return [], ['broker_rating_identity_or_shape_invalid']
+    try:
+        observed = stamp(observed_at)
+    except EvidenceError:
+        return [], ['broker_rating_observation_invalid']
+    if not observed <= at < observed + BROKER_RATING_OBSERVATION_TTL:
+        return [], ['broker_rating_observation_stale_or_future']
+    ratings, errors = [], []
+    if len(meta['ratings']) > 100:
+        return [], ['broker_rating_response_too_large']
+    for row in meta['ratings']:
+        try:
+            ratings.append(_broker_bond_rating(row, instrument_id, observed, at))
+        except (EvidenceError, TypeError, ValueError, OverflowError):
+            errors.append('broker_rating_unrecognized_ambiguous_or_stale')
+    return ratings, sorted(set(errors))
+
+
+def _broker_bond_rating(row: dict, uid: str, observed: datetime, at: datetime) -> Rating:
+    if not isinstance(row, dict):
+        raise EvidenceError('broker_rating_shape_invalid')
+    name, grade = row.get('agencyName'), row.get('ratingLevel')
+    agency = AGENCY_ALIASES.get(name.strip().casefold()) if isinstance(name, str) else None
+    if not agency or not isinstance(grade, str) or _national_rating_symbol(agency, grade) not in LEVELS:
+        raise EvidenceError('broker_rating_scale_unrecognized')
+    assigned = stamp(row.get('ratingDate'))
+    if assigned > observed:
+        raise EvidenceError('broker_rating_future')
+    expires = min(observed + BROKER_RATING_OBSERVATION_TTL, assigned + BROKER_RATING_MAX_AGE)
+    if not assigned <= observed <= at < expires:
+        raise EvidenceError('broker_rating_stale_or_future')
+    watch = row.get('isUnderWatch', False)  # Proto3 omitted bool is false.
+    if type(watch) is not bool:
+        raise EvidenceError('broker_rating_watch_invalid')
+    forecasts = {'стабильный': 'stable', 'stable': 'stable', 'позитивный': 'positive',
+                 'positive': 'positive', 'негативный': 'negative', 'negative': 'negative',
+                 'развивающийся': 'developing', 'developing': 'developing'}
+    forecast = row.get('forecast')
+    outlook = forecasts.get(forecast.strip().casefold()) if isinstance(forecast, str) else None
+    if outlook is None:
+        raise EvidenceError('broker_rating_forecast_unrecognized')
+    fingerprint = hashlib.sha256(json.dumps({'uid': uid, 'rating': row, 'observed_at': observed.isoformat()},
+        ensure_ascii=False, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
+    proof = Source('t-invest-rating:' + fingerprint, BROKER_RATING_URL,
+                   assigned.isoformat(), observed.isoformat(), expires.isoformat(),
+                   'provider-observation:' + fingerprint)
+    return Rating(agency, 'RU_NATIONAL_LONG_TERM', grade, 'issue', uid, 'active',
+                  outlook, proof, evidence_basis='t_invest_bond_rating', is_under_watch=watch)
 
 
 @dataclass(frozen=True)
@@ -328,3 +414,4 @@ def _national_rating_symbol(agency: str, grade: str) -> str:
     if agency == 'NKR':
         return grade[:-3] if grade.endswith('.ru') else ''
     return grade[:-4] if grade.endswith('|ru|') else ''
+

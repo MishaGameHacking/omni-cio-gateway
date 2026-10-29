@@ -13,6 +13,7 @@ import httpx
 
 from backend.ai_budget import BudgetDenied, MoneyLedger, micro_rub, token_cost
 from backend.ai_guarded_client import GuardedAIClient, GuardError
+from backend.tests.ai_broker_fixtures import bind_synthetic_broker
 
 
 class Tier(Enum):
@@ -26,6 +27,7 @@ class AccountingAuditTests(unittest.TestCase):
         self.database = Path(temporary.name) / 'accounting.db'
         self.ledger = MoneyLedger(self.connect)
         self.ledger.initialize()
+        bind_synthetic_broker(self.connect)
 
     def connect(self):
         db = sqlite3.connect(self.database, timeout=10)
@@ -62,13 +64,13 @@ class AccountingAuditTests(unittest.TestCase):
         self.assertEqual(self.ledger.user_summary(1)['estimated_and_reserved_rub'], '0.00006')
 
     def test_summary_does_not_round_under_callers_context(self):
-        self.reserve(ceiling=100_059_999)
+        self.reserve(ceiling=99_059_999)
         with localcontext() as context:
             context.prec = 2
             context.traps[Inexact] = True
             context.traps[Rounded] = True
             summary = self.ledger.user_summary(1)
-        self.assertEqual(summary['estimated_and_reserved_rub'], '100.059999')
+        self.assertEqual(summary['estimated_and_reserved_rub'], '99.059999')
 
     def test_summary_exact_for_multiple_micro_units(self):
         for index, amount in enumerate([1, 999999, 1000000, 1000001]):
@@ -174,3 +176,4 @@ class AccountingAuditTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

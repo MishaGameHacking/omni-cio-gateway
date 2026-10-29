@@ -1,6 +1,7 @@
 """Read-only market adapters and evidence-rich instrument dossiers."""
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import date, datetime, timedelta, timezone
 import re
 import threading
@@ -11,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 try:
     from . import app as backend, portfolio_details as details, research_store
-    from .credit_evidence import Rating, Source, credit_assessment, EvidenceError
+    from .credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, EvidenceError
     from .investment_links import instrument_link
     from .volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
@@ -20,7 +21,7 @@ except ImportError:
     import app as backend
     import portfolio_details as details
     import research_store
-    from credit_evidence import Rating, Source, credit_assessment, EvidenceError
+    from credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, EvidenceError
     from investment_links import instrument_link
     from volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
@@ -93,11 +94,17 @@ def instrument(user: Any, uid: str) -> dict:
         with details.BrokerReader(user) as reader:
             pace_instruments(reader.scope)
             raw = reader.read('instrument', {'idType': 'INSTRUMENT_ID_TYPE_UID', 'id': uid})
-        item = raw.get('instrument')
-        if not isinstance(item, dict) or item.get('uid') != uid:
-            raise HTTPException(502, 'instrument_identity_mismatch')
-        item = {**item, '_source': source('GetInstrumentBy', uid, now_iso(),
-                url=DOCS + 'instruments-service-get-instrument-by', ttl=86400)}
+            item = raw.get('instrument')
+            if not isinstance(item, dict) or item.get('uid') != uid:
+                raise HTTPException(502, 'instrument_identity_mismatch')
+            if instrument_kind(item) == 'bond':
+                typed = broker_read(reader, 'bond_by', {'idType': 'INSTRUMENT_ID_TYPE_UID', 'id': uid}).get('instrument')
+                if not isinstance(typed, dict) or typed.get('uid') != uid:
+                    raise HTTPException(502, 'bond_identity_mismatch')
+                item = {**item, **typed, 'instrumentType': 'bond'}
+        bond = instrument_kind(item) == 'bond'
+        item = {**item, '_source': source('BondBy' if bond else 'GetInstrumentBy', uid, now_iso(),
+                url=DOCS + ('instruments-service-bond-by' if bond else 'instruments-service-get-instrument-by'), ttl=86400)}
         return item
     # Full instrument responses contain client-specific requiredTests/rights.
     return details.cached(('workspace-instrument', *details.identity(user), uid), 300, load)
@@ -265,17 +272,28 @@ def rating_section(uid: str, meta: dict) -> dict:
         if issuer:
             history += research_store.records(backend.connect, 'rating', issuer, at=at)
         ratings = [Rating(**{**row, 'source': Source(**row['source'])}) for row in history]
+        broker_rows, broker_warnings = broker_bond_ratings(meta, instrument_id=uid,
+            observed_at=(meta.get('_source') or {}).get('observed_at'), at=at) if instrument_kind(meta) == 'bond' else ([], [])
+        ratings.extend(broker_rows)
+        history += [asdict(row) for row in broker_rows]
         assessment = credit_assessment(ratings, issuer_id=issuer, instrument_id=uid,
                                        at=at, bond=instrument_kind(meta) == 'bond')
+        assessment['warnings'] = sorted(set(assessment['warnings'] + broker_warnings))
     except (ValueError, TypeError, KeyError, EvidenceError):
         return section({'items': [], 'history': [], 'warnings': ['Проверенные рейтинги недоступны.']},
                        state='unavailable', reason='rating_evidence_unavailable')
     return section({'items': assessment['ratings'], 'history': history, 'warnings': assessment['warnings'],
                     'issuer_id': issuer, 'has_required_rating': assessment['has_required_rating'],
+                    'minimum_grade': assessment['minimum_grade'],
+                    'within_rating_floor': assessment['within_rating_floor'] and not broker_warnings,
                     'scales_are_not_averaged': True},
-                   state='available' if assessment['has_required_rating'] else 'partial',
-                   reason=None if assessment['has_required_rating'] else 'verified_rating_required',
-                   as_of=at.isoformat(), sources=[reviewed_source(row['source'], provider=row['agency'], method='credit_rating', subject=row['subject_id']) for row in history])
+                   state='available' if assessment['has_required_rating'] and not assessment['warnings'] else 'partial',
+                   reason=('rating_evidence_incomplete_or_conflicting' if assessment['warnings']
+                           else None if assessment['has_required_rating'] else 'verified_rating_required'),
+                   as_of=at.isoformat(), sources=[reviewed_source(row['source'],
+                       provider='T-Invest / ' + row['agency'] if row.get('evidence_basis') == 't_invest_bond_rating' else row['agency'],
+                       method='broker_reported_credit_rating' if row.get('evidence_basis') == 't_invest_bond_rating' else 'credit_rating',
+                       subject=row['subject_id']) for row in history])
 
 
 FUNDAMENTAL_LABELS = {'revenueTtm': ('Выручка за 12 месяцев', 'currency'),
@@ -619,4 +637,5 @@ def _news_reason(complete, errors):
     if complete:
         return None
     return errors[0] if errors else 'news_page_limit_or_cursor_failure'
+
 

@@ -2,9 +2,11 @@
 from contextlib import closing
 
 try:
+    from .credit_evidence import MAXIMUM_CREDIT_LEVEL
     from . import app as backend, research_store, volume_market as market
     from .volume_contract import digest
 except ImportError:
+    from credit_evidence import MAXIMUM_CREDIT_LEVEL
     import app as backend
     import research_store
     import volume_market as market
@@ -12,13 +14,13 @@ except ImportError:
 
 
 def _identity(row: dict) -> tuple:
-    return tuple(row.get(key) for key in ("agency", "scale", "subject_kind", "subject_id"))
+    return tuple(row.get(key) for key in ("agency", "scale", "subject_kind", "subject_id", "evidence_basis"))
 
 
 def _summary(value: dict | None) -> dict:
     data = (value or {}).get("data", {})
     return {"state": (value or {}).get("state", "unavailable"), "warnings": data.get("warnings", []),
-            "items": [{key: row.get(key) for key in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook", "level_within_agency")}
+            "items": [{key: row.get(key) for key in ("agency", "scale", "subject_kind", "subject_id", "grade", "status", "outlook", "is_under_watch", "evidence_basis", "level_within_agency")}
                       for row in data.get("items", [])]}
 
 
@@ -29,8 +31,8 @@ def critical(value: dict | None, previous: dict | None = None) -> bool:
         prior = before.get(_identity(row), {}).get("level_within_agency")
         # Grade levels are comparable only within the same agency, scale and
         # rated object. A missing/expired grade is never a numerical downgrade.
-        if row.get("outlook") in {"negative", "developing", "watch_negative"} or (
-            isinstance(level, int) and (level > 9 or isinstance(prior, int) and level > prior)):
+        if row.get("outlook") in {"negative", "developing", "watch_negative"} or row.get("is_under_watch") is True or (
+            type(level) is int and (level > MAXIMUM_CREDIT_LEVEL or type(prior) is int and level > prior)):
             return True
     return False
 
@@ -39,15 +41,18 @@ def observations(snapshot: dict) -> dict:
     with closing(backend.connect()) as db:
         research_store.initialize(db)
         subjects = {row[0] for row in db.execute("SELECT DISTINCT subject FROM research_evidence_v1 WHERE kind='rating'")}
-    if not subjects:
-        return {}
     selected = {}
     for position in snapshot.get("positions", []):
         uid = position["instrument_uid"]
         issuer = (position.get("verified_identity") or {}).get("issuer_id")
-        if uid in selected or not (uid in subjects or issuer in subjects):
+        metadata = position.get("metadata") or {}
+        has_broker_ratings = "broker_ratings" in metadata
+        if uid in selected or not (uid in subjects or issuer in subjects or has_broker_ratings):
             continue
-        value = market.rating_section(uid, {"instrumentType": position.get("instrument_type")})
+        meta = {"uid": uid, "instrumentType": position.get("instrument_type")}
+        if has_broker_ratings:
+            meta.update(ratings=metadata["broker_ratings"], _source={"observed_at": metadata.get("broker_ratings_observed_at")})
+        value = market.rating_section(uid, meta)
         # Full action history stays in the dossier; monitoring retains only the
         # assessed current state plus its actual source records.
         value["data"] = {key: raw for key, raw in value.get("data", {}).items() if key != "history"}
@@ -83,3 +88,4 @@ def record_changes_in(db, user_id: int, snapshot: dict, previous: dict | None) -
 
 def signature(values: dict) -> str:
     return digest({uid: _summary(row) for uid, row in sorted(values.items())})
+

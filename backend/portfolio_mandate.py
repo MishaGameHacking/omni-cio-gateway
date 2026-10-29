@@ -10,9 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 from fastapi import HTTPException
 
 try:
+    from .credit_evidence import MAXIMUM_CREDIT_LEVEL
     from .volume_contract import decimal, text_number, financial_context
     from .strategy_construction import permitted_classes
 except ImportError:
+    from credit_evidence import MAXIMUM_CREDIT_LEVEL
     from volume_contract import decimal, text_number, financial_context
     from strategy_construction import permitted_classes
 
@@ -25,7 +27,7 @@ class PortfolioMandate(BaseModel):
     loss_capacity_percent: str = Field(min_length=1, max_length=40)
     bond_target_percent: str = Field(min_length=1, max_length=40)
     share_target_percent: str = Field(min_length=1, max_length=40)
-    minimum_rating_level: StrictInt = Field(ge=0, le=9)
+    minimum_rating_level: StrictInt = Field(ge=0, le=MAXIMUM_CREDIT_LEVEL)
     max_discretionary_turnover_percent: str = Field(min_length=1, max_length=40)
     turnover_window_days: StrictInt = Field(ge=1, le=366)
     max_trade_cost_percent: str = Field(min_length=1, max_length=40)
@@ -58,7 +60,10 @@ def validated_mandate(value: PortfolioMandate | dict) -> dict:
 def preserve_mandate(config: dict, active: dict | None, *, supplied: bool) -> dict:
     previous = (active or {}).get("config", {}).get("mandate")
     if previous and not supplied:
-        return {**config, "mandate": validated_mandate(previous)}
+        # Tighten a legacy BBB- setting on migration; retain stricter choices.
+        floor = previous.get("minimum_rating_level")
+        migrated = {**previous, "minimum_rating_level": min(floor, MAXIMUM_CREDIT_LEVEL)} if type(floor) is int else previous
+        return {**config, "mandate": validated_mandate(migrated)}
     if previous and config.get("mandate") is None:
         raise HTTPException(409, "mandate_cannot_be_removed_by_legacy_edit")
     return config
@@ -89,10 +94,16 @@ def mandate_purchase_reasons(config: dict, instrument_type: str | None,
     if decimal(mandate["loss_capacity_percent"]) == 0:
         result.append("zero_loss_capacity_blocks_new_risk")
     if credit is not None:
+        configured_floor = mandate.get("minimum_rating_level")
+        if type(configured_floor) is not int or configured_floor < 0:
+            return result + ["rating_mandate_invalid"]
+        # Persisted configs and older clients cannot weaken the global floor.
+        effective_floor = min(configured_floor, MAXIMUM_CREDIT_LEVEL)
         for row in credit.get("ratings", []):
             level = row.get("level_within_agency")
-            if type(level) is not int or not 0 <= level <= mandate["minimum_rating_level"]:
+            if type(level) is not int or not 0 <= level <= effective_floor:
                 result.append("rating_below_owner_mandate")
                 break
     return result
+
 

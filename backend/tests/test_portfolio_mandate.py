@@ -62,7 +62,7 @@ def test_mandate_exact_percentages_ignore_external_decimal_precision():
         assert validated_mandate(mandate()) == mandate()
 
 @pytest.mark.parametrize('field,value', [
-    ('asset_mode','funds'), ('base_currency','USD'), ('minimum_rating_level',10),
+    ('asset_mode','funds'), ('base_currency','USD'), ('minimum_rating_level',9), ('minimum_rating_level',10),
     ('minimum_rating_level',True), ('rebalance_cooldown_days',True), ('rebalance_cooldown_days',-1),
     ('turnover_window_days',0), ('allowed_sessions',['weekend']), ('reinvest_coupons','false'),
     ('loss_capacity_percent','NaN'), ('max_trade_cost_percent','-0.1'),
@@ -84,3 +84,22 @@ def test_owner_floor_class_and_zero_risk_are_independent_constraints():
     reasons=mandate_purchase_reasons(cfg,'share','other',{'ratings':[{'level_within_agency':7}]})
     assert set(reasons)=={'instrument_class_outside_mandate','account_outside_mandate','zero_loss_capacity_blocks_new_risk','rating_below_owner_mandate'}
     assert mandate_purchase_reasons(config(),'share','owned-account-a',{}) == []
+
+
+@pytest.mark.parametrize('persisted_level', [9, 10, 100])
+def test_persisted_weaker_floor_cannot_bypass_current_policy(persisted_level):
+    cfg = configured()
+    cfg['mandate']['minimum_rating_level'] = persisted_level
+    assert 'rating_below_owner_mandate' in mandate_purchase_reasons(cfg, 'bond',
+        'owned-account-a', {'ratings': [{'level_within_agency': 9}]})
+    assert 'rating_below_owner_mandate' not in mandate_purchase_reasons(cfg, 'bond',
+        'owned-account-a', {'ratings': [{'level_within_agency': 8}]})
+
+
+def test_legacy_edit_tightens_only_the_obsolete_credit_floor():
+    from backend.portfolio_mandate import preserve_mandate
+    previous = configured()
+    previous['mandate']['minimum_rating_level'] = 9
+    result = preserve_mandate(config(), {'config': previous}, supplied=False)
+    assert result['mandate'] == {**previous['mandate'], 'minimum_rating_level': 8}
+

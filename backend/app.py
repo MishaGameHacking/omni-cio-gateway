@@ -37,8 +37,8 @@ except ImportError:
     from schema_migrations import execute_schema
 
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", "/var/lib/analyst-ai/backend.db"))
-TELEGRAM_CLIENT_ID = os.environ["TELEGRAM_CLIENT_ID"]
-TELEGRAM_CLIENT_SECRET = os.environ["TELEGRAM_CLIENT_SECRET"]
+TELEGRAM_CLIENT_ID = os.getenv("TELEGRAM_CLIENT_ID", "")
+TELEGRAM_CLIENT_SECRET = os.getenv("TELEGRAM_CLIENT_SECRET", "")
 BACKEND_PUBLIC_URL = os.environ["BACKEND_PUBLIC_URL"].rstrip("/")
 TELEGRAM_REDIRECT_URI = os.getenv(
     "TELEGRAM_REDIRECT_URI",
@@ -793,3 +793,4 @@ for volume_router in (volume_live_router, volume_workspace_router, volume_state_
                       volume_devices_router, volume_plans_router, volume_analysis_router, volume_monitor_router,
                       volume_catalogue_router, volume_purchases_router):
     app.include_router(volume_router)
+

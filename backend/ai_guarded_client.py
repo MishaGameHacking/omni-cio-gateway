@@ -21,14 +21,16 @@ import httpx
 try:
     from .bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
     from .model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
-    from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
+    from .ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost, configured_limits
+    from .ai_broker_access import broker_binding, assert_broker_binding, assert_broker_binding_in
     from .ai_route_catalog import approved_candidates, CatalogError
     from .ai_jobs import CURRENT_JOB, AnalysisQueue
     from .monitoring_access import assert_monitoring_access
 except ImportError:
     from bounded_ai_response import ACCEPT_ENCODING, ResponseBodyError, read_bounded_body
     from model_json_limits import checked_model_json_text, ModelJsonLimitError, MAX_MODEL_JSON_BYTES
-    from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
+    from ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost, configured_limits
+    from ai_broker_access import broker_binding, assert_broker_binding, assert_broker_binding_in
     from ai_route_catalog import approved_candidates, CatalogError
     from ai_jobs import CURRENT_JOB, AnalysisQueue
     from monitoring_access import assert_monitoring_access
@@ -268,8 +270,12 @@ class GuardedAIClient:
 
     def check_ready(self, tier, *, input_bytes: int = 0, max_output_tokens: int = 1600) -> Route:
         route = configured_route(tier, self.env, input_bytes=input_bytes, max_output_tokens=max_output_tokens)
-        if micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')) <= 0 or micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')) <= 0:
-            reject('ai_ruble_budget_not_enabled')
+        try:
+            if any(cap <= 0 for cap in configured_limits(self.env)):
+                reject('ai_ruble_budget_not_enabled')
+            broker_binding(self.connect, self.user_id)
+        except BudgetDenied as error:
+            raise GuardError(str(error)) from None
         return route
 
     def complete_json(self, *, tier, messages, max_output_tokens: int):
@@ -278,13 +284,18 @@ class GuardedAIClient:
         except BudgetDenied as error:
             raise GuardError(str(error)) from None
 
-    def _monthly_cap(self, name):
-        return micro_rub(self.env[name]) if name in self.env else None
+    def _reserve_guard(self, binding):
+        def check(db):
+            if self.budget_guard is not None:
+                self.budget_guard(db)
+            assert_broker_binding_in(db, self.user_id, binding)
+        return check
 
     def _complete(self, tier, messages, max_output_tokens: int):
         assert_monitoring_access(self.connect)
         encoded = _encoded_messages(messages, max_output_tokens)
         route = self.check_ready(tier, input_bytes=len(encoded), max_output_tokens=max_output_tokens)
+        binding = broker_binding(self.connect, self.user_id)
         # Conservative configurable estimate, not a tokenizer/invoice guarantee.
         input_bound = len(encoded) + route.input_allowance
         ceiling = token_cost(input_bound, max_output_tokens, route.input_rate, route.output_rate)
@@ -298,11 +309,11 @@ class GuardedAIClient:
                 reject('ai_worker_reconciliation_required')
         attempt = self.attempt_id or (job[0] if job else uuid.uuid4().hex)
         reservation = hashlib.sha256((attempt + ':' + tier.value + ':' + route.identifier).encode()).hexdigest()
+        user_cap, project_cap, user_month_cap, project_month_cap = configured_limits(self.env)
         self.ledger.reserve(user_id=self.user_id, key=reservation, route=route.identifier, model=route.model,
-                            ceiling=ceiling, user_cap=micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')),
-                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard,
-                            user_month_cap=self._monthly_cap('AI_USER_MONTHLY_RUB'),
-                            project_month_cap=self._monthly_cap('AI_PROJECT_MONTHLY_RUB'))
+                            ceiling=ceiling, user_cap=user_cap, project_cap=project_cap,
+                            job=job, guard=self._reserve_guard(binding),
+                            user_month_cap=user_month_cap, project_month_cap=project_month_cap)
         payload = completion_payload(route, messages, max_output_tokens)
         sent = False
         try:
@@ -311,6 +322,9 @@ class GuardedAIClient:
             assert_monitoring_access(self.connect)
             if self.before_send is not None:
                 self.before_send()
+            assert_broker_binding(self.connect, self.user_id, binding)
+            if int(time.time()) >= route.expires_at:
+                reject('ai_prices_missing_stale_or_invalid')
             # Once dispatch may have begun, no timeout/cancellation can refund
             # an unknown provider charge or cause an automatic paid replay.
             sent = True
@@ -323,6 +337,7 @@ class GuardedAIClient:
                 AnalysisQueue(self.connect).assert_owner(*job)
             if self.after_response is not None:
                 self.after_response()
+            assert_broker_binding(self.connect, self.user_id, binding)
             return ModelResult(model=returned, data=content, usage=usage)
         except Exception:
             if sent:
@@ -391,4 +406,5 @@ class GuardedAIClient:
         if values[0] + values[1] != values[2] or values[0] == 0:
             raise GuardError('ai_usage_inconsistent')
         return ModelUsage(*values)
+
 

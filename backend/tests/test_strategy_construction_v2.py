@@ -40,6 +40,8 @@ def test_weights_and_stress_keep_budget_under_all_combinations():
             for capacity in (0, 1, 5, 30):
                 value = policy()
                 value["tuning"]["profile_id"] = profile
+                value["construction"] = profile_construction(profile, {})
+                value["construction"].update(loss_capacity_confirmed=True, income_stability="stable")
                 value["horizon_months"] = horizon
                 value["mandate"]["loss_capacity_percent"] = str(capacity)
                 before = deepcopy(value)
@@ -51,6 +53,59 @@ def test_weights_and_stress_keep_budget_under_all_combinations():
                 if horizon < 36:
                     assert weights["share"] == weights["etf"] == 0
                 assert value == before
+
+
+@pytest.mark.parametrize("profile", ["capital", "balanced", "growth"])
+def test_new_presets_do_not_allocate_to_funds(profile):
+    value = policy()
+    value["tuning"]["profile_id"] = profile
+    value["construction"] = profile_construction(profile, {})
+    value["construction"].update(loss_capacity_confirmed=True, income_stability="stable")
+    value["mandate"]["loss_capacity_percent"] = "100"
+    assert value["construction"]["version"] == 2
+    assert "etf" not in permitted_classes(value)
+    result = allocation_policy(value)
+    assert Decimal(result["weights_percent"]["etf"]) == 0
+    assert Decimal(result["weights_percent"]["bond"]) > 0
+    if profile != "capital":
+        assert Decimal(result["weights_percent"]["share"]) > 0
+
+
+def test_saved_version_one_allocations_are_not_silently_replaced():
+    value = policy()
+    value["construction"].update(version=1, enabled_classes=["bond", "share", "etf"])
+    value["mandate"]["loss_capacity_percent"] = "100"
+    before = deepcopy(value)
+    result = allocation_policy(value)
+    assert result["weights_percent"] == {"bond": "34.00", "share": "17.00", "etf": "34.00", "cash": "15.00"}
+    assert value == before
+
+
+@pytest.mark.parametrize("profile, allowed, excluded", [("coupon", "bond", "share"), ("equity", "share", "bond")])
+def test_legacy_profile_edit_with_version_two_keeps_its_actual_asset_weights(profile, allowed, excluded):
+    value = policy()
+    value["tuning"]["profile_id"] = profile
+    value["mandate"]["loss_capacity_percent"] = "100"
+    before = deepcopy(value)
+    result = allocation_policy(value)
+    assert Decimal(result["weights_percent"][allowed]) > 0
+    assert Decimal(result["weights_percent"][excluded]) == 0
+    assert Decimal(result["weights_percent"]["etf"]) == 0
+    assert value == before
+
+
+@pytest.mark.parametrize("enabled", [["bond"], ["share"], ["etf"], []])
+def test_switching_profile_keeps_disabled_classes_disabled(enabled):
+    previous = policy()
+    previous["construction"]["enabled_classes"] = enabled
+    original = deepcopy(previous)
+    for profile in ("capital", "balanced", "growth"):
+        next_config = profile_construction(profile, previous)
+        assert set(next_config["enabled_classes"]) <= set(enabled)
+        assert "etf" not in next_config["enabled_classes"]
+        assert next_config["loss_capacity_confirmed"] is True
+        assert next_config["income_stability"] == "stable"
+    assert previous == original
 
 
 def test_variable_income_and_disabled_assets_never_raise_risk():
@@ -200,3 +255,4 @@ def test_bond_horizon_handles_month_end_and_lot_changes():
     assert instrument_policy_reasons(meta, 10, value, now) == ["bond_maturity_outside_horizon"]
     meta.pop("maturityDate")
     assert instrument_policy_reasons(meta, 10, value, now) == ["bond_maturity_unknown"]
+

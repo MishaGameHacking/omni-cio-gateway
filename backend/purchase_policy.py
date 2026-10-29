@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 try:
-    from .credit_evidence import Source
+    from .credit_evidence import Source, MAXIMUM_CREDIT_LEVEL
     from .volume_contract import decimal, financial_context, instrument_currency, money, text_number, timestamp, ZERO
 except ImportError:
-    from credit_evidence import Source
+    from credit_evidence import Source, MAXIMUM_CREDIT_LEVEL
     from volume_contract import decimal, financial_context, instrument_currency, money, text_number, timestamp, ZERO
 
 try:
@@ -16,7 +16,7 @@ try:
 except ImportError:
     from portfolio_mandate import mandate_purchase_reasons
 
-POLICY_VERSION = "purchase-constraints-0.11.0-v1"
+POLICY_VERSION = "purchase-constraints-bbb-floor-v2"
 AXES = ("position", "issuer", "group", "sector", "currency")
 
 
@@ -79,8 +79,9 @@ def credit_reasons(assessment: dict, kind: str) -> list[str]:
         reasons.append("issuer_rating_required")
     if kind == "bond" and not any(row.get("subject_kind") == "issue" for row in rows):
         reasons.append("issue_rating_required")
-    if any(type(row.get("level_within_agency")) is not int or not 0 <= row["level_within_agency"] <= 9 for row in rows):
-        reasons.append("rating_below_bbb_minus_or_unknown")
+    if any(type(row.get("level_within_agency")) is not int
+           or not 0 <= row["level_within_agency"] <= MAXIMUM_CREDIT_LEVEL for row in rows):
+        reasons.append("rating_below_bbb_or_unknown")
     return reasons
 
 
@@ -269,4 +270,5 @@ def margin_of_safety(price, conservative_value) -> str | None:
     if current is None or value is None or current <= 0 or value <= 0:
         return None
     return text_number((value - current) / value * 100)
+
 

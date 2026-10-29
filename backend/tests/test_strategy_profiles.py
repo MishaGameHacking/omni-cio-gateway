@@ -13,7 +13,7 @@ from backend.tests.test_volume_workspace import fixture, config, activate
 from backend.tests.test_portfolio_mandate import configured
 
 
-def test_five_profiles_keep_stricter_limits_and_loss_capacity(fixture):
+def test_three_profiles_keep_stricter_limits_and_loss_capacity(fixture):
     cfg = configured()
     cfg["limits"]["issuer_percent"] = "2.5"
     cfg["mandate"]["loss_capacity_percent"] = "0"
@@ -21,8 +21,7 @@ def test_five_profiles_keep_stricter_limits_and_loss_capacity(fixture):
     active = {"config": cfg}
     original = deepcopy(active)
     result = catalogue(active, fixture["snapshot"])
-    assert len(result["items"]) == 5
-    assert len({item["id"] for item in result["items"]}) == 5
+    assert [item["id"] for item in result["items"]] == ["capital", "balanced", "growth"]
     for item in result["items"]:
         value = state.validate_config(item["config"])
         assert value["limits"]["issuer_percent"] == "2.5"
@@ -45,7 +44,7 @@ def test_profiles_are_read_only_and_preserve_existing_strategy(fixture):
     before = state.active_strategy(fixture["user"]["id"])
     response = fixture["client"].get("/workspace/strategy")
     assert response.status_code == 200
-    assert len(response.json()["profiles"]["items"]) == 5
+    assert len(response.json()["profiles"]["items"]) == 3
     assert state.active_strategy(fixture["user"]["id"]) == before
     selected = response.json()["profiles"]["items"][0]["config"]
     preview = fixture["client"].post("/workspace/strategy/preview",
@@ -80,6 +79,60 @@ def test_profile_money_ignores_caller_decimal_precision(fixture):
     with localcontext() as ctx:
         ctx.prec = 3
         assert catalogue({"config":configured()}, fixture["snapshot"]) == expected
+
+
+@pytest.mark.parametrize("level", [1, 8, 9])
+def test_catalogue_never_widens_rating_or_reinvestment_permissions(fixture, level):
+    cfg = configured()
+    cfg["mandate"].update(minimum_rating_level=level, reinvest_coupons=False, reinvest_dividends=False)
+    for row in catalogue({"config": cfg}, fixture["snapshot"])["items"]:
+        mandate = row["config"]["mandate"]
+        assert mandate["minimum_rating_level"] <= min(8, level)
+        assert mandate["reinvest_coupons"] is False
+        assert mandate["reinvest_dividends"] is False
+        assert "etf" not in row["config"]["construction"]["enabled_classes"]
+        assert row["config"]["construction"]["version"] == 2
+
+
+def test_catalogue_does_not_replace_a_revoked_account_with_another_account(fixture):
+    cfg = configured()
+    snapshot = deepcopy(fixture["snapshot"])
+    snapshot["accounts"] = [row for row in snapshot["accounts"] if row["id"] != cfg["mandate"]["account_id"]]
+    assert len(snapshot["accounts"]) == 1
+    for row in catalogue({"config": cfg}, snapshot)["items"]:
+        assert row["config"]["mandate"]["account_id"] == cfg["mandate"]["account_id"]
+        assert "account_not_in_snapshot" in row["missing"]
+        assert row["ready_for_preview"] is False
+
+
+def test_catalogue_preserves_disabled_classes_and_exposes_empty_intersection(fixture):
+    cfg = configured()
+    cfg["mandate"].update(asset_mode="shares", bond_target_percent="0", share_target_percent="100")
+    result = catalogue({"config": cfg}, fixture["snapshot"])
+    assert result["suggested_id"] == "growth"
+    for row in result["items"]:
+        construction = row["config"]["construction"]
+        assert "bond" not in construction["enabled_classes"]
+        assert "etf" not in construction["enabled_classes"]
+    capital = result["items"][0]
+    assert capital["config"]["construction"]["enabled_classes"] == []
+    assert "enabled_asset_class_required" in capital["missing"]
+    assert capital["ready_for_preview"] is False
+    assert capital["allocation"]["weights_percent"]["cash"] == "100.00"
+    state.validate_config(capital["config"])
+
+
+@pytest.mark.parametrize("identifier", ["coupon", "equity"])
+def test_legacy_profile_identifiers_remain_readable_but_are_not_offered(fixture, identifier):
+    from backend.strategy_construction import StrategyConstruction
+    cfg = configured()
+    cfg["tuning"] = {"profile_id": identifier, "enabled": True}
+    cfg["construction"] = StrategyConstruction(enabled_classes=["etf"], version=1).model_dump()
+    assert state.validate_config(cfg)["construction"]["enabled_classes"] == ["etf"]
+    result = catalogue({"config": cfg}, fixture["snapshot"])
+    assert identifier not in {row["id"] for row in result["items"]}
+    assert all("etf" not in row["config"]["construction"]["enabled_classes"] for row in result["items"])
+    assert cfg["construction"]["enabled_classes"] == ["etf"]
 
 
 def test_current_and_pending_exclude_obsolete_duplicate_candidates():
@@ -150,3 +203,4 @@ def test_invalid_monthly_cap_blocks_before_dispatch(fixture,cap):
     with pytest.raises(BudgetDenied,match="monthly_budget_disabled_or_invalid"):
         ledger.reserve(user_id=fixture["user"]["id"],key="invalid",route="route",model="model",
             ceiling=1,user_cap=10,project_cap=10,user_month_cap=cap)
+

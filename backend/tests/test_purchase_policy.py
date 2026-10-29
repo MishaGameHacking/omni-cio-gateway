@@ -40,7 +40,7 @@ def inputs():
         "meta": {"uid": "new", "instrumentType": "share", "currency": "RUB", "lot": 10,
             "buyAvailableFlag": True, "apiTradeAvailableFlag": True, "sector": "industry", "realExchange": "REAL_EXCHANGE_MOEX"},
         "identity": deepcopy(identity), "info": {},
-        "credit": {"ratings": [{"subject_kind": "issuer", "level_within_agency": 9}], "warnings": []},
+        "credit": {"ratings": [{"subject_kind": "issuer", "level_within_agency": 8}], "warnings": []},
         "quote": {"lotsRequested": "1", "totalOrderAmount": quotation("1002", "RUB"),
             "initialOrderAmount": quotation("1000", "RUB")},
         "capacity": {"currency": "RUB", "buyLimits": {"buyMoneyAmount": quotation("9000"), "buyMaxLots": "8"},
@@ -91,7 +91,16 @@ def test_bond_needs_issue_rating_and_worst_rating_cannot_be_averaged():
     assert "issue_rating_required" in policy.assess_purchase(**data)["reasons"]
     data["credit"]["ratings"] += [{"subject_kind": "issue", "level_within_agency": 0},
                                  {"subject_kind": "issuer", "level_within_agency": 10}]
-    assert "rating_below_bbb_minus_or_unknown" in policy.assess_purchase(**data)["reasons"]
+    assert "rating_below_bbb_or_unknown" in policy.assess_purchase(**data)["reasons"]
+
+
+@pytest.mark.parametrize("level", [9, 10, True, "8", None])
+def test_global_bbb_floor_rejects_legacy_or_unknown_rating(level):
+    data = inputs()
+    data["credit"]["ratings"][0]["level_within_agency"] = level
+    result = policy.assess_purchase(**data)
+    assert not result["constraints_passed"]
+    assert "rating_below_bbb_or_unknown" in result["reasons"]
 
 
 def test_borrowed_capacity_and_reserve_cannot_fund_a_purchase():
@@ -461,4 +470,5 @@ def test_cash_on_another_account_does_not_validate_stale_funding_snapshot():
     data = inputs()
     data["snapshot"]["positions"][1]["account_id"] = "owned-b"
     assert "snapshot_cash_requires_refresh" in policy.assess_purchase(**data)["reasons"]
+
 
