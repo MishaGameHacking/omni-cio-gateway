@@ -1,5 +1,6 @@
 """Temporary-file deployment regressions; no services, credentials or live data."""
 import base64
+from contextlib import closing
 import hashlib
 import io
 import importlib.util
@@ -157,7 +158,7 @@ class ServiceRollbackTests(unittest.TestCase):
         self.root.mkdir(); self.backup.mkdir()
         (self.root / 'app.py').write_bytes(b'old-code')
         self.database = folder / 'owner.sqlite3'
-        with sqlite3.connect(self.database) as db:
+        with closing(sqlite3.connect(self.database)) as db, db:
             db.execute('CREATE TABLE owner_password_credentials (singleton INTEGER)')
         self.changes = {'app.py': {'before': release.digest(b'old-code'),
                                   'after': release.digest(b'candidate-code'),
@@ -292,7 +293,7 @@ class OwnerPasswordReleaseTests(unittest.TestCase):
     def test_owner_binding_compares_identity_without_modifying_data(self):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory).resolve() / 'owner.sqlite3'
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE installation_owner (singleton INTEGER, telegram_sub TEXT, policy_version TEXT)')
                 db.execute('CREATE TABLE users (id INTEGER, telegram_sub TEXT)')
                 db.execute("INSERT INTO installation_owner VALUES (1,'synthetic-owner','policy')")
@@ -301,17 +302,17 @@ class OwnerPasswordReleaseTests(unittest.TestCase):
             identity = release.owner_binding(database)
             self.assertEqual(database.read_bytes(), before)
             self.assertRegex(identity, '^[a-f0-9]{64}$')
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute("UPDATE users SET telegram_sub='changed-owner'")
             self.assertNotEqual(release.owner_binding(database), identity)
 
     def test_no_credentials_allows_code_rollback_without_schema_removal(self):
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory).resolve() / 'owner.sqlite3'
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE unrelated (id INTEGER)')
             release.protect_auth_rollback(database)
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE owner_password_credentials (singleton INTEGER)')
             before = database.read_bytes()
             release.protect_auth_rollback(database)
@@ -331,7 +332,7 @@ class OwnerPasswordReleaseTests(unittest.TestCase):
             root.mkdir(); backup.mkdir()
             (root / 'app.py').write_bytes(b'old-login-code')
             database = folder / 'owner.sqlite3'
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE owner_password_credentials (singleton INTEGER)')
             before = database.read_bytes()
             changes = {'app.py': {'before': release.digest(b'old-login-code'),
@@ -352,13 +353,13 @@ class OwnerPasswordReleaseTests(unittest.TestCase):
             root.mkdir(); backup.mkdir()
             (root / 'app.py').write_bytes(b'old-login-code')
             database = folder / 'owner.sqlite3'
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 db.execute('CREATE TABLE owner_password_credentials (singleton INTEGER)')
             changes = {'app.py': {'before': release.digest(b'old-login-code'),
                                   'after': release.digest(b'password-login-code'),
                                   'content': 'password-login-code'}}
             def fail_after_enrollment():
-                with sqlite3.connect(database) as db:
+                with closing(sqlite3.connect(database)) as db, db:
                     db.execute('INSERT INTO owner_password_credentials VALUES (1)')
                 raise RuntimeError('synthetic activation failure')
             with mock.patch.object(release, 'systemctl') as service:
@@ -368,7 +369,7 @@ class OwnerPasswordReleaseTests(unittest.TestCase):
                 service.assert_not_called()
             self.assertEqual((root / 'app.py').read_bytes(), b'password-login-code')
             self.assertEqual((backup / 'app.py').read_bytes(), b'old-login-code')
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 self.assertEqual(db.execute('SELECT singleton FROM owner_password_credentials').fetchall(), [(1,)])
 
 
