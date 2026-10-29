@@ -125,10 +125,16 @@ class ProvisionTests(unittest.TestCase):
 
     def test_masked_creation_removes_only_just_created_unused_key(self):
         self.api.secret = provision.MASKED
-        with self.assertRaisesRegex(provision.ProvisionError, 'new_unused_key_removed_after_failure'):
+        with self.assertRaisesRegex(provision.ProvisionError, 'new_unused_key_removed_after_failure') as raised:
             self.invoke()
+        self.assertEqual(raised.exception.failure_code, 'new_gateway_key_masked_or_invalid')
         self.assertEqual([call[0] for call in self.writes()], ['POST', 'DELETE'])
         self.assertEqual(self.deliveries, [('preflight', None)])
+
+    def test_diagnostics_only_return_fixed_codes_never_arbitrary_provider_text(self):
+        arbitrary = provision.ProvisionError(SECRET)
+        self.assertEqual(provision.safe_failure_code(arbitrary), 'unclassified_failure')
+        self.assertEqual(provision.safe_failure_code(RuntimeError(SECRET)), 'unclassified_failure')
 
     def test_zero_limit_readback_failure_deletes_unused_key(self):
         self.api.wrong_limit = True

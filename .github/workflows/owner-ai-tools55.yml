@@ -13,6 +13,12 @@ on:
       - tools/tests/test_provision_owner55_ai.py
       - tools/tests/test_owner_ai_private_transport.py
       - deploy/stage_owner55_ai.py
+      - tools/activate_owner55_ai.py
+      - deploy/activate_owner55_ai.py
+      - tools/tests/test_activate_owner55_ai.py
+      - tools/launch_owner55_ai_wsl.py
+      - tools/owner55_ai_guest.py
+      - tools/tests/test_owner55_ai_launcher.py
 permissions:
   contents: read
 concurrency:
@@ -47,6 +53,12 @@ jobs:
             tools/tests/test_provision_owner55_ai.py
             tools/tests/test_owner_ai_private_transport.py
             deploy/stage_owner55_ai.py
+            tools/activate_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            tools/tests/test_activate_owner55_ai.py
+            tools/launch_owner55_ai_wsl.py
+            tools/owner55_ai_guest.py
+            tools/tests/test_owner55_ai_launcher.py
           sparse-checkout-cone-mode: false
       - name: Compile sources and run mocked tests without cloud credentials
         shell: cmd

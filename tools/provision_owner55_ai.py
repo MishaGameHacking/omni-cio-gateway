@@ -26,9 +26,25 @@ PREFLIGHT_CONTRACT = {'status': {'ready'}, 'server_id': int, 'existing_key_absen
 
 
 class ProvisionError(RuntimeError):
-    def __init__(self, code, *, key_id=None, retained=False):
+    def __init__(self, code, *, key_id=None, retained=False, failure_code=None):
         super().__init__(code)
         self.code, self.key_id, self.retained = code, key_id, retained
+        self.failure_code = failure_code
+
+
+def safe_failure_code(error):
+    permitted = {'new_key_metadata_mismatch', 'new_gateway_key_masked_or_invalid',
+                 'zero_limits_incomplete', 'zero_limits_wrong_periods',
+                 'zero_limits_not_enforced_for_all_models', 'new_key_not_visible_after_creation',
+                 'remote_staging_receipt_mismatch'}
+    if isinstance(error, ProvisionError):
+        if error.code in permitted:
+            return error.code
+        if error.code.startswith('cloud_'):
+            return 'cloud_request_failed'
+    if isinstance(error, PrivateTransportError):
+        return 'private_delivery_failed'
+    return 'unclassified_failure'
 
 
 def need(condition, code):
@@ -193,6 +209,7 @@ def provision(api, private_transfer, operation, source_sha256, name, *, now=None
                 'provider_fallback_disabled': True, 'runtime_activation_performed': False,
                 'account_currency_rub_confirmed': True}
     except BaseException as error:
+        failure_code = safe_failure_code(error)
         if isinstance(error, PrivateTransportError):
             remote_started = error.operation_started
         if not remote_started:
@@ -202,9 +219,12 @@ def provision(api, private_transfer, operation, source_sha256, name, *, now=None
                 api.request('DELETE', KEYS + '/' + key_id)
                 need(not any(row.get('id') == key_id for row in keys(api)), 'unused_new_key_deletion_unverified')
             except BaseException:
-                raise ProvisionError('new_unused_key_cleanup_failed', key_id=key_id, retained=True) from None
-            raise ProvisionError('new_unused_key_removed_after_failure', key_id=key_id) from None
-        raise ProvisionError('private_delivery_requires_inspected_recovery', key_id=key_id, retained=True) from None
+                raise ProvisionError('new_unused_key_cleanup_failed', key_id=key_id, retained=True,
+                                     failure_code=failure_code) from None
+            raise ProvisionError('new_unused_key_removed_after_failure', key_id=key_id,
+                                 failure_code=failure_code) from None
+        raise ProvisionError('private_delivery_requires_inspected_recovery', key_id=key_id, retained=True,
+                             failure_code=failure_code) from None
 
 
 def main():
@@ -225,7 +245,8 @@ if __name__ == '__main__':
         main()
     except ProvisionError as error:
         print(json.dumps({'status': 'not_activated', 'reason': error.code,
-                          'new_key_id': error.key_id, 'new_key_retained': error.retained}), flush=True)
+                          'new_key_id': error.key_id, 'new_key_retained': error.retained,
+                          'failure_code': error.failure_code}), flush=True)
         raise SystemExit(1) from None
     except BaseException:
         print(json.dumps({'status': 'not_activated', 'reason': 'unexpected_administrative_failure'}), flush=True)

@@ -5,14 +5,18 @@ from pathlib import Path
 import pwd
 import sys
 import unittest
+import urllib.request  # Initialize SSL classes before replacing socket.socket.
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = ['tools/inspect_owner55_ai.py', 'tools/provision_owner55_ai.py',
            'tools/owner_ai_private_transport.py', 'deploy/stage_owner55_ai.py',
-           'tools/check_owner55_ai_tools.py', 'tools/run_owner55_ai_tests.py']
+           'tools/check_owner55_ai_tools.py', 'tools/run_owner55_ai_tests.py',
+           'tools/activate_owner55_ai.py', 'deploy/activate_owner55_ai.py',
+           'tools/launch_owner55_ai_wsl.py', 'tools/owner55_ai_guest.py']
 PATTERNS = ['test_inspect_owner55_ai.py', 'test_provision_owner55_ai.py',
-            'test_owner_ai_private_transport.py']
+            'test_owner_ai_private_transport.py', 'test_activate_owner55_ai.py',
+            'test_owner55_ai_launcher.py']
 
 
 def main():

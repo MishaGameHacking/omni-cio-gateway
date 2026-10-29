@@ -51,6 +51,8 @@ class ReceiptTests(unittest.TestCase):
             transport.validate_receipt(b'{"server_id":9417611,"server_id":9417611}', CONTRACT)
         with self.assertRaisesRegex(transport.PrivateTransportError, 'private_receipt_size_invalid'):
             transport.validate_receipt(b'x' * (transport.MAX_RECEIPT + 1), CONTRACT)
+        with self.assertRaisesRegex(transport.PrivateTransportError, 'private_receipt_invalid_json'):
+            transport.validate_receipt(b'[' * 2000 + b'0' + b']' * 2000, CONTRACT)
 
 
 class PrivateTransferTests(unittest.TestCase):

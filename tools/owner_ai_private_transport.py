@@ -86,7 +86,7 @@ def validate_receipt(raw, contract, secrets=()):
           'private_receipt_contains_credential')
     try:
         value = json.loads(raw, object_pairs_hook=_object)
-    except (ValueError, UnicodeError, TypeError):
+    except (ValueError, TypeError, RecursionError):
         raise PrivateTransportError('private_receipt_invalid_json') from None
     _need(isinstance(value, dict) and set(value) == set(contract),
           'private_receipt_fields_invalid')

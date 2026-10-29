@@ -1,0 +1,84 @@
+name: Render owner55 access and system screens on owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/owner-visual55.yml
+      - tools/render_owner55.py
+      - tools/tests/test_render_owner55.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: workspace-redesign-visual
+  cancel-in-progress: false
+env:
+  RENDER_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+  EXPECTED_CLIENT_RUN: '40914747142'
+jobs:
+  render:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 170
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - name: Require the exact owner-laptop client verification
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id = Number(process.env.EXPECTED_CLIENT_RUN);
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id});
+            if (run.head_sha !== process.env.RENDER_SOURCE_SHA || run.path !== '.github/workflows/owner-system.yml')
+              throw new Error('The required build does not identify this source and workflow');
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun,
+              {...context.repo, run_id, filter: 'latest', per_page: 100});
+            const clients = jobs.filter(job => job.name === 'verify-client');
+            if (clients.length !== 1 || clients[0].status !== 'completed' || clients[0].conclusion !== 'success')
+              throw new Error('Exact owner-laptop Android verification has not passed');
+      - name: Checkout this exact administrative renderer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: visual-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/render_owner55.py
+            tools/tests/test_render_owner55.py
+          sparse-checkout-cone-mode: false
+      - name: Verify required screen inventory and baseline restoration on owner laptop
+        shell: cmd
+        working-directory: visual-tools-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -m unittest discover -s tools\tests -p test_render_owner55.py -v
+          if errorlevel 1 exit /b 1
+      - name: Checkout the exact compiled application source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+          path: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Render production Compose screens with synthetic data and restore references
+        shell: cmd
+        working-directory: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 ..\visual-tools-${{ github.run_id }}-${{ github.run_attempt }}\tools\render_owner55.py
+          if errorlevel 1 exit /b 1
+      - name: Preserve actual renders and diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner55-visual-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/owner55-visual-${{ github.run_id }}-${{ github.run_attempt }}/
+            visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/screenshotTest/
+            visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/tests/updateDebugScreenshotTest/
+            visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/test-results/updateDebugScreenshotTest/
+          if-no-files-found: error
+          retention-days: 7
