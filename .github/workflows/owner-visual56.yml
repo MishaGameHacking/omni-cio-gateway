@@ -3,7 +3,7 @@ on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths:
-      - .github/workflows/owner-visual55.yml
+      - .github/workflows/owner-visual56.yml
       - tools/render_owner56.py
       - tools/tests/test_render_owner56.py
 permissions:
