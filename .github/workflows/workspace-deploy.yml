@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: aad0a117074a1b083021f93ef9ff928102b95557
-  EXPECTED_TEST_RUN: '40718753255'
-  EXPECTED_ARTIFACT_SHA256: eba2631998f1f7be71f931f75f08e80aa2e2a6cecb6f1d27ae1b317e62e05a87
-  EXPECTED_BUNDLE_SHA256: f75ef2dbcb0e8e4d59c236a707ecc1c8a9a4c339cddb209693f03b6476e2ab54
+  EXPECTED_SOURCE_SHA: 4a154b14771fc882b30727620926604ab198d28c
+  EXPECTED_TEST_RUN: '40833239415'
+  EXPECTED_ARTIFACT_SHA256: 22efacfb7fffda1eed6a885ab5a8933feb8562165a7225b333a0656def893e14
+  EXPECTED_BUNDLE_SHA256: 48f8250d542401b106e23bd1ea17fcdec4897d9737ed3a00cc09a8d44532c448
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: aad0a117074a1b083021f93ef9ff928102b95557
+          ref: 4a154b14771fc882b30727620926604ab198d28c
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -54,8 +54,8 @@ jobs:
             if (!sonar || sonar.status!=='completed') throw new Error('Exact-source Sonar is not available; deployment has not been authorized by quality checks');
             const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
             assertCleanSonar(sonar,notes,ref);
-            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40718215190});
-            const toolsSha='872e08c175f6289e8a6b75416d6b3076a376accd';
+            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40827968540});
+            const toolsSha='6fe51b138314b5c815e67a9e0f2ec402d85b3493';
             if(toolsRun.status!=='completed'||toolsRun.conclusion!=='success'||toolsRun.head_sha!==toolsSha||
                toolsRun.path!=='.github/workflows/workspace-tools-check.yml'||toolsRun.run_attempt!==1)
               throw new Error('Installer tests are not bound to reviewed tools');
@@ -110,3 +110,4 @@ jobs:
           path: plan-reports/
           if-no-files-found: warn
           retention-days: 7
+

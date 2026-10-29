@@ -20,9 +20,9 @@ import urllib.error
 import urllib.request
 import zipfile
 
-BASE = '94f42c48ac4073e7750c78e396bc661da4b31be0'
+BASE = 'aad0a117074a1b083021f93ef9ff928102b95557'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
-MODULES = {'strategy_profiles.py', 'decision_views.py', 'volume_state.py', 'autonomous_controller.py', 'ai_budget.py', 'ai_guarded_client.py'}
+MODULES = {'volume_jobs.py', 'strategy_profiles.py', 'volume_purchases.py', 'volume_state.py', 'telegram_browser_app.py', 'app.py', 'volume_market.py', 'strategy_actions.py', 'strategy_construction.py', 'owner_app.py', 'strategy_activity.py', 'fund_policy.py', 'autonomous_controller.py', 'strategy_sales.py', 'portfolio_mandate.py', 'purchase_policy.py', 'strategy_yield.py'}
 SERVICES = ('analyst-ai-owner.service', 'analyst-ai-updates.service')
 PUBLIC = 'https://analyst-ai-2941515.twc1.net'
 
@@ -266,6 +266,7 @@ def run(envelope):
                     need(request('/workspace/osint/status')[0] == 401, 'osint_endpoint_authentication_changed')
                     need(request('/workspace/strategy')[0] == 401, 'strategy_endpoint_authentication_changed')
                     need(request('/automation/decisions')[0] == 401, 'decisions_endpoint_authentication_changed')
+                    need(request('/automation/strategy-plan')[0] == 401, 'strategy_plan_authentication_changed')
                     need(request(policy_path) == (policy_status, policy_before), 'apk_policy_changed')
                 except BaseException:
                     systemctl('stop', *SERVICES)
@@ -304,3 +305,4 @@ if __name__ == '__main__':
             code = type(error).__name__
         print(json.dumps({'status': 'failed', 'code': code, 'server_id': 9417611}), flush=True)
         raise
+
