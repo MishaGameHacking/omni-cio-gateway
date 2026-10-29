@@ -13,9 +13,10 @@ internal data class OwnerAccessLifecycle(val gate: OwnerAccessGate, val foregrou
 internal fun rememberOwnerAccessLifecycle(onBackground: () -> Unit = {}): OwnerAccessLifecycle {
     val lifecycle = (LocalActivity.current as? ComponentActivity)?.lifecycle
     val currentBackground by rememberUpdatedState(onBackground)
-    val initiallyForeground = lifecycle?.currentState?.isAtLeast(Lifecycle.State.STARTED) == true
-    val gate = remember(lifecycle) { OwnerAccessGate(initiallyForeground) }
-    var foreground by remember(lifecycle) { mutableStateOf(initiallyForeground) }
+    // Begin locked. ComponentActivity's LifecycleRegistry brings a newly added
+    // observer up to its current state, replaying ON_START when already started.
+    val gate = remember(lifecycle) { OwnerAccessGate(false) }
+    var foreground by remember(lifecycle) { mutableStateOf(false) }
     DisposableEffect(lifecycle, gate) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
