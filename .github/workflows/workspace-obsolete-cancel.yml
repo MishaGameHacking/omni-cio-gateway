@@ -1,0 +1,27 @@
+name: Cancel superseded strategy verification only
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/workspace-obsolete-cancel.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cancel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=40832311620;
+            const old='d981e9a87b70cd0f668b8fb6c8762d28a50f56f2';
+            const next='4a154b14771fc882b30727620926604ab198d28c';
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(run.head_sha!==old||run.head_branch!=='codex/workspace-strategies-2026-10-28'||
+               run.path!=='.github/workflows/workspace-redesign.yml'||run.event!=='push')
+              throw new Error('Unexpected workflow identity');
+            const {data:comparison}=await github.rest.repos.compareCommits({...context.repo,base:old,head:next});
+            if(comparison.status!=='ahead'||comparison.behind_by!==0) throw new Error('Not a superseding source');
+            if(run.status!=='completed') await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
+            core.info(JSON.stringify({superseded_run:run_id,source:old,replacement:next,previous_status:run.status}));
