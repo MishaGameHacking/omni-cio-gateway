@@ -35,3 +35,5 @@ jobs:
                       filtered=[line[:700] for line in lines if any(word in line for word in ("> Task", "FAILED", "BUILD ", "e: ", "Exception", "Error", "Waiting", "Timeout", "WINDOWS_ANDROID_STEP", "daemon", "Daemon", "lock", "Downloading", "Configure project"))]
                       print(json.dumps({"run":name,"log":log.name,"bytes":log.stat().st_size,"steps":filtered[-30:]},ensure_ascii=True))
           
+
+# Read final client progress after the completed visual review.
