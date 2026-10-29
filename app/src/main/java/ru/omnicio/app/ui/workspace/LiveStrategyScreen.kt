@@ -32,6 +32,7 @@ private val limitTitles = linkedMapOf("position_percent" to "Одна позиц
 fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/strategy")
     val active = resource.data?.optJSONObject("active")
+    val allocation = resource.data?.optJSONObject("allocation")
     val auto = LocalWorkspaceAutoSave.current
     val record = auto?.get(AutoSaveKind.Strategy)
     val context = LocalContext.current
@@ -86,7 +87,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 when (tab) {
                     0 -> {
                         if (active?.optJSONObject("config")?.has("construction") == true) item {
-                            StrategyAllocationSummary(resource.data?.optJSONObject("allocation"))
+                            StrategyAllocationSummary(allocation)
                         }
                         item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
                             editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
