@@ -21,3 +21,5 @@ jobs:
         env:
           TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
         run: py -3 tools/observe54_build.py
+
+# Include bounded step progress from the owned build directories.
