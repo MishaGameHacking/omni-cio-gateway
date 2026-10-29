@@ -1,3 +1,4 @@
+# Recheck the owner-supplied TIMEWEB_AI_TOKEN after the 29 October 2026 update.
 name: Inspect owner AI credential without paid calls
 on:
   push:
