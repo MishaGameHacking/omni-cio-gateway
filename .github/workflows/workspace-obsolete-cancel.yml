@@ -14,9 +14,9 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const run_id=40860447517;
-            const old='2ffcf3761d0cae539b2156c6670786b1b509b6ba';
-            const next='a88ea60c71c4d19942ccf1892ceba50213e6e528';
+            const run_id=40863135938;
+            const old='a88ea60c71c4d19942ccf1892ceba50213e6e528';
+            const next='9bf6dbaea3625a6479691e71365b621d965358c6';
             const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
             if(run.head_sha!==old||run.head_branch!=='codex/workspace-strategies-2026-10-28'||
                run.path!=='.github/workflows/workspace-redesign.yml'||run.event!=='push')
