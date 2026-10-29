@@ -21,6 +21,7 @@ CONFIGURATION = Path('/etc/analyst-ai/backend.env')
 SOURCES = Path('/opt/analyst-ai/backend')
 LOCK = Path('/var/lock/analyst-ai-plan-development.lock')
 MODEL = 'dashscope/qwen3.5-flash'
+MASKED = 'hidden-by-api-key-policy'
 SOURCE_NAMES = {'ai_budget.py', 'ai_guarded_client.py', 'ai_broker_access.py'}
 DISABLED = {'AI_USER_DAILY_RUB': '0', 'AI_PROJECT_DAILY_RUB': '0',
             'AI_USER_MONTHLY_RUB': '0', 'AI_PROJECT_MONTHLY_RUB': '0',
@@ -92,11 +93,17 @@ def validate_prices(pricing):
         raise RuntimeError('invalid_pricing_format') from None
 
 
+def require_gateway_key(secret):
+    # Match the controller's bounded RFC 6750 grammar without assuming a prefix.
+    need(secret != MASKED, 'new_gateway_key_masked')
+    need(isinstance(secret, str) and 32 <= len(secret) <= 4096
+         and re.fullmatch(r'[A-Za-z0-9._~+/\-]+=*', secret), 'new_gateway_key_invalid')
+
+
 def settings_for(payload, secret):
     key_id = payload.get('key_id')
     need(isinstance(key_id, str) and str(uuid.UUID(key_id)) == key_id, 'invalid_new_key_id')
-    need(isinstance(secret, str) and re.fullmatch(r'sk-[A-Za-z0-9._-]{29,4093}', secret),
-         'missing_unmasked_gateway_key')
+    require_gateway_key(secret)
     need(payload.get('model') == MODEL, 'unexpected_model')
     pricing = payload.get('pricing')
     validate_prices(pricing)

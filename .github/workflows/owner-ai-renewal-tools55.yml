@@ -1,4 +1,5 @@
 name: Test AI price renewal administration in existing owner WSL
+# Revalidate renewal against the shared opaque Bearer-token staging parser.
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]

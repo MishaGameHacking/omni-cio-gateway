@@ -34,7 +34,7 @@ SAFE_REASONS = {
     'limit_patch_response_too_large', 'limit_patch_response_invalid',
     'limit_patch_outcome_requires_readback',
 }
-SAFE_FAILURES = {'new_key_metadata_mismatch', 'new_gateway_key_masked_or_invalid',
+SAFE_FAILURES = {'new_key_metadata_mismatch', 'new_gateway_key_masked', 'new_gateway_key_invalid',
     'zero_limits_incomplete', 'zero_limits_wrong_periods', 'zero_limits_not_enforced_for_all_models',
     'new_key_not_visible_after_creation', 'remote_staging_receipt_mismatch',
     'cloud_request_failed', 'private_delivery_failed', 'unclassified_failure'}

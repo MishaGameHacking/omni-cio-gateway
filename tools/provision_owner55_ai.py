@@ -58,7 +58,7 @@ def preflight_transport_error(error):
 
 
 def safe_failure_code(error):
-    permitted = {'new_key_metadata_mismatch', 'new_gateway_key_masked_or_invalid',
+    permitted = {'new_key_metadata_mismatch', 'new_gateway_key_masked', 'new_gateway_key_invalid',
                  'zero_limits_incomplete', 'zero_limits_wrong_periods',
                  'zero_limits_not_enforced_for_all_models', 'new_key_not_visible_after_creation',
                  'remote_staging_receipt_mismatch'}
@@ -75,6 +75,14 @@ def safe_failure_code(error):
 def need(condition, code):
     if not condition:
         raise ProvisionError(code)
+
+
+def require_gateway_key(secret):
+    # Gateway credentials are opaque Bearer tokens, not a documented sk- format.
+    # RFC 6750 b64token permits padding only at the end; nothing is normalized.
+    need(secret != MASKED, 'new_gateway_key_masked')
+    need(isinstance(secret, str) and 32 <= len(secret) <= 4096
+         and re.fullmatch(r'[A-Za-z0-9._~+/\-]+=*', secret), 'new_gateway_key_invalid')
 
 
 def permitted_write(method, path):
@@ -245,8 +253,7 @@ def provision(api, private_transfer, operation, source_sha256, name, *, now=None
     try:
         validate_created_metadata(metadata, name, key_id)
         secret = created.get('key')
-        need(isinstance(secret, str) and secret != MASKED
-             and re.fullmatch(r'sk-[A-Za-z0-9._-]{29,4093}', secret), 'new_gateway_key_masked_or_invalid')
+        require_gateway_key(secret)
         path = KEYS + '/' + key_id + '/entity-limits'
         for period in ('day', 'month'):
             api.request('POST', path, {'entity_type': 'aikey', 'limit_type': period, 'money_limit': 0})

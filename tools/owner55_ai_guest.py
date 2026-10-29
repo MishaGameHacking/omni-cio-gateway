@@ -30,7 +30,7 @@ BOOLEAN_FIELDS = {'existing_key_replaced', 'service_restarted', 'inference_calle
     'existing_key_absent', 'budget_sources_verified', 'configuration_changed',
     'read_only_preflight', 'ai_key_created', 'ai_limits_changed'}
 CAP_FIELDS = {'daily_cap_rub', 'monthly_cap_rub', 'provider_daily_limit_rub', 'provider_30_day_limit_rub'}
-FAILURE_CODES = {'new_key_metadata_mismatch', 'new_gateway_key_masked_or_invalid',
+FAILURE_CODES = {'new_key_metadata_mismatch', 'new_gateway_key_masked', 'new_gateway_key_invalid',
     'zero_limits_incomplete', 'zero_limits_wrong_periods', 'zero_limits_not_enforced_for_all_models',
     'new_key_not_visible_after_creation', 'remote_staging_receipt_mismatch',
     'cloud_request_failed', 'private_delivery_failed', 'unclassified_failure'}

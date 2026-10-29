@@ -18,7 +18,7 @@ stage = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(stage)
 
 KEY_ID = '2b8fa21b-4b04-4904-bd32-ef1181c5f811'
-SECRET = 'sk-SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890'
+SECRET = 'SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890._~+/=='
 NAME = provision.DEDICATED_PREFIX + '40900000000'
 NOW = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
 PRICES = {'availability_verified': True, 'pricing_verified': True,
@@ -164,9 +164,20 @@ class ProvisionTests(unittest.TestCase):
         self.api.secret = provision.MASKED
         with self.assertRaisesRegex(provision.ProvisionError, 'new_unused_key_removed_after_failure') as raised:
             self.invoke()
-        self.assertEqual(raised.exception.failure_code, 'new_gateway_key_masked_or_invalid')
+        self.assertEqual(raised.exception.failure_code, 'new_gateway_key_masked')
         self.assertEqual([call[0] for call in self.writes()], ['POST', 'DELETE'])
         self.assertEqual(self.deliveries, [('preflight', None)])
+
+    def test_invalid_creation_removes_only_new_unused_key_without_secret_diagnostics(self):
+        invalid = 'SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL\r\nInjected: value'
+        self.api.secret = invalid
+        with self.assertRaisesRegex(provision.ProvisionError, 'new_unused_key_removed_after_failure') as raised:
+            self.invoke()
+        self.assertEqual(raised.exception.failure_code, 'new_gateway_key_invalid')
+        self.assertFalse(raised.exception.retained)
+        self.assertEqual([call[0] for call in self.writes()], ['POST', 'DELETE'])
+        self.assertEqual(self.deliveries, [('preflight', None)])
+        self.assertNotIn(invalid, str(raised.exception))
 
     def test_diagnostics_only_return_fixed_codes_never_arbitrary_provider_text(self):
         arbitrary = provision.ProvisionError(SECRET)
@@ -263,6 +274,43 @@ class StagingFormatTests(unittest.TestCase):
         for key, value in stage.DISABLED.items():
             self.assertEqual(parsed[key], value)
         self.assertEqual(parsed['TIMEWEB_AI_TOKEN'], SECRET)
+
+
+class GatewayCredentialGrammarTests(unittest.TestCase):
+    def test_controller_and_remote_accept_opaque_bearer_grammar_at_bounds(self):
+        values = ['a' * 32, 'a' * 4096, SECRET,
+                  'eyJhbGciOiJIUzI1NiJ9.synthetic_signature-1234567890',
+                  'sk-SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890',
+                  'a' * 30 + '==']
+        for index, value in enumerate(values):
+            with self.subTest(case=index):
+                provision.require_gateway_key(value)
+                stage.require_gateway_key(value)
+
+    def test_controller_and_remote_reject_invalid_or_masked_credentials_consistently(self):
+        values = [None, {}, '', 'a' * 31, 'a' * 4097, '=' * 32,
+                  'a' * 31 + '\n', 'a' * 31 + '\r', 'a' * 31 + ' ',
+                  'a' * 31 + '\u00e9', 'a' * 16 + '=' + 'a' * 16,
+                  'a' * 31 + ':', 'a' * 31 + '\x00', provision.MASKED]
+        for index, value in enumerate(values):
+            code = 'new_gateway_key_masked' if value == provision.MASKED else 'new_gateway_key_invalid'
+            with self.subTest(case=index):
+                with self.assertRaisesRegex(provision.ProvisionError, '^' + code + '$'):
+                    provision.require_gateway_key(value)
+                with self.assertRaisesRegex(RuntimeError, '^' + code + '$'):
+                    stage.require_gateway_key(value)
+
+    def test_settings_and_environment_preserve_opaque_token_without_normalization(self):
+        payload = {'key_id': KEY_ID, 'model': stage.MODEL, 'pricing': {
+            'input_rub_per_million': '60', 'output_rub_per_million': '60',
+            'valid_until': '2026-10-30T12:00:00+00:00'}}
+        with mock.patch.object(stage, 'validate_prices'):
+            settings = stage.settings_for(payload, SECRET)
+        serialized = stage.replacement_environment(b'OTHER_SECRET=synthetic-existing\n', settings)
+        self.assertEqual(stage.parse_environment(serialized)['TIMEWEB_AI_TOKEN'], SECRET)
+        self.assertEqual(settings['AI_EXTERNAL_PROCESSING_APPROVED'], 'false')
+        self.assertEqual(settings['AI_USER_DAILY_RUB'], '0')
+        self.assertEqual(settings['AI_USER_MONTHLY_RUB'], '0')
 
 
 if __name__ == '__main__':

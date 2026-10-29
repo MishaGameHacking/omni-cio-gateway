@@ -28,7 +28,7 @@ KEY = '2b8fa21b-4b04-4904-bd32-ef1181c5f811'
 DAY = '4abc649e-8f69-4a11-87fa-e24f3574d385'
 MONTH = '6b434639-2e0b-4817-83b4-614ca2839a67'
 CREATION = '40900000000'
-SECRET = 'sk-SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890'
+SECRET = 'SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890._~+/=='
 NOW = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
 REPORT = {'availability_verified': True, 'pricing_verified': True, 'context_window': 1000000,
           'max_output_tokens': 262144, 'documented_generation_parameters': ['max_tokens', 'enable_thinking'],

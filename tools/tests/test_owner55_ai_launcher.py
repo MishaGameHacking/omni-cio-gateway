@@ -89,8 +89,10 @@ class LauncherContracts(unittest.TestCase):
 
     def test_provisioning_failure_details_are_finite_codes_only(self):
         outcome = {'status': 'not_activated', 'reason': 'new_unused_key_removed_after_failure',
-                   'failure_code': 'new_gateway_key_masked_or_invalid', 'new_key_retained': False,
+                   'failure_code': 'new_gateway_key_masked', 'new_key_retained': False,
                    'new_key_id': '2b8fa21b-4b04-4904-bd32-ef1181c5f811'}
+        self.assertEqual(guest.validate_outcome(json.dumps(outcome).encode(), TOKEN), outcome)
+        outcome['failure_code'] = 'new_gateway_key_invalid'
         self.assertEqual(guest.validate_outcome(json.dumps(outcome).encode(), TOKEN), outcome)
         outcome['failure_code'] = 'arbitrary_provider_reply'
         with self.assertRaisesRegex(RuntimeError, 'guest_outcome_invalid'):

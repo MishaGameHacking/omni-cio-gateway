@@ -190,6 +190,17 @@ class AdminControllerTests(unittest.TestCase):
         self.assertEqual(receipt['status'], 'activation_unconfirmed')
         self.assertIs(receipt['provider_zero_limits_verified'], False)
 
+    def test_masked_and_invalid_gateway_failures_remain_distinct_finite_codes(self):
+        for failure in ('new_gateway_key_masked', 'new_gateway_key_invalid'):
+            error = admin.provision.ProvisionError('new_unused_key_removed_after_failure',
+                key_id=KEY_ID, retained=False, failure_code=failure)
+            with self.subTest(failure=failure), mock.patch.object(admin, 'execute', side_effect=error):
+                receipt, code = admin.run_administration(environment('provision_disabled'))
+            self.assertEqual(code, 1)
+            self.assertEqual(receipt['failure_code'], failure)
+            self.assertFalse(receipt['new_key_retained'])
+            self.assertNotIn(TOKEN, json.dumps(receipt))
+
     def test_invalid_or_wrong_action_receipt_is_never_reported_as_success(self):
         invalid = [{**ready_receipt(), 'raw_detail': TOKEN},
                    {**ready_receipt(), 'reason': TOKEN},
