@@ -66,7 +66,11 @@ def limits(api, key_id):
 
 class Gateway:
     def __init__(self, secret):
-        provision.require_gateway_key(secret)
+        # Timeweb documents an opaque string, not a minimum length, prefix or
+        # OAuth alphabet. Let the provider validate printable HTTP-safe bytes.
+        need(isinstance(secret, str) and secret != provision.MASKED
+             and 1 <= len(secret) <= 8192 and all(33 <= ord(c) <= 126 for c in secret),
+             'gateway_credential_not_http_safe')
         self.secret = secret
         self.opener = urllib.request.build_opener(provision.NoRedirect())
 

@@ -85,7 +85,10 @@ class ProbeTests(unittest.TestCase):
                 probe.validate_completion(value, {'input_rub_per_million':'60', 'output_rub_per_million':'60'}, 5000)
     def test_secret_whitespace_and_masked_value_rejected_without_normalizing(self):
         for value in ['hidden-by-api-key-policy', fixtures.SECRET+'\n', ' '+fixtures.SECRET]:
-            with self.assertRaises(probe.provision.ProvisionError): probe.Gateway(value)
+            with self.assertRaises(probe.ProbeError): probe.Gateway(value)
+    def test_opaque_short_or_punctuated_key_is_validated_by_provider_not_guessed_locally(self):
+        for value in ['synthetic:key', 'synthetic!key', 'short']:
+            self.assertEqual(probe.Gateway(value).secret, value)
     def test_unique_owner_designated_key_required(self):
         with mock.patch.object(probe.provision, 'keys', return_value=[]):
             with self.assertRaisesRegex(probe.ProbeError, 'designated_key_not_unique'): self.invoke()
