@@ -54,6 +54,29 @@ def execute(environment, transfer=transport_admin):
     return transfer(operation_source(), {'source_sha256': sources}, secret, contract)
 
 
+def summary(receipt):
+    status = receipt.get('status')
+    if status == 'bootstrap_ready':
+        return ('# Ключ готов для первого входа\n\n'
+            'Откройте Analyst AI. Введите новый личный пароль (не менее 10 символов), '
+            'повторите его и в поле «Одноразовый ключ настройки» вставьте то же значение, '
+            'которое вы сохранили в GitHub Secret `ANALYST_OWNER_BOOTSTRAP_SECRET`. '
+            'Нажмите «Сохранить пароль и войти». Сам ключ здесь не отображается.\n')
+    if status == 'already_configured':
+        return ('# Личный пароль уже создан\n\n'
+            'Откройте Analyst AI и войдите со своим сохранённым паролем. '
+            'Одноразовый ключ больше не используется. Этот запуск пароль не менял.\n')
+    if status == 'waiting_for_secret':
+        return ('# Ожидается ваш одноразовый ключ\n\n'
+            'Добавьте repository Actions secret с именем `ANALYST_OWNER_BOOTSTRAP_SECRET`. '
+            'Значение: ваша новая случайная строка из 32–128 латинских букв, цифр, `-` и `_`. '
+            'Сохраните значение у себя, затем здесь нажмите **Re-run all jobs**. '
+            'Этот запуск только проверил готовность сервера; ключ пока не установлен.\n')
+    return ('# Подготовка входа не подтверждена\n\n'
+            'Не создавайте другой аккаунт и не удаляйте приложение. '
+            'Сообщите статус запуска для проверки; пароль и ключ в чат присылать не нужно.\n')
+
+
 def main():
     receipt = {'status': 'blocked', 'reason': 'private_bootstrap_preparation_failed'}
     try:
@@ -63,6 +86,10 @@ def main():
     except BaseException:
         pass
     print('OWNER_ENTRY_SETUP=' + json.dumps(receipt, sort_keys=True), flush=True)
+    destination = os.environ.get('GITHUB_STEP_SUMMARY')
+    if destination:
+        with Path(destination).open('a', encoding='utf-8') as output:
+            output.write(summary(receipt))
     if receipt['status'] == 'waiting_for_secret':
         print('::notice::Add ANALYST_OWNER_BOOTSTRAP_SECRET in repository Actions secrets, then Re-run all jobs.', flush=True)
     if receipt['status'] == 'blocked':

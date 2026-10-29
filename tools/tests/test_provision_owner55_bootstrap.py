@@ -64,6 +64,14 @@ class ControllerTests(unittest.TestCase):
         self.assertNotIn(SECRET, stdout.getvalue() + stderr.getvalue())
         self.assertIn('private_bootstrap_preparation_failed', stdout.getvalue())
 
+    def test_summary_distinguishes_waiting_from_ready_without_echoing_values(self):
+        for status in controller.STATUSES:
+            result=controller.summary({'status':status,'private':SECRET})
+            self.assertNotIn(SECRET,result)
+        self.assertIn('ключ пока не установлен',controller.summary({'status':'waiting_for_secret'}))
+        self.assertIn('Ключ готов',controller.summary({'status':'bootstrap_ready'}))
+        self.assertIn('пароль уже создан',controller.summary({'status':'already_configured'}))
+
 
 class RemoteBootstrapTests(unittest.TestCase):
     def setUp(self):
