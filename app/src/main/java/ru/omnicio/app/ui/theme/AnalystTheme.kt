@@ -50,7 +50,7 @@ val LocalSpectrumMotionPreference = staticCompositionLocalOf {
     SpectrumMotionPreference(enabled = true) { }
 }
 
-/** Retained for saved legacy callers; the application has one visual style. */
+/** Resolve an explicit theme, with the last known/system appearance as fallback. */
 @Suppress("UNUSED_PARAMETER")
 internal fun displayedThemeDark(mode: ThemeMode, system: SystemThemeObservation,
     lastDisplayed: Boolean?, appConfigurationDark: Boolean): Boolean = when (mode) {
@@ -164,7 +164,7 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         )
         activity?.window?.isNavigationBarContrastEnforced = false
     }
-    // Legacy preference storage is left intact; it no longer selects a colorway.
+    // Persist the selected light/graphite mode across Activity and process restarts.
     val themePreference = ThemePreference(mode) { selected ->
         mode = selected
         preferences?.edit()?.putString("theme_mode", selected.name)?.apply()

@@ -27,6 +27,21 @@ def colors(source, declaration):
         r'\b(\w+)\s*=\s*(Color\(0xFF[0-9A-Fa-f]{6}\)|Color\.White)', block)}
 
 
+def production_palette(tokens, dark):
+    material = colors(tokens, 'private val WorkspaceColors = lightColorScheme(')
+    semantic = colors(tokens, 'private val WorkspaceSemantic = AnalystSemanticColors(')
+    if not dark:
+        return material, semantic
+    declaration = 'private val GraphiteColors = darkColorScheme('
+    block = tokens.split(declaration, 1)[1].split('\n)', 1)[0]
+    actual = colors(tokens, declaration)
+    # Resolve only the references actually present in production, never fill missing roles.
+    for name, reference in re.findall(r'\b(\w+)\s*=\s*WorkspaceColors\.(\w+)', block):
+        actual[name] = material[reference]
+    semantic.update(colors(tokens, 'private val GraphiteSemantic = WorkspaceSemantic.copy('))
+    return actual, semantic
+
+
 def contrast(first, second):
     high, low = sorted((luminance(first), luminance(second)), reverse=True)
     return (high + .05) / (low + .05)
@@ -34,22 +49,38 @@ def contrast(first, second):
 
 class SpectrumProductionTokens(unittest.TestCase):
 
-    def test_actual_single_style_and_gradient_surfaces_have_readable_contrast(self):
+    def test_actual_light_and_graphite_surfaces_have_readable_contrast(self):
         source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
         theme = (UI / 'theme/AnalystTheme.kt').read_text(encoding='utf-8')
         tokens = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
-        c = colors(tokens, 'private val WorkspaceColors = lightColorScheme(')
-        s = colors(tokens, 'private val WorkspaceSemantic = AnalystSemanticColors(')
-        self.assertEqual(len(c), 48)
-        self.assertEqual(len(s), 19)
-        self.assertNotIn('darkColorScheme(', tokens)
+        self.assertIn('darkColorScheme(', tokens)
         self.assertNotIn('when (accent)', tokens)
-        self.assertNotIn('isSystemInDarkTheme()', theme)
-        self.assertIn('spectrumPalette(dark = false)', theme)
+        self.assertIn('isSystemInDarkTheme()', theme)
+        self.assertIn('spectrumPalette(dark = dark)', theme)
+        self.assertNotEqual(production_palette(tokens, False)[0]['background'],
+                            production_palette(tokens, True)[0]['background'])
         self.assertIn('val colors = palette.colors', theme)
         self.assertIn('colorScheme = colors', theme)
         self.assertIn('val resolved = analystColors(dark, accent)', source)
         self.assertIn('SpectrumPalette(resolved.material, resolved.semantic, resolved.chartSeries)', source)
+        for dark in (False, True):
+            with self.subTest(dark=dark):
+                c, s = production_palette(tokens, dark)
+                self.assertEqual(len(c), 48)
+                self.assertEqual(len(s), 19)
+                self.assert_palette_contrast(c, s)
+        button = source.split('fun SpectrumPrimaryButton(', 1)[1].split('fun SpectrumSecondaryButton', 1)[0]
+        self.assertIn('MaterialTheme.colorScheme.primary else', button)
+        self.assertIn('MaterialTheme.colorScheme.onPrimary else', button)
+        self.assertIn('semantic.disabledInk', button)
+        self.assertIn('role = Role.Button', button)
+        self.assertIn('heightIn(min = 48.dp)', button)
+        surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
+        self.assertIn('spatialSurfaceColors(palette, color, state', surface)
+        self.assertIn('LocalContentColor provides resolved.foreground', surface)
+        self.assertIn('.clip(shape).background(gradient).border(borderWidth, border, shape)', surface)
+
+    def assert_palette_contrast(self, c, s):
         for family in ('Primary', 'Secondary', 'Tertiary', 'Error'):
             role = family[0].lower() + family[1:]
             self.assertGreaterEqual(contrast(c['on' + family], c[role]), 4.5)
@@ -73,16 +104,6 @@ class SpectrumProductionTokens(unittest.TestCase):
                     for ink in ('onSurface', 'onSurfaceVariant'):
                         with self.subTest(surface=surface,tint=tint,step=step,ink=ink):
                             self.assertGreaterEqual(contrast(c[ink],fill),4.5)
-        button = source.split('fun SpectrumPrimaryButton(', 1)[1].split('fun SpectrumSecondaryButton', 1)[0]
-        self.assertIn('MaterialTheme.colorScheme.primary else', button)
-        self.assertIn('MaterialTheme.colorScheme.onPrimary else', button)
-        self.assertIn('semantic.disabledInk', button)
-        self.assertIn('role = Role.Button', button)
-        self.assertIn('heightIn(min = 48.dp)', button)
-        surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
-        self.assertIn('spatialSurfaceColors(palette, color, state', surface)
-        self.assertIn('LocalContentColor provides resolved.foreground', surface)
-        self.assertIn('.clip(shape).background(gradient).border(borderWidth, border, shape)', surface)
 
     def test_real_date_picker_uses_explicit_readable_calendar_state_roles(self):
         caller = (UI / 'portfolio/AccountDataState.kt').read_text(encoding='utf-8')
@@ -100,9 +121,9 @@ class SpectrumProductionTokens(unittest.TestCase):
             self.assertEqual(bindings['disabled' + state + 'ContentColor'], ('s', 'disabledInk'))
             self.assertEqual(bindings['disabledSelected' + state + 'ContentColor'], ('s', 'disabledInk'))
             self.assertEqual(bindings['disabledSelected' + state + 'ContainerColor'], ('s', 'disabledContainer'))
-        for mode in ('Workspace',):
-            source = {'c': colors(tokens, 'private val ' + mode + 'Colors = ' + 'lightColorScheme('),
-                      's': colors(tokens, 'private val ' + mode + 'Semantic = AnalystSemanticColors(')}
+        for dark in (False, True):
+            material, semantic = production_palette(tokens, dark)
+            source = {'c': material, 's': semantic}
             actual = {name: source[kind][role] for name, (kind, role) in bindings.items()}
             for state in ('Day', 'Year'):
                 self.assertGreaterEqual(contrast(actual['selected' + state + 'ContentColor'],
@@ -141,4 +162,5 @@ class SpectrumProductionTokens(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

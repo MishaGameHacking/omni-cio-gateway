@@ -6,14 +6,16 @@ keeps a candidate out of the executable action plan. No model calls or orders.
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_DOWN
+from calendar import monthrange
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt
 
 try:
-    from .volume_contract import decimal, text_number, financial_context
+    from .volume_contract import decimal, text_number, financial_context, timestamp
 except ImportError:
-    from volume_contract import decimal, text_number, financial_context
+    from volume_contract import decimal, text_number, financial_context, timestamp
 
 CLASSES = ("bond", "share", "etf")
 # Product policy assumptions, not an estimate of future returns or default odds.
@@ -138,3 +140,20 @@ This is search priority only. Complete independent purchase checks follow.
     return (item.get("uid") not in holdings,
             {"RISK_LEVEL_LOW": 0, "RISK_LEVEL_MODERATE": 1}.get(item.get("riskLevel"), 2),
             str(item.get("uid", "")))
+
+
+def instrument_policy_reasons(meta, expected_lot, config, now=None):
+    """Reject changed lot units and bonds maturing beyond the owner's horizon."""
+    if decimal(meta.get("lot")) != expected_lot:
+        return ["instrument_lot_changed_refresh_required"]
+    if meta.get("instrumentType") != "bond":
+        return []
+    now = now or datetime.now(timezone.utc)
+    months = now.year * 12 + now.month - 1 + config["horizon_months"]
+    year, month = months // 12, months % 12 + 1
+    limit = now.date().replace(year=year, month=month, day=min(now.day, monthrange(year, month)[1]))
+    try:
+        maturity = timestamp(meta.get("maturityDate")).date()
+    except (ValueError, TypeError):
+        return ["bond_maturity_unknown"]
+    return [] if now.date() < maturity <= limit else ["bond_maturity_outside_horizon"]

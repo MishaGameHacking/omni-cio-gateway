@@ -79,6 +79,8 @@ def assess_reduction(user, item, account, active, snapshot, target, base):
     with details.BrokerReader(user) as reader:
         reader.account(account)
         meta, book, price, visible = _sale_market(reader, uid, kind, started)
+        if decimal(meta.get("lot")) != base["lot"]:
+            raise HTTPException(409, "instrument_lot_changed_refresh_required")
         point = purchases.price_quotation(text_number(price))
         unit = decimal(purchases.settlement_price(meta, point))
         query = {"accountId": account, "instrumentId": uid, "price": purchases.settlement_price(meta, point)}

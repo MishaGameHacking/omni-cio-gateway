@@ -80,7 +80,7 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item {
                     WorkspaceRequestState(resource)
-                    Text(if (version > 0) "Действует версия $version" else "Активной версии пока нет",
+                    Text(if (version > 0) "Стратегия сохранена" else "Выберите основу стратегии",
                         style = MaterialTheme.typography.labelLarge)
                     AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) }
                 }

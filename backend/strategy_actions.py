@@ -12,7 +12,7 @@ from fastapi import HTTPException
 try:
     from . import volume_state as state, volume_purchases as purchases, volume_market as market
     from . import portfolio_details as details
-    from .strategy_construction import allocation_policy, target_value
+    from .strategy_construction import allocation_policy, target_value, instrument_policy_reasons
     from .strategy_yield import key_rate, yield_filter
     from .investment_links import instrument_link
     from .strategy_activity import activity_budget
@@ -22,7 +22,7 @@ except ImportError:
     import volume_purchases as purchases
     import volume_market as market
     import portfolio_details as details
-    from strategy_construction import allocation_policy, target_value
+    from strategy_construction import allocation_policy, target_value, instrument_policy_reasons
     from strategy_yield import key_rate, yield_filter
     from investment_links import instrument_link
     from strategy_activity import activity_budget
@@ -124,6 +124,10 @@ def _assess_addition(user, item, account, active, snapshot, budget, base):
     if not isinstance(meta, dict) or meta.get("uid") != uid:
         raise HTTPException(502, "instrument_identity_mismatch")
     meta = {**meta, "instrumentType": kind}
+    instrument_reasons = instrument_policy_reasons(meta, base["lot"], config)
+    if instrument_reasons:
+        base["missing_evidence"] = instrument_reasons
+        return base
     settlement = decimal(purchases.settlement_price(meta, purchases.price_quotation(text_number(price))))
     lots = affordable_target_lots(total=total, current=current, held_class=held_class, cash=cash,
         unit_cost=settlement, lot=base["lot"], visible=visible, config=config, kind=kind)

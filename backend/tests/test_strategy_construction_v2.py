@@ -186,3 +186,17 @@ def test_income_switch_disables_additions_before_quote_calls(monkeypatch):
 def test_reduction_has_priority_without_spending_unsettled_sale_proceeds():
     rows = [{"action": action, "evidence_current": True, "suggested_lots": 1, "missing_evidence": []} for action in ("buy", "sell")]
     assert next_action_plan({"candidates": rows})["actions"] == [rows[1]]
+
+
+def test_bond_horizon_handles_month_end_and_lot_changes():
+    from backend.strategy_construction import instrument_policy_reasons
+    value = policy()
+    value["horizon_months"] = 12
+    now = datetime(2024, 2, 29, tzinfo=timezone.utc)
+    meta = {"lot": 10, "instrumentType": "bond", "maturityDate": "2025-02-28T00:00:00Z"}
+    assert instrument_policy_reasons(meta, 10, value, now) == []
+    assert instrument_policy_reasons(meta, 1, value, now) == ["instrument_lot_changed_refresh_required"]
+    meta["maturityDate"] = "2025-03-01T00:00:00Z"
+    assert instrument_policy_reasons(meta, 10, value, now) == ["bond_maturity_outside_horizon"]
+    meta.pop("maturityDate")
+    assert instrument_policy_reasons(meta, 10, value, now) == ["bond_maturity_unknown"]

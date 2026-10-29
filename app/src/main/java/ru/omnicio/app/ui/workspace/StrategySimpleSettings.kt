@@ -45,7 +45,7 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
                 WorkspaceToggle(label, when(key) {
                     "bond" -> "Проверка выплат, срока и кредитного качества"
                     "share" -> "Участие в бизнесе; цена и дивиденды меняются"
-                    else -> "Проверка состава, комиссий и риска фонда"
+                    else -> "Индекс, комиссии и риски фонда"
                 }, key in selected, enabled = enabled && (key !in selected || selected.size > 1)) { checked ->
                     change("enabled_classes", JSONArray((if (checked) selected + key else selected - key).sorted()))
                 }

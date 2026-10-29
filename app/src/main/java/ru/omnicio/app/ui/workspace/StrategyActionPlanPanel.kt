@@ -97,7 +97,22 @@ private fun StrategyPendingRows(pending: List<JSONObject>) {
         pending.take(8).forEach { row ->
             Text(row.text("name"), style = MaterialTheme.typography.titleMedium)
             Text(if (!row.optBoolean("evidence_current")) "Котировка или данные портфеля требуют обновления."
-                else "Не выполнены все условия стратегии. Актив не включён в план.", style = MaterialTheme.typography.bodySmall)
+                else strategyWaitingMessage(row), style = MaterialTheme.typography.bodySmall)
         }
+    }
+}
+
+private fun strategyWaitingMessage(row: JSONObject): String {
+    val reasons = row.optJSONArray("missing_evidence")
+    val code = reasons?.optString(0).orEmpty()
+    return when (code) {
+        "loss_capacity_not_confirmed", "income_stability_unknown" -> "Укажите финансовую устойчивость в настройках стратегии."
+        "no_whole_lot_within_target_and_reserve", "no_whole_lot_reduction" -> "Целый лот не помещается в свободный бюджет и лимиты."
+        "strategy_operation_window_incomplete", "strategy_operation_window_stale" -> "Нужно обновить историю операций для проверки повторных сделок."
+        "strategy_rebalance_cooldown", "strategy_turnover_limit" -> "Система ограничивает частые перестроения и расходы."
+        "reinvestment_disabled_new_buys_paused" -> "Новые покупки приостановлены в настройках."
+        "bond_maturity_outside_horizon" -> "Срок погашения не соответствует вашему горизонту."
+        "instrument_lot_changed_refresh_required" -> "Брокер изменил размер лота; нужен новый расчёт."
+        else -> "Не выполнены все условия стратегии. Актив не включён в план."
     }
 }

@@ -132,6 +132,8 @@ private val GraphiteColors = darkColorScheme(
     secondaryContainer = Color(0xFF233F3A), onSecondaryContainer = Color(0xFFC0F5E8),
     tertiary = Color(0xFFC9AFF0), onTertiary = Color(0xFF392351),
     tertiaryContainer = Color(0xFF40324E), onTertiaryContainer = Color(0xFFEEDCFF),
+    inverseSurface = Color(0xFFE4E2E6), inverseOnSurface = Color(0xFF303136),
+    scrim = Color(0xFF000000),
     background = Color(0xFF141517), onBackground = Color(0xFFF1F1F3),
     surface = Color(0xFF1D1E21), onSurface = Color(0xFFF1F1F3),
     surfaceVariant = Color(0xFF303136), onSurfaceVariant = Color(0xFFCACBD1),
