@@ -1,0 +1,27 @@
+{
+  "source_commit": "a9574656fcac4507660c872ebcc22641154a3c8a",
+  "visual_run": 40966299174,
+  "artifact_sha256": "28e8845c9c51587a056580909ca20d1f634bbe957a71c253658db762acd86f33",
+  "all_41_image_hashes_verified": true,
+  "personally_reviewed": [
+    "OwnerRail56_owner56-rail-collapsed_32057d05_0.png",
+    "OwnerRail56_owner56-rail-collapsed-large-text_ef56605d_0.png",
+    "Rail53_rail53-graphite_37a33aae_0.png",
+    "OwnerResearch56_owner56-research_3ba496f6_0.png",
+    "OwnerResearch56_owner56-research-large-text_d40b5831_0.png",
+    "Analytics54Value_analytics54-value_c6b9d88a_0.png",
+    "OwnerCooldown56_owner56-cooldown_60e2a4bf_0.png",
+    "OwnerCooldown56_owner56-cooldown-large-text_6115bb3a_0.png",
+    "LoginAppearance_login-dark_c1812139_0.png",
+    "LoginAppearance_login-narrow-large-text_cca7be20_0.png",
+    "LoginErrorAppearance_login-error-dark_6f275fa5_0.png",
+    "OwnerSetup55_owner55-setup_e4249f37_0.png",
+    "OwnerSetup55_owner55-setup-large-text_15359180_0.png",
+    "SystemHome55_system55-home-tall_8dd7b958_0.png",
+    "SystemTelemetry55_system55-telemetry_b091b32c_0.png",
+    "SystemTelemetry55_system55-telemetry-large-text_1edb8f9e_0.png"
+  ],
+  "blocking_layout_defects_observed": false,
+  "physical_phone_verified": false,
+  "scope": "Synthetic Layoutlib stills; no touch, keyboard or physical-device acceptance"
+}
