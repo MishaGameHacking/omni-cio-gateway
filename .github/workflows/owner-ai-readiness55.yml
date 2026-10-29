@@ -1,0 +1,82 @@
+name: Inspect owner AI credential without paid calls
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-ai-readiness55.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Verify protected credential presence and read-only gateway authentication
+        shell: py -3 {0}
+        env:
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: utf-8
+        run: |
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          class NoRedirect(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  return None
+
+          report = {
+              "credential_present": False,
+              "authentication_verified": False,
+              "expected_model_available": False,
+              "paid_calls_made": False,
+              "configuration_changed": False,
+          }
+
+          def finish(reason):
+              report["reason"] = reason
+              print("OWNER_AI_READINESS=" + json.dumps(report, sort_keys=True), flush=True)
+              raise SystemExit(0 if report["authentication_verified"] else 1)
+
+          if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
+              finish("owner_laptop_required")
+
+          token = os.environ.get("TIMEWEB_AI_TOKEN", "").strip()
+          report["credential_present"] = bool(token)
+          if not token:
+              finish("protected_credential_not_available")
+
+          request = urllib.request.Request(
+              "https://api.timeweb.ai/v1/models",
+              method="GET",
+              headers={"Authorization": "Bearer " + token, "Accept": "application/json"},
+          )
+          try:
+              with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as response:
+                  if response.status != 200:
+                      finish("unexpected_http_status")
+                  raw = response.read(2097153)
+                  if len(raw) > 2097152:
+                      finish("response_limit_exceeded")
+              payload = json.loads(raw)
+              models = payload.get("data") if isinstance(payload, dict) else None
+              if not isinstance(models, list):
+                  finish("invalid_models_response")
+              report["authentication_verified"] = True
+              report["expected_model_available"] = any(
+                  isinstance(row, dict) and row.get("id") == "dashscope/qwen3.5-flash"
+                  for row in models
+              )
+          except urllib.error.HTTPError as error:
+              if error.code in (401, 403):
+                  finish("gateway_authentication_rejected")
+              if error.code == 429:
+                  finish("gateway_rate_limited")
+              finish("gateway_http_error")
+          except (urllib.error.URLError, OSError):
+              finish("gateway_network_error")
+          except (ValueError, TypeError):
+              finish("invalid_gateway_response")
+
+          finish("authenticated" if report["expected_model_available"] else "authenticated_model_unavailable")
