@@ -318,8 +318,11 @@ def _catalogue_candidate(row: dict, config: dict) -> bool:
     exchange = {"REAL_EXCHANGE_MOEX": "MOEX", "REAL_EXCHANGE_RTS": "SPB"}.get(row.get("realExchange"))
     lot = decimal(row.get("lot"))
     mandate = config.get("mandate")
-    permitted = {"bonds": {"bond"}, "shares": {"share"}, "mixed": {"bond", "share"}}
-    if mandate and row.get("instrument_type") not in permitted[mandate["asset_mode"]]:
+    try:
+        from .strategy_construction import permitted_classes
+    except ImportError:
+        from strategy_construction import permitted_classes
+    if mandate and row.get("instrument_type") not in permitted_classes(config):
         return False
     return bool(exchange and ({exchange, "RU"} & set(config["allowed_markets"]))
                 and str(row.get("currency", "")).upper() == config["reserve"]["currency"]
@@ -345,10 +348,22 @@ def _account_for_research(snapshot: dict, config: dict) -> str | None:
     selected = (config.get("mandate") or {}).get("account_id")
     eligible = [(amount, account) for account, amount in cash.items()
                 if amount > reserve and (selected is None or account == selected)]
-    return max(eligible)[1] if eligible else None
+    if eligible:
+        return max(eligible)[1]
+    if config.get("construction") and selected in {row.get("id") for row in snapshot.get("accounts", [])}:
+        return selected  # Reductions still matter when no cash is available.
+    return None
 
 
 def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
+    active = state.active_strategy(int(user["id"]))
+    if active and active["version"] == version and active["config"].get("construction"):
+        try:
+            from .strategy_actions import assess_candidate
+        except ImportError:
+            from strategy_actions import assess_candidate
+        snapshot = state.saved_snapshot(user, active["config"]["reserve"]["currency"])
+        return assess_candidate(user, item, account, active, snapshot)
     uid = item["uid"]
     base = {"instrument_uid": uid, "ticker": item.get("ticker") or "", "name": item.get("name") or uid,
             "instrument_type": item["instrument_type"], "currency": str(item.get("currency") or "").upper(),
@@ -437,6 +452,15 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         from strategy_profiles import research_tuning
     tuning = research_tuning(config, snapshot)
     found, scanned, sources, errors = _research_catalogues(user, config, tuning["asset_classes"])
+    if config.get("construction"):
+        # Include owned positions even when buying is disabled; they may need a reduction.
+        for position in snapshot.get("positions", []):
+            uid = position.get("instrument_uid")
+            metadata = position.get("metadata") or {}
+            kind = position.get("instrument_type")
+            if position.get("account_id") == account and kind in {"bond", "share", "etf"} and decimal(metadata.get("lot")):
+                found.setdefault(uid, {"uid": uid, "ticker": position.get("ticker"), "name": position.get("title"),
+                    "instrument_type": kind, "lot": metadata["lot"], "currency": "RUB"})
     ordered = [found[key] for key in sorted(found)]
     result = _empty_discovery("partial", ["research_incomplete"])
     result.update(as_of=now_iso(), snapshot_id=snapshot["snapshot_id"], strategy_version=version, sources=sources)
@@ -643,3 +667,13 @@ def decisions(user: Any = Depends(backend.current_user)) -> dict:
     return {"schema_version": 1, "views": views, "events": views["history"],
             "state": summary["state"], "blockers": summary["blockers"],
             "discovery": summary["discovery"], "execution": summary["execution"]}
+
+
+@router.get("/strategy-plan")
+def strategy_plan(user: Any = Depends(backend.current_user)) -> dict:
+    try:
+        from .strategy_actions import next_action_plan
+    except ImportError:
+        from strategy_actions import next_action_plan
+    active = state.active_strategy(int(user["id"]))
+    return next_action_plan(_discovery(user, active, int(time.time())))

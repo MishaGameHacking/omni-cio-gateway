@@ -146,7 +146,7 @@ fun AnalystNavigationPanels(
         // Content stays in one slot when a window changes size or a popup opens.
         BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().semantics { testTagsAsResourceId = true }) {
             Row(Modifier.fillMaxSize()) {
-                if (wide) AnalystSideRail(selected, selectedWorkspace, selectTab, selectWorkspace)
+                if (wide) StrategyNavigationRail(selected, selectedWorkspace, selectTab, selectWorkspace)
                 Box(Modifier.weight(1f).fillMaxHeight()) { content() }
             }
             if (menuOpen) {
@@ -198,7 +198,7 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
                 alpha = opacity.value
                 scaleX = (.96f + .04f * opacity.value) * (1f - .06f * backProgress)
                 scaleY = scaleX
-                translationY = -12.dp.toPx() * backProgress
+                translationX = -width.toPx() * (1f - opacity.value + backProgress)
             }
             .clip(RoundedCornerShape(28.dp))
             .background(Brush.verticalGradient(listOf(colors.surfaceContainerHigh, colors.surface)))
@@ -216,31 +216,18 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
                 verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 analystMenuDestinations.groupBy { it.group }.entries.forEachIndexed { row, (group, destinations) ->
                     if (row > 0) HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = colors.outlineVariant)
-                    LazyRow(Modifier.fillMaxWidth().semantics { contentDescription = group.title }
-                        .testTag("navigation-row-" + group.name.lowercase()),
-                        contentPadding = PaddingValues(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(destinations, key = { _, item -> item.id }) { index, destination ->
-                            val route = destination.workspace
-                            val active = if (route != null) route == selectedWorkspace
-                                else selectedWorkspace == null && destination.tab == selected
-                            val enter = remember { Animatable(if (enabled) 0f else 1f) }
-                            LaunchedEffect(enabled) {
-                                enter.animateTo(1f, tween(if (enabled) 220 else 0,
-                                    delayMillis = if (enabled) (row * 36 + index * 32).coerceAtMost(260) else 0))
-                            }
-                            SpectrumGlyphButton(destination.symbol, destination.title, { close(destination) },
-                                Modifier.size(56.dp).graphicsLayer {
-                                    alpha = enter.value
-                                    translationY = (1f - enter.value) * 14.dp.toPx()
-                                    scaleX = .8f + .2f * enter.value; scaleY = scaleX
-                                }.testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
-                                    else "navigation-primary-" + destination.tab!!.name.lowercase()),
-                                active = active, enabled = !closing)
-                        }
+                    androidx.compose.material3.Text(group.title, Modifier.padding(horizontal = 12.dp),
+                        style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+                    destinations.forEach { destination ->
+                        val route = destination.workspace
+                        val active = if (route != null) route == selectedWorkspace else selectedWorkspace == null && destination.tab == selected
+                        SpectrumTextButton(destination.title, { close(destination) }, symbol = destination.symbol,
+                            modifier = Modifier.fillMaxWidth().testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
+                                else "navigation-primary-" + destination.tab!!.name.lowercase()))
                     }
                 }
             }
         }
     }
 }
+

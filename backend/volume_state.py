@@ -166,6 +166,7 @@ def get_strategy(user: Any = Depends(backend.current_user)) -> dict:
     result["available_accounts"] = (snapshot or {}).get("accounts", [])
     result["mandate_execution_mode"] = "read_only"
     result["profiles"] = strategy_catalogue(result["active"], snapshot)
+    result["allocation"] = allocation_policy((result["active"] or {}).get("config", {}))
     return result
 
 
@@ -354,9 +355,11 @@ class Limits(StrictModel):
 
 try:
     from .strategy_profiles import StrategyTuning, catalogue as strategy_catalogue
+    from .strategy_construction import StrategyConstruction, preserve_construction, allocation_policy
     from .portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
 except ImportError:
     from strategy_profiles import StrategyTuning, catalogue as strategy_catalogue
+    from strategy_construction import StrategyConstruction, preserve_construction, allocation_policy
     from portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
 
 
@@ -369,6 +372,7 @@ class StrategyConfig(StrictModel):
     allowed_markets: list[Literal["MOEX", "SPB", "RU"]] = Field(min_length=1, max_length=3)
     mandate: PortfolioMandate | None = None
     tuning: StrategyTuning | None = None
+    construction: StrategyConstruction | None = None
 
 
 def validate_config(config: StrategyConfig | dict) -> dict:
@@ -423,6 +427,7 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
     else:
         config = validate_config(payload.config)
     config = preserve_mandate(config, active, supplied=((payload.config is not None and "mandate" in payload.config.model_fields_set) or (payload.rollback_to_version is not None and config.get("mandate") is not None)))
+    config = preserve_construction(config, active, supplied=((payload.config is not None and "construction" in payload.config.model_fields_set) or payload.rollback_to_version is not None))
     _preserve_tuning(config, active, payload)
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
@@ -764,3 +769,4 @@ def _risk_check_scope(snapshot, event, payload):
     checked_sources = list({ref["id"]: ref for ref in all_sources if ref.get("id") in source_ids}.values())
     linked_source_ids = sorted({ref["id"] for ref in checked_sources})
     return selected_uids, selected_positions, checked_sources, linked_source_ids
+

@@ -12,8 +12,10 @@ from pydantic import BaseModel, ConfigDict, StrictBool
 
 try:
     from .volume_contract import decimal, text_number, financial_context
+    from .strategy_construction import profile_construction, permitted_classes, allocation_policy
 except ImportError:
     from volume_contract import decimal, text_number, financial_context
+    from strategy_construction import profile_construction, permitted_classes, allocation_policy
 
 PROFILE_IDS = ("capital", "coupon", "balanced", "growth", "equity")
 
@@ -26,11 +28,11 @@ class StrategyTuning(BaseModel):
 
 # Rating levels follow the existing within-agency scale, not issuer name matching.
 PROFILES = (
-    ("capital", "Защита капитала", "Качественные облигации и повышенный резерв.", "preservation", "conservative", 24, 100, 20, 5, 10, 20, 30, 3, 10, "0.3", 30),
-    ("coupon", "Купонный доход", "Облигации для регулярных поступлений и реинвестирования.", "income", "conservative", 36, 100, 10, 5, 10, 20, 30, 5, 15, "0.4", 30),
-    ("balanced", "Сбалансированный портфель", "Облигации и акции с ограничением концентрации.", "income", "moderate", 60, 60, 10, 5, 10, 20, 30, 5, 20, "0.5", 30),
-    ("growth", "Долгосрочный рост", "Большая доля акций при длинном горизонте.", "growth", "aggressive", 84, 30, 10, 5, 10, 20, 30, 5, 20, "0.5", 45),
-    ("equity", "Акции и дивиденды", "Только акции; дивиденды возвращаются в портфель.", "growth", "aggressive", 84, 0, 15, 5, 10, 20, 25, 5, 20, "0.5", 45),
+    ("capital", "Бережный старт", "Резерв, качественные облигации и фонды. Сначала устойчивость, затем доход.", "preservation", "conservative", 24, 100, 20, 5, 10, 20, 30, 3, 10, "0.3", 30),
+    ("coupon", "Регулярный доход", "Лестница облигаций и фонды: выплаты распределяются по срокам.", "income", "conservative", 36, 100, 10, 5, 10, 20, 30, 5, 15, "0.4", 30),
+    ("balanced", "Сбалансированный портфель", "Облигации, акции и фонды с общим бюджетом риска.", "income", "moderate", 60, 60, 10, 5, 10, 20, 30, 5, 20, "0.5", 30),
+    ("growth", "Долгосрочный рост", "Долгий срок, широкие фонды, качественные компании и реинвестирование.", "growth", "aggressive", 84, 30, 10, 5, 10, 20, 30, 5, 20, "0.5", 45),
+    ("equity", "Долевое участие", "Акции и фонды акций. Повышенные колебания, длинный горизонт.", "growth", "aggressive", 84, 0, 15, 5, 10, 20, 25, 5, 20, "0.5", 45),
 )
 
 
@@ -121,8 +123,9 @@ def _template(row, active: dict | None, snapshot: dict | None) -> dict:
         "reinvest_coupons": True, "reinvest_dividends": True, "allowed_sessions": ["main"],
     }
     config["mandate"] = mandate
+    config["construction"] = profile_construction(identifier, previous)
     return {"id": identifier, "title": title, "description": description, "config": config,
-            "missing": missing, "ready_for_preview": not missing, "reserve_percent": reserve_pct}
+            "allocation": allocation_policy(config), "missing": missing, "ready_for_preview": not missing, "reserve_percent": reserve_pct}
 
 
 @financial_context
@@ -132,7 +135,7 @@ def catalogue(active: dict | None, snapshot: dict | None) -> dict:
     current = (active or {}).get("config", {})
     mode = current.get("mandate", {}).get("asset_mode")
     suggested = _suggested_profile(current)
-    return {"revision": 1, "items": rows, "suggested_id": suggested,
+    return {"revision": 2, "items": rows, "suggested_id": suggested,
             "suggestion_basis": "existing_asset_mode_and_goal" if mode else "conservative_draft_not_personal_suitability",
             "tuning": research_tuning(current, snapshot),
             "requires_strategy_confirmation": True, "paid_calls_on_read": 0}
@@ -155,7 +158,7 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
                     if item.get("currency") == currency), Decimal(0))
     available = max(Decimal(0), cash - reserve)
     mode = config.get("mandate", {}).get("asset_mode", "mixed")
-    classes = {"bonds": ["bond"], "shares": ["share"], "mixed": ["bond", "share"]}.get(mode, [])
+    classes = sorted(permitted_classes(config))
     # Small portfolios need fewer simultaneous candidate requests, not weaker limits.
     maximum = _batch_size(available)
     return {"enabled": enabled, "profile_id": tuning.get("profile_id"),
@@ -164,3 +167,4 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
             "limits_widened": False, "paid_model_required": False,
             "description": "Объём проверки зависит от доступных денег; лимиты риска и резерв сохраняются.",
             "automatic_trading": False}
+

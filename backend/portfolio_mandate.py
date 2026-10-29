@@ -11,8 +11,10 @@ from fastapi import HTTPException
 
 try:
     from .volume_contract import decimal, text_number, financial_context
+    from .strategy_construction import permitted_classes
 except ImportError:
     from volume_contract import decimal, text_number, financial_context
+    from strategy_construction import permitted_classes
 
 
 class PortfolioMandate(BaseModel):
@@ -80,8 +82,7 @@ def mandate_purchase_reasons(config: dict, instrument_type: str | None,
         # suitability/automatic execution remain denied in volume_purchases.
         return []
     result = []
-    permitted = {"bonds": {"bond"}, "shares": {"share"}, "mixed": {"bond", "share"}}
-    if instrument_type not in permitted[mandate["asset_mode"]]:
+    if instrument_type not in permitted_classes(config):
         result.append("instrument_class_outside_mandate")
     if account_id is not None and account_id != mandate["account_id"]:
         result.append("account_outside_mandate")
@@ -94,3 +95,4 @@ def mandate_purchase_reasons(config: dict, instrument_type: str | None,
                 result.append("rating_below_owner_mandate")
                 break
     return result
+

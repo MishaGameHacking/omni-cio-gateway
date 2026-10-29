@@ -93,7 +93,7 @@ fun spectrumPalette(dark: Boolean, accent: AccentStyle = AccentStyle.AURORA): Sp
 
 val DarkSpectrumPalette = spectrumPalette(dark = true)
 // Legacy preview alias: there is no second production colorway.
-val LightSpectrumPalette = DarkSpectrumPalette
+val LightSpectrumPalette = spectrumPalette(dark = false)
 
 val LocalSpectrumPalette = staticCompositionLocalOf { DarkSpectrumPalette }
 
@@ -294,5 +294,6 @@ fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
     SpatialIcon(if (compact) "analyst" else "brand", modifier.aspectRatio(1f),
         tint = LocalSpectrumPalette.current.cyan, motionAllowed = true)
 }
+
 
 

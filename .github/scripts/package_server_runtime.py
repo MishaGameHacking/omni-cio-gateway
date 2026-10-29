@@ -10,7 +10,7 @@ import subprocess
 import urllib.request
 
 REQUIREMENTS = 'requirements.txt'
-BASE = '94f42c48ac4073e7750c78e396bc661da4b31be0'
+BASE = 'aad0a117074a1b083021f93ef9ff928102b95557'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
 
 
@@ -33,7 +33,7 @@ def baseline_inventory():
 
 
 def verify_requirements(relative, name, raw):
-    if relative == REQUIREMENTS and raw != git('show', BASE + ':' + name) + b'pypdf==6.21.3\n':
+    if relative == REQUIREMENTS and raw != git('show', BASE + ':' + name):
         raise RuntimeError('unreviewed_dependency_change')
 
 
@@ -110,3 +110,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

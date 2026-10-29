@@ -9,39 +9,56 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
-    permissions:
-      contents: read
-      actions: read
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 65
+    env:
+      EXPECTED_TESTED_MERGE_SHA: ${{ github.sha }}
+      EXPECTED_PR_HEAD_SHA: ''
+      EXPECTED_PR_BASE_SHA: ''
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
     steps:
-      - name: Bind unchanged backend to successful laptop tests and deployed runtime
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+      - name: Checkout exact GitHub source on the owner laptop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          script: |
-            const baseline='aad0a117074a1b083021f93ef9ff928102b95557';
-            async function backendTree(ref) {
-              const {data:commit}=await github.rest.git.getCommit({...context.repo,commit_sha:ref});
-              const {data:tree}=await github.rest.git.getTree({...context.repo,tree_sha:commit.tree.sha});
-              const entry=tree.tree.find(item=>item.path==='backend'&&item.type==='tree');
-              if(!entry) throw new Error('Backend source inventory missing');
-              return entry.sha;
-            }
-            if(await backendTree(baseline)!==await backendTree(context.sha))
-              throw new Error('Backend changed: new laptop backend verification and deployment are required');
-            const {data:tested}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40718753255});
-            if(tested.head_sha!==baseline||tested.run_attempt!==1||tested.path!=='.github/workflows/workspace-redesign.yml')
-              throw new Error('Backend test receipt identity changed');
-            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:40718753255,per_page:100});
-            const verify=jobs.filter(job=>job.name==='verify');
-            if(verify.length!==1||verify[0].status!=='completed'||verify[0].conclusion!=='success')
-              throw new Error('Backend verification did not pass');
-            const {data:deployed}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40721312988});
-            if(deployed.status!=='completed'||deployed.conclusion!=='success'||
-               deployed.head_sha!=='ad710d8ef0e54071cb5ecdc39d2ba9e8441e1a6d'||
-               deployed.path!=='.github/workflows/workspace-deploy.yml'||deployed.run_attempt!==1)
-              throw new Error('Runtime deployment is not verified');
-            core.info('Backend bytes and tests unchanged; 2238 tests + 1557 subtests verified on laptop, deployed run40721312988.');
+          ref: ${{ github.sha }}
+          path: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          fetch-depth: 64
+          persist-credentials: false
+      - name: Verify all Python sources and complete backend suite in existing WSL
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\laptop_backend_ci.py
+          if errorlevel 1 exit /b 1
+      - name: Package the exact verified server changes
+        id: package
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\package_server_runtime.py
+          if errorlevel 1 exit /b 1
+      - name: Retain synthetic verification and source release bundle
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/windows-backend-report.json
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/python-source-audit.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/sonar-helper-tests.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/backend-ci-regressions.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/linux-backend.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/server-runtime.json
+          if-no-files-found: error
+          retention-days: 7
 
   verify-client:
     needs: verify
@@ -84,3 +101,4 @@ jobs:
             server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/lint-results-debug.*
           if-no-files-found: error
           retention-days: 7
+

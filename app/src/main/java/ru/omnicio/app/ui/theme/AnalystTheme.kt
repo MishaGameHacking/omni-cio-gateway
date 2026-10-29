@@ -11,7 +11,7 @@ import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
@@ -53,7 +53,11 @@ val LocalSpectrumMotionPreference = staticCompositionLocalOf {
 /** Retained for saved legacy callers; the application has one visual style. */
 @Suppress("UNUSED_PARAMETER")
 internal fun displayedThemeDark(mode: ThemeMode, system: SystemThemeObservation,
-    lastDisplayed: Boolean?, appConfigurationDark: Boolean): Boolean = false
+    lastDisplayed: Boolean?, appConfigurationDark: Boolean): Boolean = when (mode) {
+    ThemeMode.LIGHT -> false
+    ThemeMode.DARK -> true
+    ThemeMode.SYSTEM -> (system as? SystemThemeObservation.Known)?.dark ?: lastDisplayed ?: appConfigurationDark
+}
 
 private val AnalystTypography = Typography(
     displayLarge = TextStyle(
@@ -144,7 +148,9 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         if (inspection) null else context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
     val workspace = LocalWorkspacePreferences.current
-    val dark = false
+    var mode by remember(context) { mutableStateOf(if (inspection) ThemeMode.LIGHT else storedApplicationTheme(context)) }
+    val system = if (inspection) SystemThemeObservation.Known(false) else rememberSystemThemeObservation()
+    val dark = displayedThemeDark(mode, system, null, androidx.compose.foundation.isSystemInDarkTheme())
     SideEffect {
         (activity as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -159,15 +165,20 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         activity?.window?.isNavigationBarContrastEnforced = false
     }
     // Legacy preference storage is left intact; it no longer selects a colorway.
-    val themePreference = ThemePreference(ThemeMode.LIGHT) { }
+    val themePreference = ThemePreference(mode) { selected ->
+        mode = selected
+        preferences?.edit()?.putString("theme_mode", selected.name)?.apply()
+        if (!inspection) syncSavedApplicationTheme(context, selected)
+    }
     val motionPreference = SpectrumMotionPreference(workspace.value.motion != MotionLevel.OFF) { enabled ->
         workspace.update(workspace.value.copy(motion = if (enabled) MotionLevel.LIVE else MotionLevel.OFF))
         preferences?.edit()?.putBoolean("spectrum_motion", enabled)?.apply()
     }
-    val palette = remember { spectrumPalette(dark = false) }
+    val palette = remember(dark) { spectrumPalette(dark = dark) }
     val colors = palette.colors
     CompositionLocalProvider(
         LocalEditorRestorationOwner provides editorRestorationOwner,
+        LocalSystemThemeObservation provides system,
         LocalThemePreference provides themePreference,
         LocalSpectrumMotionPreference provides motionPreference,
         LocalSpectrumPalette provides palette,
@@ -191,4 +202,5 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         }
     }
 }
+
 

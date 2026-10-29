@@ -37,8 +37,14 @@ def verified_identity(value, now: datetime) -> bool:
 def instrument_reasons(meta: dict, info: dict, config: dict) -> list[str]:
     reasons = []
     kind = meta.get("instrumentType")
-    if kind not in {"share", "bond"}:
+    if kind not in {"share", "bond", "etf"}:
         reasons.append("instrument_requires_separate_risk_model")
+    if kind == "etf":
+        try:
+            from .fund_policy import fund_reasons
+        except ImportError:
+            from fund_policy import fund_reasons
+        reasons.extend(fund_reasons(meta))
     exchange = {"REAL_EXCHANGE_MOEX": "MOEX", "REAL_EXCHANGE_RTS": "SPB"}.get(meta.get("realExchange"))
     if exchange is None or not ({exchange, "RU"} & set(config.get("allowed_markets", []))):
         reasons.append("market_not_allowed_or_unknown")
@@ -59,6 +65,8 @@ def instrument_reasons(meta: dict, info: dict, config: dict) -> list[str]:
 
 
 def credit_reasons(assessment: dict, kind: str) -> list[str]:
+    if kind == "etf":
+        return []  # Fund terms and conservative overlap replace issuer credit scoring.
     rows = assessment.get("ratings", [])
     reasons = []
     if assessment.get("warnings"):
@@ -209,6 +217,15 @@ def _funding_and_concentrations(snapshot, config, meta, identity, groups, costs,
     candidate = {"position": meta.get("uid"), "issuer": (identity or {}).get("issuer_id"),
                  "group": (identity or {}).get("group_id"), "sector": meta.get("sector"),
                  "currency": str(meta.get("currency", "")).upper()}
+    groups = {axis: dict(values) for axis, values in groups.items()}
+    fund_total = sum((decimal(row.get("value")) or ZERO for row in snapshot.get("positions", [])
+                      if row.get("instrument_type") == "etf"), ZERO)
+    for axis in ("issuer", "group", "sector"):
+        key = candidate[axis]
+        if meta.get("instrumentType") == "etf":
+            groups[axis][key] = max(groups[axis].values(), default=ZERO) + fund_total
+        elif fund_total:
+            groups[axis][key] = groups[axis].get(key, ZERO) + fund_total
     observations, breaches = _limits(groups, candidate, config, denominator, paid)
     return observations, reasons + breaches
 
@@ -248,3 +265,4 @@ def margin_of_safety(price, conservative_value) -> str | None:
     if current is None or value is None or current <= 0 or value <= 0:
         return None
     return text_number((value - current) / value * 100)
+

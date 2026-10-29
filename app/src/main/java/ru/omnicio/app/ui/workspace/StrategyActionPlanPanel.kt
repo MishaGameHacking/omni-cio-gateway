@@ -1,0 +1,75 @@
+package ru.omnicio.app.ui.workspace
+
+import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.unit.dp
+import java.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import ru.omnicio.app.ui.spectrum.*
+
+@Composable
+internal fun StrategyActionPlanPanel() {
+    val resource = rememberWorkspaceResource("/automation/strategy-plan")
+    val activity = LocalActivity.current
+    val browser = LocalUriHandler.current
+    var browserFallback by remember { mutableStateOf<String?>(null) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val now by produceState(Instant.now()) { while(isActive) { value = Instant.now(); delay(5_000) } }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        WorkspaceRequestState(resource)
+        Text("Следующий шаг по портфелю", style = MaterialTheme.typography.titleLarge)
+        Text("Количество рассчитывает сервер по подтверждённым остаткам, целевым долям и свежему стакану.", style = MaterialTheme.typography.bodyMedium)
+        val actions = resource.data?.records("actions").orEmpty()
+        if (actions.isEmpty()) SpectrumCard {
+            Text("Пока без покупки", style = MaterialTheme.typography.titleMedium)
+            Text("Ожидаем свежий расчёт или недостающие сведения. Увеличивать риск, чтобы заполнить план, система не будет.")
+        }
+        actions.forEach { row ->
+            val expires = runCatching { Instant.parse(row.optString("expires_at")) }.getOrNull()
+            val current = expires?.isAfter(now) == true
+            val sell = row.optString("action") == "sell"
+            SpectrumCard(emphasized = current) {
+                SpectrumBadge(if (current) "Расчёт по стратегии" else "Нужен новый расчёт")
+                Text(row.text("name"), style = MaterialTheme.typography.titleLarge)
+                Text(row.text("ticker"))
+                Text(PrivateValue((if (sell) "Продать " else "Докупить ") + row.optInt("suggested_lots") + " лот. · " + row.text("quantity", "—") + " шт."),
+                    style = MaterialTheme.typography.titleMedium)
+                Text(PrivateValue(moneyText(row.optJSONObject("total_cost"))))
+                Text(row.text("explanation"))
+                Text("Цена проверена: " + localMoment(row.text("as_of")), style = MaterialTheme.typography.bodySmall)
+                val url = row.text("broker_url", "")
+                SpectrumPrimaryButton("Открыть актив в Т‑Инвестициях", {
+                    if (expires?.isAfter(Instant.now()) == true && activity != null) {
+                        when(openInstrumentInApp(activity, url)) {
+                            BrokerOpenResult.NoAppHandler -> browserFallback = url
+                            BrokerOpenResult.InvalidLink -> message = "Ссылка инструмента не прошла проверку."
+                            BrokerOpenResult.AppHandlerOpened -> message = "Проверьте цену и количество у брокера. Переход не отправляет заявку."
+                        }
+                    }
+                }, Modifier.fillMaxWidth(), enabled = current && url.isNotBlank() && activity != null)
+                Text("Налоги зависят от счёта и вашей ситуации. Итоговые условия показывает брокер перед покупкой или продажей.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        val pending = resource.data?.records("pending").orEmpty()
+        if (pending.isNotEmpty()) DetailFold("Ожидают проверки · ${pending.size}") {
+            pending.take(8).forEach { row ->
+                Text(row.text("name"), style = MaterialTheme.typography.titleMedium)
+                Text(if (!row.optBoolean("evidence_current")) "Котировка или данные портфеля требуют обновления."
+                    else "Не выполнены все условия стратегии. Актив не включён в план.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        message?.let { Text(it) }
+        SpectrumSecondaryButton("Проверить состояние расчёта", resource.refresh, Modifier.fillMaxWidth())
+        Text("После операции следующий шаг появится по обновлённому портфелю. Расчёты не используют платный ИИ.", style = MaterialTheme.typography.bodySmall)
+    }
+    browserFallback?.let { url -> WorkspaceDialog("Открыть карточку в браузере?", { browserFallback = null }) {
+        Text("На этом устройстве нет приложения, принимающего проверенную ссылку актива. Можно открыть ту же карточку на сайте Т‑Банка.")
+        SpectrumPrimaryButton("Открыть карточку", { browser.openUri(url); browserFallback = null })
+        SpectrumSecondaryButton("Отмена", { browserFallback = null })
+    } }
+}

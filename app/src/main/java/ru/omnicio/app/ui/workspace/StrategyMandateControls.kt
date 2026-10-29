@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
+import kotlin.math.roundToInt
 import ru.omnicio.app.ui.spectrum.*
 
 /** Stepping preserves the loaded decimal exactly; no Float is persisted. */
@@ -38,44 +39,33 @@ internal fun strategyNumberInput(raw: String, minimum: String, maximum: String, 
     return number.stripTrailingZeros().toPlainString()
 }
 
-@Suppress("UNUSED_PARAMETER")
+/** Index-based slider: persisted values stay exact decimal strings. No keyboard. */
 @Composable
 internal fun StrategyNumberChoice(title: String, value: String, unit: String, enabled: Boolean,
     minimum: String, maximum: String, presets: List<String>, steps: List<String>,
     percentSlider: Boolean = false, onChange: (String) -> Unit) {
-    val ownerId = LocalWorkspaceSession.current.userId
-    var text by rememberSaveable(ownerId, title, value) { mutableStateOf(value) }
-    var submitted by remember(ownerId, title, value) { mutableStateOf(value) }
-    var focused by remember(ownerId, title) { mutableStateOf(false) }
-    val whole = unit == "мес." || unit == "дн."
-    val parsed = strategyNumberInput(text, minimum, maximum, whole)
-    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-    val commit = {
-        if (enabled && parsed != null && parsed != submitted) {
-            submitted = parsed
-            onChange(parsed)
-        }
+    val values = remember(minimum, maximum, presets, steps, percentSlider, value) {
+        val low = minimum.toBigDecimal(); val high = maximum.toBigDecimal()
+        val increment = if (percentSlider) BigDecimal.ONE else steps.firstOrNull()?.toBigDecimalOrNull() ?: BigDecimal.ONE
+        val generated = if ((high - low) / increment <= BigDecimal(600))
+            generateSequence(low) { it + increment }.takeWhile { it <= high }.map { it.stripTrailingZeros().toPlainString() }.toList()
+        else presets
+        (generated + presets + listOf(value)).mapNotNull { it.toBigDecimalOrNull() }
+            .filter { it in low..high }.distinctBy { it.stripTrailingZeros() }.sorted()
+            .map { it.stripTrailingZeros().toPlainString() }
     }
-    SpectrumTextField(text, { text = it }, Modifier.fillMaxWidth()
-        .semantics { testTagsAsResourceId = true }
-        .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)
-        .onFocusChanged { state ->
-        if (focused && !state.hasFocus) commit()
-        focused = state.hasFocus
-    }, enabled = enabled, singleLine = true,
-        label = { Text(title) }, trailingIcon = { Text(unit, Modifier.padding(end = 12.dp)) },
-        isError = parsed == null,
-        supportingText = if (parsed == null || text != value) {
-            {
-                if (parsed == null) Text(if (text.isBlank()) "Укажите значение" else
-                    "От $minimum до $maximum $unit" + if (whole) ". Целое число." else "")
-                else Text("Сохранится после завершения ввода")
-            }
-        } else null,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-            keyboardType = if (whole) androidx.compose.ui.text.input.KeyboardType.Number else androidx.compose.ui.text.input.KeyboardType.Decimal,
-            imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { commit(); focusManager.clearFocus() }))
+    val index = values.indexOfFirst { it.toBigDecimal().compareTo(value.toBigDecimalOrNull() ?: BigDecimal(-1)) == 0 }
+    var position by remember(title, value) { mutableFloatStateOf(index.coerceAtLeast(0).toFloat()) }
+    Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
+        .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text(if (index < 0) "Выберите" else "$value $unit", style = MaterialTheme.typography.labelLarge)
+        }
+        if (values.size > 1) SpectrumSlider(position, { position = it }, enabled = enabled,
+            valueRange = 0f..values.lastIndex.toFloat(), steps = (values.size - 2).coerceAtLeast(0),
+            onValueChangeFinished = { onChange(values[position.roundToInt().coerceIn(values.indices)]) })
+    }
 }
 
 internal fun newMandateDraft(): JSONObject = JSONObject().put("base_currency", "RUB")
@@ -176,4 +166,5 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
         }
     }
 }
+
 

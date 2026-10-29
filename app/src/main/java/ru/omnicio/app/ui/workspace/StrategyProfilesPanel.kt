@@ -34,7 +34,7 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
                 Text(profile.text("description", ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val value = profile.optJSONObject("config")
                 val mandate = value?.optJSONObject("mandate")
-                Text("Облигации ${mandate?.text("bond_target_percent", "—")}% · акции ${mandate?.text("share_target_percent", "—")}%",
+                Text(strategyClassLabel(value),
                     style = MaterialTheme.typography.labelLarge)
                 if (activeId == profile.text("id", "")) SpectrumBadge("Выбранная основа")
                 else if (suggested == profile.text("id", "")) Text("Основа по текущим настройкам",
@@ -58,9 +58,9 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
         Text("Горизонт: ${proposed?.optInt("horizon_months")} мес.")
         Text("Резерв: " + PrivateValue(moneyText(proposed?.optJSONObject("reserve"))))
         Text("Предел одной позиции: ${proposed?.optJSONObject("limits")?.text("position_percent", "—")}%")
-        Text("Лимит оборота: ${mandate?.text("max_discretionary_turnover_percent", "—")}% за ${mandate?.optInt("turnover_window_days")} дней")
+        Text("Ограничения концентрации, расходов и частоты изменений настроены автоматически.")
         if (!selected.optBoolean("ready_for_preview")) Text(
-            "В параметрах проверьте счёт и допустимые потери. Нулевой допуск потерь блокирует новые покупки.",
+            "Проверьте счёт, срок и отношение к потерям. До этого новые покупки не рассчитываются.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Изменение сохраняется на сервере после проверки. Доходность не гарантирована.",
             style = MaterialTheme.typography.bodySmall)
@@ -79,4 +79,13 @@ internal fun strategyProfileSymbol(id: String): SpectrumSymbol = when (id) {
     "growth" -> SpectrumSymbol.Growth
     "equity" -> SpectrumSymbol.Dividends
     else -> SpectrumSymbol.Strategy
+}
+
+
+internal fun strategyClassLabel(config: JSONObject?): String {
+    val values = config?.optJSONObject("construction")?.optJSONArray("enabled_classes")
+    if (values != null) return (0 until values.length()).map { when(values.optString(it)) {
+        "bond" -> "Облигации"; "share" -> "Акции"; else -> "Фонды"
+    } }.joinToString(" · ")
+    return "Облигации и акции"
 }

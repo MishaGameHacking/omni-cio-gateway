@@ -67,15 +67,14 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 version, validStrategy(next))
         }
     }
-    val restoreVersion = rememberWorkspaceAction { result -> result.optJSONObject("config")?.let(edit) }
     val requestExit: (() -> Unit) -> Unit = { proceed -> proceed() }
     RegisterPanelExit(WorkspaceRoute.Strategies, requestExit)
     SpatialBackHandler(onBack = onBack)
-    WorkspaceDetailPage("Моя стратегия", "Правила сохраняются после проверки сервером", onBack, SpectrumSymbol.Strategy,
+    WorkspaceDetailPage("Моя стратегия", "Цель, понятные настройки и действия по портфелю", onBack, SpectrumSymbol.Strategy,
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Стратегии", "Параметры", "История"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Стратегия", "Настройки", "План"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
@@ -89,21 +88,12 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                     0 -> item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
                         editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
                     1 -> {
-                        item { WorkspaceChoices("Раздел", listOf("Цель", "Профиль", "Резерв", "Лимиты"),
-                            parameterTab) { parameterTab = it } }
-                        when (parameterTab) {
-                            0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
-                            1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
-                            2 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
-                            3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
-                        }
+                        item { StrategySimpleSettings(config, resource.data?.records("available_accounts").orEmpty(),
+                            editor.canEdit, edit) }
                     }
-                    else -> resource.data?.records("history").orEmpty().forEach { old -> item(key = "history-" + old.optInt("version")) {
-                        StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
-                    } }
+                    else -> item { StrategyActionPlanPanel() }
                 }
                 item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
-                item { WorkspaceActionState(restoreVersion) }
                 if (!validStrategy(config)) item {
                     SpectrumCard {
                         Text("Завершите настройку", style = MaterialTheme.typography.titleMedium)
@@ -249,22 +239,5 @@ private fun StrategyDifference(before: JSONObject?, after: JSONObject) {
 private fun strategyValue(value: String?): String = when (value) {
     "preservation" -> "Сохранение"; "income" -> "Выплаты"; "growth" -> "Рост"; "moderate" -> "Умеренный"
     "conservative" -> "Консервативный"; "aggressive" -> "Высокий"; else -> value ?: UNSPECIFIED_VALUE
-}
-
-@Composable
-private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Boolean,
-    editor: StrategyEditorAvailability, version: Int, previewAction: WorkspaceAction) {
-    SpectrumCard {
-        Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
-        Text(localMoment(old.text("confirmed_at", "")), style = MaterialTheme.typography.bodySmall)
-        val previous = old.optJSONObject("config") ?: JSONObject()
-        DetailFold("Изменения и возврат") {
-        StrategyDifference(active?.optJSONObject("config"), previous)
-        SpectrumSecondaryButton("Проверить возврат к этой версии", {
-            if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
-                .put("rollback_to_version", old.optInt("version")))
-        }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
-        }
-    }
 }
 

@@ -2,6 +2,7 @@ package ru.omnicio.app.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
@@ -43,7 +44,7 @@ private val WorkspaceColors = lightColorScheme(
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE4EDFF),
     onPrimaryContainer = Color(0xFF153C89),
-    inversePrimary = Color(0xFF2463EB),
+    inversePrimary = Color(0xFF9DB9FF),
     secondary = Color(0xFF086E7A),
     onSecondary = Color(0xFFFFFFFF),
     secondaryContainer = Color(0xFFDDF5F1),
@@ -111,13 +112,59 @@ private val WorkspaceSemantic = AnalystSemanticColors(
     chartSelectedOuter = Color(0xFF17243A),
 )
 
-/** One style for every saved legacy mode/accent and every system configuration. */
+private val GraphiteColors = darkColorScheme(
+    primary = Color(0xFF9DB9FF), onPrimary = Color(0xFF102C63),
+    inversePrimary = Color(0xFF2463EB),
+    primaryFixed = WorkspaceColors.primaryFixed,
+    primaryFixedDim = WorkspaceColors.primaryFixedDim,
+    onPrimaryFixed = WorkspaceColors.onPrimaryFixed,
+    onPrimaryFixedVariant = WorkspaceColors.onPrimaryFixedVariant,
+    secondaryFixed = WorkspaceColors.secondaryFixed,
+    secondaryFixedDim = WorkspaceColors.secondaryFixedDim,
+    onSecondaryFixed = WorkspaceColors.onSecondaryFixed,
+    onSecondaryFixedVariant = WorkspaceColors.onSecondaryFixedVariant,
+    tertiaryFixed = WorkspaceColors.tertiaryFixed,
+    tertiaryFixedDim = WorkspaceColors.tertiaryFixedDim,
+    onTertiaryFixed = WorkspaceColors.onTertiaryFixed,
+    onTertiaryFixedVariant = WorkspaceColors.onTertiaryFixedVariant,
+    primaryContainer = Color(0xFF263A60), onPrimaryContainer = Color(0xFFDCE6FF),
+    secondary = Color(0xFF87D5C5), onSecondary = Color(0xFF093B33),
+    secondaryContainer = Color(0xFF233F3A), onSecondaryContainer = Color(0xFFC0F5E8),
+    tertiary = Color(0xFFC9AFF0), onTertiary = Color(0xFF392351),
+    tertiaryContainer = Color(0xFF40324E), onTertiaryContainer = Color(0xFFEEDCFF),
+    background = Color(0xFF141517), onBackground = Color(0xFFF1F1F3),
+    surface = Color(0xFF1D1E21), onSurface = Color(0xFFF1F1F3),
+    surfaceVariant = Color(0xFF303136), onSurfaceVariant = Color(0xFFCACBD1),
+    surfaceContainerLowest = Color(0xFF111214), surfaceContainerLow = Color(0xFF191A1D),
+    surfaceContainer = Color(0xFF242529), surfaceContainerHigh = Color(0xFF2B2C31),
+    surfaceContainerHighest = Color(0xFF35363C), surfaceBright = Color(0xFF3A3B40),
+    surfaceDim = Color(0xFF141517), surfaceTint = Color(0xFF9DB9FF),
+    outline = Color(0xFF9799A3), outlineVariant = Color(0xFF494B54),
+    error = Color(0xFFFFB1BB), onError = Color(0xFF5F152A),
+    errorContainer = Color(0xFF572332), onErrorContainer = Color(0xFFFFD9DF),
+)
+private val GraphiteSemantic = WorkspaceSemantic.copy(
+    success = Color(0xFF8BD8AA), onSuccess = Color(0xFF073A21),
+    successContainer = Color(0xFF223C2D), onSuccessContainer = Color(0xFFBBF2D0),
+    warning = Color(0xFFF2CB7C), onWarning = Color(0xFF3C2B04),
+    warningContainer = Color(0xFF45391E), onWarningContainer = Color(0xFFFFE4AC),
+    info = Color(0xFF9DB9FF), onInfo = Color(0xFF102C63),
+    infoContainer = Color(0xFF263A60), onInfoContainer = Color(0xFFDCE6FF),
+    disabledInk = Color(0xFFA3A5AE), disabledContainer = Color(0xFF303136),
+    chartGrid = Color(0xFF41434B), chartAxis = Color(0xFF9799A3),
+    chartSeparator = Color(0xFF1D1E21), chartSelectedInner = Color(0xFF1D1E21), chartSelectedOuter = Color(0xFFF1F1F3),
+)
+
 @Suppress("UNUSED_PARAMETER")
-fun analystColors(dark: Boolean = true, accent: AccentStyle = AccentStyle.AURORA): AnalystColorSet =
-    AnalystColorSet(WorkspaceColors, WorkspaceSemantic, listOf(WorkspaceColors.secondary, WorkspaceColors.primary,
-        WorkspaceSemantic.success, WorkspaceColors.tertiary, WorkspaceSemantic.warning, WorkspaceColors.error))
+fun analystColors(dark: Boolean = false, accent: AccentStyle = AccentStyle.AURORA): AnalystColorSet {
+    val colors = if (dark) GraphiteColors else WorkspaceColors
+    val semantic = if (dark) GraphiteSemantic else WorkspaceSemantic
+    return AnalystColorSet(colors, semantic, listOf(colors.secondary, colors.primary,
+        semantic.success, colors.tertiary, semantic.warning, colors.error))
+}
 
 /** Actual state-layer composition; callers retain the foreground paired to the fill. */
 internal fun analystPressedColor(fill: Color, foreground: Color, opacity: Float = .08f): Color =
     foreground.copy(alpha = opacity).compositeOver(fill)
+
 
