@@ -126,14 +126,19 @@ def validate_completion(payload, pricing, bound):
 
 
 def probe(api, gateway, report, *, now=None):
+    report['stage'] = 'account_currency'
     finances = api.request('GET', provision.FINANCES).get('finances')
     need(isinstance(finances, dict) and finances.get('currency') == 'RUB', 'account_currency_not_rub')
+    report['stage'] = 'model_pricing'
     pricing = provision.pricing(api, datetime.now(timezone.utc) if now is None else now)
+    report['stage'] = 'key_metadata'
     key_id = selected_key(api)
+    report['stage'] = 'key_limits'
     observed_limits = limits(api, key_id)
     report.update(key_id=key_id, provider_daily_cap_rub=observed_limits['day']['amount'],
                   provider_monthly_cap_rub=observed_limits.get('month', {}).get('amount'),
                   provider_fallback_disabled=True, pricing_verified=True)
+    report['stage'] = 'gateway_models'
     models = gateway.request('/models').get('data')
     need(isinstance(models, list) and any(isinstance(row, dict) and row.get('id') == provision.MODEL
          for row in models), 'required_model_unavailable')
@@ -144,10 +149,12 @@ def probe(api, gateway, report, *, now=None):
     need(ceiling <= 1, 'probe_cost_ceiling_above_one_ruble')
     report['estimated_request_ceiling_rub'] = format(ceiling, 'f')
     # Set before dispatch: timeouts must not be described as free or retried.
+    report['stage'] = 'gateway_completion'
     report['generation_request_sent'] = True
     response = gateway.request('/chat/completions', {'model': provision.MODEL, 'messages': MESSAGES,
         'max_tokens': MAX_TOKENS, 'enable_thinking': False,
         'response_format': {'type': 'json_object'}, 'stream': False})
+    report['stage'] = 'completion_validation'
     report.update(validate_completion(response, pricing, bound))
     report.update(status='verified', authentication_verified=True)
     return report
@@ -162,12 +169,22 @@ def main():
              'owner_laptop_required')
         cloud = os.environ.get('TIMEWEB_CLOUD_TOKEN', '')
         secret = os.environ.get('TIMEWEB_AI_TOKEN', '')
+        report['stage'] = 'credential_format'
+        report['credential_outer_whitespace_detected'] = secret != secret.strip()
         need(16 <= len(cloud) <= 8192 and not any(c.isspace() for c in cloud), 'cloud_credential_required')
         report = probe(provision.CloudAPI(cloud), Gateway(secret), report)
         code = 0
     except ProbeError as error:
         # ProbeError codes are fixed literals in this source, never provider text.
         report['reason'] = str(error)
+        code = 1
+    except provision.ProvisionError as error:
+        allowed = {'new_gateway_key_masked', 'new_gateway_key_invalid', 'cloud_outcome_unknown',
+            'cloud_response_invalid', 'current_model_prices_not_verified',
+            'model_context_does_not_fit_adapter_limits', 'adapter_generation_parameters_unverified',
+            'key_inventory_incomplete', 'key_inventory_identity_invalid', 'new_key_metadata_mismatch',
+            'unexpected_http_status', 'response_too_large', 'invalid_response_shape'}
+        report['reason'] = error.code if error.code in allowed or re.fullmatch(r'cloud_http_[1-5][0-9]{2}', error.code) else 'probe_precondition_failed'
         code = 1
     except BaseException:
         report['reason'] = 'probe_precondition_or_execution_failed'
