@@ -268,6 +268,47 @@ fun Rail53() {
     } }
 }
 
+@PreviewTest
+@Preview(name = "owner56-rail-collapsed", widthDp = 390, heightDp = 844, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "owner56-rail-collapsed-large-text", widthDp = 320, heightDp = 900, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun OwnerRail56() {
+    AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+        Row(Modifier.fillMaxSize()) {
+            StrategyNavigationRail(AnalystTab.Actions, WorkspaceRoute.Strategies, {}, {})
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                Text("Моя стратегия", style = MaterialTheme.typography.headlineMedium)
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
+            }
+        }
+    } }
+}
+
+@PreviewTest
+@Preview(name = "owner56-research", widthDp = 390, heightDp = 844, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "owner56-research-large-text", widthDp = 320, heightDp = 1000, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun OwnerResearch56() {
+    check(LocalInspectionMode.current)
+    val status = JSONObject().put("documents", 2).put("due_targets", 1).put("in_progress", 0).put("sources", JSONArray())
+    val documents = JSONObject().put("items", JSONArray().put(JSONObject().put("id", 1).put("kind", "report")
+        .put("title", "Тестовая компания · финансовые результаты").put("publisher", "Синтетический источник")
+        .put("published_at", 1793232000).put("last_seen", 1793318400)))
+    CompositionLocalProvider(LocalWorkspaceSession provides WorkspaceSession("", "synthetic-layout-only"),
+        LocalWorkspaceTransport provides forbiddenTransport,
+        LocalWorkspacePreviewResources provides mapOf(
+            "/workspace/osint/status" to WorkspaceResource(status, false, null) {},
+            "/workspace/osint/documents?limit=25&q=" to WorkspaceResource(documents, false, null) {})) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                ServerResearchScreen({}, {})
+            }
+        } }
+    }
+}
+
 
 @PreviewTest
 @Preview(name = "analytics54-dark", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
@@ -381,3 +422,4 @@ fun OwnerCooldown56() {
         HostAppearance("login", "setup")
     }
 }
+

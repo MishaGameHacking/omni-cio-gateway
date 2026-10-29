@@ -154,6 +154,7 @@ private fun RiskConcentrationCard(concentration: JSONObject, create: WorkspaceAc
                                 Text(if (concentration.isNull("breached")) "Сопоставление с лимитом не подтверждено" else if (concentration.optBoolean("breached")) "Лимит превышен" else "В пределах заданного лимита")
                                 val share = concentration.optString("share_percent").toFloatOrNull()
                                 if (share != null) SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = if (concentration.optBoolean("breached")) LocalSpectrumPalette.current.rose else LocalSpectrumPalette.current.cyan)
+                                ExplainWithAiButton("risk", concentration.text("direction") + ":" + concentration.text("id"), concentration.text("label"))
                                 DetailFold("Какие позиции входят") { concentration.strings("instrument_uids").forEach { uid ->
                                     SpectrumSecondaryButton("Открыть позицию · " + uid.take(8), { evidence(EvidenceTarget("instrument", uid)) }, Modifier.fillMaxWidth())
                                 } }
@@ -180,3 +181,4 @@ private fun RiskHistoryCard(event: JSONObject, create: WorkspaceAction) {
                                 }, Modifier.fillMaxWidth(), !create.busy)
                             }
 }
+

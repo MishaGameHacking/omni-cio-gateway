@@ -156,7 +156,7 @@ def _parse(target, source, raw, final_url, now, window):
         text = clean_text("\n\n".join(row["text"] for row in pages))
         items = [{"url": target["url"], "title": clean_text(target["title"], 400),
             "text": text, "published_at": target["published_at"], "publisher": source.publisher,
-            "primary": True, "kind": "report", "raw_sha": store.sha(raw), "pages": pages}]
+            "primary": True, "kind": "report", "raw_sha": store.sha(raw), "original_pdf": raw, "pages": pages}]
         coverage = {"items_seen": 1, "coverage": "official_report_text",
                     "page_count": parsed["page_count"], "truncated": parsed["truncated"], "needs_ocr": parsed["needs_ocr"]}
     else:
@@ -182,7 +182,7 @@ def process(target, guard):
             return store.finish(backend.connect, target, now=now, status=target["status"],
                 next_at=now + source.interval, headers={}, coverage=json.loads(target["coverage_json"]), guard=guard)
     headers = {"If-None-Match": target["etag"], "If-Modified-Since": target["last_modified"]}
-    if target["kind"] == "gdelt":
+    if target["kind"] == "gdelt" or (target["kind"] == "pdf" and not store.has_original(backend.connect, target["body_sha"])):
         headers = {}
     status, response_headers, raw, final_url = net.request(url, source.hosts, headers,
         maximum={"pdf": MAX_PDF, "rss": MAX_FEED}.get(target["kind"], MAX_BODY),
@@ -241,3 +241,4 @@ def collect(user, _payload, _checkpoint, progress):
                            (target["id"], target["lease_owner"]))
         outcomes.append({"source_id": target["source_id"], **outcome})
     return {"sources": outcomes, "retention": retention, "paid_model_calls": 0, "orders": 0}
+

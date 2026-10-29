@@ -271,6 +271,15 @@ internal fun joinedAnalyticsHistory(documents: List<JSONObject>): List<HistoryPo
 @Composable
 private fun AnalyticsHistory(documents: List<JSONObject>, currency: String) {
     if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("График скрыт режимом приватности"); return }
+    var mode by rememberSaveable { mutableIntStateOf(0) }
+    AnalyticsChips(listOf("Линия", "Столбцы"), mode) { mode = it }
+    val points = remember(documents.map { it.toString() }) { joinedAnalyticsHistory(documents) }
+    if (mode == 0) ObservedValueChart(points, currency) else AnalyticsBars(documents, currency)
+}
+
+@Composable
+private fun AnalyticsBars(documents: List<JSONObject>, currency: String) {
+    if (LocalWorkspacePreferences.current.value.hideHomeBalance) { Text("График скрыт режимом приватности"); return }
     val points = remember(documents.map { it.toString() }) { joinedAnalyticsHistory(documents) }
     val bars = remember(points) { historyBars(points)?.bars.orEmpty() }
     var selected by remember(points) { mutableIntStateOf(-1) }
@@ -420,3 +429,4 @@ private fun AnalyticsDonut(fractions: List<Pair<String, Float>>, colors: List<Co
     }
     if (largeText) Text(PrivateValue(total.moneyText()), style = MaterialTheme.typography.titleLarge)
 }
+

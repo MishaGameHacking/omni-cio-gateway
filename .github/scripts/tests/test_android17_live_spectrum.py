@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 55", gradle)
-        self.assertIn('versionName = "0.19.0"', gradle)
+        self.assertIn("versionCode = 56", gradle)
+        self.assertIn('versionName = "0.20.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -166,6 +166,7 @@ class Android17LiveSpectrumTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

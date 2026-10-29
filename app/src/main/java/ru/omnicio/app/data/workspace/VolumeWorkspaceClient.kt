@@ -60,7 +60,7 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
         val code = when (detail) { is JSONObject -> detail.optString("code", "request_failed"); is String -> detail; else -> "invalid_response" }
         val policyMessage = if (status in setOf(422, 409, 503)) chatPolicyMessage(code) else null
         val message = policyMessage ?: when (status) {
-            401, 403 -> "Войдите через Telegram заново. Рабочий контекст сохранён для вашего аккаунта."
+            401, 403 -> "Войдите в приложение заново с паролем владельца. Рабочий контекст сохранён."
             404 -> "Данные пока недоступны. Проверьте выбранный объект или обновите сведения."
             409 -> "Исходные данные изменились. Обновите их и подготовьте действие заново."
             422, 400 -> "Проверьте параметры и диапазон значений."
@@ -84,13 +84,64 @@ class VolumeWorkspaceClient(private val baseUrl: String = BackendConfig.BASE_URL
             "ai_processing_approval_required", "ai_processing_region_not_approved" ->
                 "Обработка данных для этого маршрута ещё не настроена. Вопрос не отправлен модели."
 
+            "ai_broker_connection_required", "tinvest_not_connected" ->
+                "Подключите T‑Invest в настройках и дождитесь загрузки данных портфеля. Без подключения вопрос не отправляется модели."
+            "ai_broker_binding_unavailable", "ai_broker_connection_changed", "monitoring_connection_changed" ->
+                "Подключение T‑Invest изменилось или ещё не готово. Проверьте подключение в настройках и обновите данные портфеля."
+            "workspace_refresh_required" ->
+                "Данные портфеля ещё не загружены. Обновите их на главном экране и дождитесь завершения загрузки, затем отправьте вопрос."
+            "ai_workspace_reconciliation_required", "ai_worker_reconciliation_required",
+            "ai_budget_reconciliation_required", "ai_usage_requires_reconciliation" ->
+                "Расход предыдущего запроса ещё не подтверждён. Новые платные запросы приостановлены до сверки; смена ключа ИИ сама по себе её не завершает."
+            "ai_route_cooling_down" ->
+                "После ошибки провайдера ИИ действует короткая пауза. Сохраните вопрос и повторите отправку немного позже."
+            "ai_route_in_flight" ->
+                "Предыдущий запрос к этой модели ещё выполняется. Дождитесь его завершения и повторите отправку."
+            "ai_user_budget_exhausted", "ai_project_budget_exhausted" ->
+                "Дневной бюджет ИИ исчерпан. Новый запрос можно отправить после начала следующего расчётного дня."
+            "ai_user_monthly_budget_exhausted", "ai_project_monthly_budget_exhausted" ->
+                "Месячный бюджет ИИ исчерпан. Новые платные запросы приостановлены до следующего расчётного месяца."
+            "ai_ruble_budget_not_enabled", "ai_budget_disabled_or_invalid", "ai_monthly_budget_disabled_or_invalid" ->
+                "Лимиты расходов ИИ ещё не настроены на сервере. Платные запросы приостановлены."
+            "chat_context_too_large", "ai_context_too_large", "ai_context_size_invalid",
+            "ai_no_route_with_context_capacity" ->
+                "Для выбранной модели слишком много данных. Выберите конкретный актив или более короткий период и отправьте вопрос заново."
+
             "chat_outside_investment_scope" -> "Analyst AI отвечает только об инвестициях, активах и мировой финансовой политике. Этот вопрос не отправлен модели."
             "chat_investment_scope_unclear", "chat_text_invalid" -> "Уточните инвестиционный вопрос: укажите актив, портфель или влияние события на финансовые рынки."
             "chat_tier_insufficient", "chat_tier_invalid" -> "Для этого вопроса нужен более глубокий анализ. Выберите «Авто» или подходящую глубину."
             "chat_cost_estimate_required", "chat_cost_or_route_changed" -> "Стоимость или маршрут требуют повторной проверки. Запрос модели не отправлен."
             "chat_premium_confirmation_required" -> "Подтвердите стоимость глубокого запроса перед отправкой."
+            "chat_explanation_risk_unavailable", "chat_explanation_candidate_unavailable" -> "Данные выбранного объекта обновились. Откройте его снова и повторите вопрос."
+            "chat_explanation_notification_unavailable", "chat_explanation_analysis_facts_unavailable",
+            "chat_explanation_event_unavailable", "chat_explanation_evidence_unavailable",
+            "chat_explanation_document_unavailable" -> "Сохранённые основания для этого объяснения пока недоступны. Выберите другой объект или задайте общий инвестиционный вопрос."
+            "chat_explanation_scope_invalid", "chat_explanation_target_invalid" -> "Контекст вопроса устарел. Откройте объяснение из карточки ещё раз."
             else -> null
         }
+        /** Fixed diagnostics only: never show upstream bodies, credentials or model output. */
+        fun jobFailureMessage(code: String?): String = when (code) {
+            "workspace_paid_outcome_unknown", "ai_transport_outcome_unknown",
+            "ai_usage_missing", "ai_usage_invalid", "ai_usage_inconsistent",
+            "ai_usage_outside_reserved_bounds" ->
+                "Итог запроса и его расход ещё не подтверждены. Нужна сверка; автоматического повторного платного запроса нет."
+            "ai_http_401", "ai_http_403" ->
+                "Провайдер отклонил серверный ключ ИИ. Ответ не получен; требуется проверить подключение ИИ на сервере."
+            "ai_http_429" ->
+                "Провайдер ИИ отклонил запрос из-за своего лимита. Проверьте состояние задания перед новой отправкой."
+            "ai_incomplete_response" ->
+                "Модель не завершила ответ в установленном лимите. Неполный ответ не опубликован; автоматического повторного запроса нет."
+            "ai_content_not_json", "ai_content_not_object", "ai_content_invalid",
+            "ai_response_not_json", "ai_choices_invalid", "ai_chat_response_invalid",
+            "ai_chat_claims_invalid", "ai_chat_evidence_not_in_context", "ai_chat_uncertainty_invalid",
+            "ai_chat_highlight_not_in_context", "ai_chat_action_not_allowed", "ai_chat_action_not_in_context",
+            "ai_duplicate_json_field", "ai_nonfinite_json",
+            "ai_numeric_underflow", "ai_json_nesting_exceeded", "ai_response_too_large" ->
+                "Ответ модели не прошёл проверку формата или оснований. Он не опубликован; автоматического повторного запроса нет."
+            else -> chatPolicyMessage(code) ?:
+                "Задание завершилось без подтверждённого результата. Проверьте его состояние; автоматического повторного запроса нет."
+        }
+
         fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
     }
 }

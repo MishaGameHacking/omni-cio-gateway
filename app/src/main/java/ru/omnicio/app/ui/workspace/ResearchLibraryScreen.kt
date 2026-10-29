@@ -53,6 +53,13 @@ fun SaveResearchButton(payload: JSONObject, defaultTitle: String, instrumentId: 
 
 @Composable
 fun ResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId: String? = null) {
+    var saved by rememberSaveable(initialId) { mutableStateOf(initialId != null) }
+    if (saved) SavedResearchLibraryScreen(state, { saved = false }, initialId)
+    else ServerResearchScreen(onBack, { saved = true })
+}
+
+@Composable
+private fun SavedResearchLibraryScreen(state: PortfolioUiState, onBack: () -> Unit, initialId: String? = null) {
     val personal = rememberPersonalWorkspace()
     val user = LocalWorkspaceSession.current.userId
     var query by rememberSaveable(user) { mutableStateOf("") }
@@ -154,3 +161,4 @@ private fun SavedArchiveContent(archive: JSONObject?, loaded: Boolean) {
         else -> ArchiveContent(archive)
     }
 }
+

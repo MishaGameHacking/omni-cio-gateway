@@ -42,7 +42,7 @@ def test_outside_no_model_route(question):
     assert "только" in error.value.user_message
 
 
-@pytest.mark.parametrize("question", ["Почему?", "Привет", "Новости", "SOME_UNKNOWN_TICKER", "Расскажи про котов"])
+@pytest.mark.parametrize("question", ["Почему?", "Новости", "SOME_UNKNOWN_TICKER", "Расскажи про котов"])
 def test_unknown_asks_for_financial_context(question):
     with pytest.raises(ChatPolicyError, match="chat_investment_scope_unclear"):
         plan_chat(question)
@@ -83,3 +83,14 @@ def test_normalization_and_depth_limits():
     assert plan_chat("  Что\u200b такое облигация? ").max_output_tokens == 600
     assert plan_chat("Аудит портфеля").max_output_tokens == 1200
     assert plan_chat("Дефолт эмитента").metadata()["requires_cost_confirmation"]
+
+
+
+@pytest.mark.parametrize("question", ["Привет!", "Здравствуйте", "Что ты умеешь?", "Hello"])
+def test_brief_introduction_uses_low_cost_route(question):
+    assert plan_chat(question).tier is AnalysisTier.FAST
+
+
+def test_greeting_does_not_open_unrelated_tasks():
+    with pytest.raises(ChatPolicyError):
+        plan_chat("Привет, напиши рецепт супа")

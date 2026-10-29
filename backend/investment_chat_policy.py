@@ -16,7 +16,7 @@ try:
 except ImportError:  # uvicorn top-level imports
     from ai_policy import AnalysisTier
 
-POLICY_VERSION = "investment-chat-v2"
+POLICY_VERSION = "investment-chat-v3"
 SCOPE_MESSAGE = (
     "Analyst AI отвечает только на вопросы об инвестициях, активах и мировой "
     "финансовой политике. Этот запрос не относится к поддерживаемым темам."
@@ -68,6 +68,7 @@ INJECTION = re.compile(
     re.IGNORECASE,
 )
 RETAIL = re.compile(r"\bакци\w*\b[^.!?\n]{0,50}\b(?:магазин\w*|супермаркет\w*|скидк\w*)\b", re.IGNORECASE)
+INTRODUCTION = frozenset({"привет", "здравствуй", "здравствуйте", "добрый день", "добрый вечер", "hello", "hi", "что ты умеешь", "как пользоваться analyst ai"})
 FOLLOW_UP = frozenset({
     "почему", "поясни", "объясни", "подробнее", "что это значит", "какие риски",
     "риски", "что дальше", "приведи пример", "why", "explain", "more detail",
@@ -182,9 +183,11 @@ def plan_chat(text: str, requested_tier: str = "auto", *, history: Sequence[str]
         raise ChatPolicyError("chat_outside_investment_scope", SCOPE_MESSAGE)
     prior = _financial_history(history)
     follow_up = _follow_up(cleaned)
-    if not FINANCE.search(cleaned) and not (follow_up and (verified_context is True or prior)):
+    introduction = cleaned.rstrip("?.! ") in INTRODUCTION
+    if not introduction and not FINANCE.search(cleaned) and not (follow_up and (verified_context is True or prior)):
         raise ChatPolicyError("chat_investment_scope_unclear", CLARIFY_MESSAGE)
     required = _required_tier(prior if follow_up and prior else cleaned)
     selected = _selected_tier(requested_tier, required)
     return ChatPlan(selected, required, LIMITS[selected],
                     "task_complexity" if requested_tier == "auto" else "explicit_user_tier")
+

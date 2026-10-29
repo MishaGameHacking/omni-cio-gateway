@@ -501,10 +501,13 @@ private fun SignedInAppContent(
     var reportId by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
     var chatJson by rememberSaveable(session.user.telegramId) { mutableStateOf(ChatContext().json().toString()) }
     var chatTitle by rememberSaveable(session.user.telegramId) { mutableStateOf("Мой портфель") }
+    var explanationJson by rememberSaveable(session.user.telegramId) { mutableStateOf<String?>(null) }
+    val pendingExplanationState = remember(explanationJson) { pendingExplanation(explanationJson) }
     val json = remember(chatJson) { JSONObject(chatJson) }
     val chatContext = ChatContext(json.text("mode", "portfolio"), json.optString("instrument_uid").takeIf { it.isNotBlank() && it != "null" }, chatTitle,
         json.optString("account_id").takeIf { it.isNotBlank() && it != "null" }, json.optString("start").takeIf { it.isNotBlank() && it != "null" }, json.optString("end").takeIf { it.isNotBlank() && it != "null" },
-        json.optString("event_id").takeIf { it.isNotBlank() && it != "null" })
+        json.optString("event_id").takeIf { it.isNotBlank() && it != "null" },
+        json.optJSONObject("explanation")?.optString("kind"), json.optJSONObject("explanation")?.optString("id"))
     val reauthenticate = LocalReauthenticate.current
     val workspace = rememberWorkspaceRuntime(WorkspaceSession(session.accessToken, session.user.telegramId), tApiConfigured, portfolioCurrency, reauthenticate)
     val liveSync = rememberWorkspaceLiveSync(
@@ -582,6 +585,12 @@ private fun SignedInAppContent(
         LocalWorkspaceInvalidate provides workspace.invalidate,
         LocalWorkspaceRefreshKey provides (workspace.revision + liveSync.revision), LocalWorkspaceSnapshot provides workspace.data,
         LocalWorkspaceLiveSync provides liveSync,
+        LocalPendingExplanation provides pendingExplanationState,
+        LocalAskExplanation provides { target -> explanationJson = target.json().toString(); onScreenChange(AppScreen.Assistant) },
+        LocalApplyExplanation provides { id ->
+            if (pendingExplanationState?.id == id) { chatJson = pendingExplanationState.context.json().toString(); chatTitle = pendingExplanationState.context.title; explanationJson = null }
+        },
+        LocalDismissExplanation provides { id -> if (pendingExplanationState?.id == id) explanationJson = null },
         LocalChatContext provides chatContext, LocalAskAnalyst provides { target ->
             chatJson = target.json().toString(); chatTitle = target.title; onScreenChange(AppScreen.Assistant)
         }, LocalEvidenceNavigator provides evidenceNavigator,
@@ -770,4 +779,5 @@ private fun ServerScreenshotPolicy(signedIn: Boolean, apply: (Boolean) -> Unit) 
         }
     }
 }
+
 

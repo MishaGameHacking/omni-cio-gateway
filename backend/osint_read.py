@@ -8,10 +8,10 @@ import time
 
 try:
     from .osint_catalogue import SOURCES, catalogue, canonical_url
-    from .osint_store import MAX_OBJECT_BYTES, MAX_PUBLICATIONS, MAX_FRONTIER
+    from .osint_store import MAX_OBJECT_BYTES, MAX_ORIGINAL_BYTES, MAX_PUBLICATIONS, MAX_FRONTIER
 except ImportError:
     from osint_catalogue import SOURCES, catalogue, canonical_url
-    from osint_store import MAX_OBJECT_BYTES, MAX_PUBLICATIONS, MAX_FRONTIER
+    from osint_store import MAX_OBJECT_BYTES, MAX_ORIGINAL_BYTES, MAX_PUBLICATIONS, MAX_FRONTIER
 
 
 def status(connect, now: int | None = None) -> dict:
@@ -20,6 +20,7 @@ def status(connect, now: int | None = None) -> dict:
         state = dict(db.execute("SELECT * FROM osint_revision_v1 WHERE singleton=1").fetchone())
         counts = dict(db.execute("SELECT source_id,COUNT(*) FROM osint_publications_v1 WHERE expires_at>? GROUP BY source_id", (now,)))
         targets = db.execute("SELECT * FROM osint_targets_v1").fetchall()
+        originals = db.execute("SELECT COUNT(*),COALESCE(SUM(bytes),0) FROM osint_originals_v1").fetchone()
     rows = [_source_status(source, targets, counts, now) for source in SOURCES]
     return {"schema_version": 1, "revision": state["revision"], "server_time": now,
         "state": "attention" if any(row["stale"] or row["state"] in {"partial", "unavailable", "empty"} or row["target_failures"] or row["coverage"].get("truncated") or row["coverage"].get("empty_index") for row in rows) else "current",
@@ -27,6 +28,7 @@ def status(connect, now: int | None = None) -> dict:
         "due_targets": sum(row["next_at"] <= now and row["lease_until"] <= now for row in targets),
         "in_progress": sum(row["lease_until"] > now for row in targets),
         "storage": {"text_bytes": state["object_bytes"], "text_limit": MAX_OBJECT_BYTES,
+                    "originals": originals[0], "original_bytes": originals[1], "original_limit": MAX_ORIGINAL_BYTES,
                     "document_limit": MAX_PUBLICATIONS, "frontier_limit": MAX_FRONTIER},
         "last_cleanup": state["last_cleanup"], "search_mode": state["search_mode"],
         "paid_models_used": False, "real_orders_enabled": False}
@@ -59,12 +61,19 @@ def _record(row, *, full=False):
                   similar_to=value["similar_id"], similarity_is_corroboration=False)
     if full:
         result["text"] = value["body"]
+        result["original"] = {"available": value.get("original_bytes") is not None,
+                              "bytes": value.get("original_bytes"), "media_type": "application/pdf" if value.get("original_bytes") is not None else None}
     return result
 
 
-def documents(connect, *, limit=25, before_id=None, source_id=None, query=None, now=None) -> dict:
+def documents(connect, *, limit=25, before_id=None, source_id=None, query=None, kind=None, now=None) -> dict:
     now = int(time.time()) if now is None else now
     conditions, params = ["p.expires_at>?"], [now]
+    if kind is not None:
+        if kind not in {"news", "report"}:
+            raise ValueError("osint_document_kind_invalid")
+        conditions.append("p.kind=?")
+        params.append(kind)
     if before_id is not None:
         conditions.append("p.id<?")
         params.append(before_id)
@@ -97,7 +106,9 @@ def documents(connect, *, limit=25, before_id=None, source_id=None, query=None, 
 def document(connect, identifier: int, now=None) -> dict | None:
     now = int(time.time()) if now is None else now
     with closing(connect()) as db:
-        row = db.execute("""SELECT p.*,o.body FROM osint_publications_v1 p
-            JOIN osint_objects_v1 o ON o.sha=p.object_sha WHERE p.id=? AND p.expires_at>?""",
+        row = db.execute("""SELECT p.*,o.body,raw.bytes AS original_bytes FROM osint_publications_v1 p
+            JOIN osint_objects_v1 o ON o.sha=p.object_sha
+            LEFT JOIN osint_originals_v1 raw ON raw.sha=p.raw_sha WHERE p.id=? AND p.expires_at>?""",
             (identifier, now)).fetchone()
     return _record(row, full=True) if row else None
+
