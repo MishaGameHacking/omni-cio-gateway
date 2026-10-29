@@ -15,7 +15,7 @@ SENSITIVE = "DO_NOT_PRINT_PRIVATE_ACCOUNT_DATA"
 
 
 def catalog(**changes):
-    model = {"id": 108, "model_name": inspection.MODEL, "type": "llm",
+    model = {"id": 108, "provider_id": 1, "model_name": inspection.MODEL, "type": "llm",
              "is_stopped": False, "is_deprecated": False,
              "parameter_values": {"cost_in": Decimal("0.000001"),
                                   "cost_out": Decimal("0.000002"),
@@ -27,7 +27,8 @@ def catalog(**changes):
 
 class FakeAPI:
     def __init__(self, payloads):
-        self.payloads = payloads
+        self.payloads = {inspection.PROVIDERS: {"providers": [{"id": 1, "name": "Alibaba", "type": "external"}], "meta": {"total": 1}}}
+        self.payloads.update(payloads)
         self.paths = []
 
     def get(self, path):
@@ -41,6 +42,7 @@ class FakeAPI:
 class InspectionTests(unittest.TestCase):
     def test_only_fixed_get_endpoints_and_uuid_bound_limit_paths(self):
         self.assertTrue(inspection.permitted_path(inspection.FINANCES))
+        self.assertTrue(inspection.permitted_path(inspection.PROVIDERS))
         self.assertTrue(inspection.permitted_path(inspection.KEYS + "/" + KEY_ID + "/entity-limits"))
         for path in ["https://evil.invalid/", inspection.KEYS + "/regenerate",
                      inspection.KEYS + "/../../servers", inspection.KEYS + "?token=secret",
@@ -101,7 +103,7 @@ class InspectionTests(unittest.TestCase):
         self.assertTrue(report["model"]["pricing_verified"])
         self.assertEqual(report["model"]["maximum_input_rub_per_million"], "1.000000")
         self.assertEqual(report["dedicated_keys"][0]["limit_metadata"]["limits"][0]["money_limit_account_currency"], "0")
-        self.assertEqual(len(api.paths), 4)
+        self.assertEqual(len(api.paths), 5)
         self.assertTrue(all(inspection.permitted_path(path) for path in api.paths))
 
     def test_missing_price_tiers_or_stopped_model_never_imply_readiness(self):
@@ -145,6 +147,58 @@ class InspectionTests(unittest.TestCase):
         self.assertFalse(inspection.model_summary(payload)["availability_verified"])
         payload["models"] *= 2
         self.assertFalse(inspection.model_summary(payload)["pricing_verified"])
+
+    def test_every_duplicate_row_is_reported_without_selecting_an_active_version(self):
+        payload = catalog(version="2026-04-16")
+        second = catalog(id=209, provider_id=2, type="hosted-llm", is_stopped=True,
+                         version=SENSITIVE)["models"][0]
+        second["parameter_values"]["cost_out"] = Decimal("0.000008")
+        payload["models"].append(second)
+        payload["meta"]["total"] = 2
+        providers = {"providers": [{"id": 1, "name": "Alibaba", "type": "external"},
+                                    {"id": 2, "name": SENSITIVE, "type": "internal"}], "meta": {"total": 2}}
+        report = inspection.model_summary(payload, providers)
+        self.assertFalse(report["pricing_verified"])
+        self.assertFalse(report["availability_verified"])
+        self.assertNotIn("catalog_id", report)
+        self.assertEqual(len(report["matching_rows"]), 2)
+        self.assertEqual([row["catalog_id"] for row in report["matching_rows"]], [108, 209])
+        self.assertEqual(report["matching_rows"][0]["numeric_version"], "2026-04-16")
+        self.assertEqual(report["matching_rows"][1]["model_type"], "hosted-llm")
+        self.assertTrue(report["matching_rows"][1]["is_stopped"])
+        self.assertEqual(report["matching_rows"][1]["maximum_output_rub_per_million"], "8.000000")
+        self.assertEqual(report["matching_rows"][1]["provider"]["type"], "internal")
+        self.assertIsNone(report["matching_rows"][1]["provider"]["name_canonical"])
+        self.assertNotIn(SENSITIVE, json.dumps(report))
+
+    def test_explicit_cache_prices_contribute_to_input_cost_ceiling(self):
+        payload = catalog()
+        payload["models"][0]["parameter_values"].update({
+            "cost_cache_read": Decimal("0.000005"), "cost_cache_write": Decimal("0.000009")})
+        report = inspection.model_summary(payload)
+        self.assertTrue(report["pricing_verified"])
+        self.assertEqual(report["maximum_input_rub_per_million"], "9.000000")
+        self.assertEqual(report["maximum_output_rub_per_million"], "2.000000")
+
+    def test_explicit_invalid_cache_rate_does_not_use_missing_rate_default(self):
+        for value in (None, "NaN", True, -1):
+            with self.subTest(value=value):
+                payload = catalog()
+                payload["models"][0]["parameter_values"]["cost_cache_write"] = value
+                report = inspection.model_summary(payload)
+                self.assertFalse(report["pricing_verified"])
+                self.assertNotIn("maximum_input_rub_per_million", report)
+
+    def test_unrecognized_duplicate_model_type_is_preserved_as_unknown(self):
+        payload = catalog()
+        payload["models"].append(catalog(id=209, type=SENSITIVE, is_stopped=None)["models"][0])
+        payload["meta"]["total"] = 2
+        report = inspection.model_summary(payload)
+        self.assertEqual(len(report["matching_rows"]), 2)
+        self.assertIsNone(report["matching_rows"][1]["model_type"])
+        self.assertIsNone(report["matching_rows"][1]["is_stopped"])
+        self.assertFalse(report["availability_verified"])
+        self.assertNotIn(SENSITIVE, json.dumps(report))
 
 
 if __name__ == "__main__":

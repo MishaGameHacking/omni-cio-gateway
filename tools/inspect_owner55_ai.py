@@ -2,7 +2,7 @@
 
 Official schemas (reviewed 2026-10-29): timeweb-cloud/sdk-python/docs/
 PaymentsApi.md, Finances.md, AIGatewayApi.md, AiKey.md, AiKeyLimit.md,
-AIModelsApi.md, ModelV3.md and ModelPriceTier.md. Model prices are RUB per
+AIModelsApi.md, AiProvider.md, ModelV3.md and ModelPriceTier.md. Model prices are RUB per
 token; key money limits use the account currency. GET cannot prove either
 key-creation rights or that a future creation response will expose its secret.
 """
@@ -21,6 +21,7 @@ BASE = "https://api.timeweb.cloud"
 FINANCES = "/api/v1/account/finances"
 KEYS = "/api/v1/cloud-ai/ai-keys"
 MODELS = "/api/v3/cloud-ai/models"
+PROVIDERS = "/api/v1/cloud-ai/providers"
 MODEL = "dashscope/qwen3.5-flash"
 DEDICATED_PREFIX = "omni-cio-owner55-"
 MAX_BYTES = 4 * 1024 * 1024
@@ -48,7 +49,7 @@ def uuid_text(value):
 
 
 def permitted_path(path):
-    if path in {FINANCES, KEYS, MODELS}:
+    if path in {FINANCES, KEYS, MODELS, PROVIDERS}:
         return True
     match = re.fullmatch(re.escape(KEYS) + r"/([0-9a-f-]{36})/entity-limits", path)
     return bool(match and uuid_text(match.group(1)))
@@ -137,31 +138,80 @@ def complete_collection(payload, name):
     return rows, total == len(rows)
 
 
-def model_summary(payload):
+def provider_summary(provider_id, payload):
+    report = {"id": integer(provider_id), "metadata_verified": False,
+              "type": None, "name_canonical": None}
+    if not isinstance(payload, dict) or report["id"] is None:
+        return report
+    try:
+        providers, complete = complete_collection(payload, "providers")
+    except InspectionError:
+        return report
+    matches = [row for row in providers if isinstance(row, dict) and type(row.get("id")) is int
+               and row["id"] == provider_id]
+    report["matching_provider_count"] = len(matches)
+    if len(matches) != 1:
+        return report
+    row = matches[0]
+    report["type"] = row.get("type") if row.get("type") in ("external", "internal") else None
+    # Only fixed canonical labels can reach logs; arbitrary catalog text cannot.
+    canonical_names = {"dashscope": "DashScope", "alibaba": "Alibaba",
+                       "alibaba cloud": "Alibaba Cloud", "timeweb": "Timeweb",
+                       "timeweb cloud": "Timeweb Cloud", "qwen": "Qwen"}
+    name = row.get("name")
+    if isinstance(name, str):
+        report["name_canonical"] = canonical_names.get(name.casefold().strip())
+    report["metadata_verified"] = complete and report["type"] is not None
+    return report
+
+
+def model_summary(payload, providers=None):
     rows, complete = complete_collection(payload, "models")
     matches = [row for row in rows if isinstance(row, dict) and row.get("model_name") == MODEL]
     report = {"expected_model": MODEL, "catalog_complete": complete,
               "matching_model_count": len(matches), "availability_verified": False,
               "pricing_verified": False}
+    report["matching_rows"] = [model_row_summary(row, complete, providers) for row in matches]
     if len(matches) != 1:
         return report
-    row = matches[0]
-    report.update({"catalog_id": integer(row.get("id")),
+    # Preserve the unique-row contract; ambiguity never selects a preferred row.
+    report.update(report["matching_rows"][0])
+    return report
+
+
+def model_row_summary(row, complete, providers):
+    model_type = row.get("type")
+    version = row.get("version")
+    numeric_version = version if isinstance(version, str) and re.fullmatch(r"[0-9]{1,8}(?:[.-][0-9]{1,8}){0,4}", version) else None
+    report = {"catalog_id": integer(row.get("id")), "pricing_verified": False,
+                   "numeric_version": numeric_version,
+                   "version_is_null": "version" in row and version is None,
+                   "version_format_recognized": numeric_version is not None,
+                   "model_type": model_type if model_type in (
+                       "llm", "hosted-llm", "embedding", "image", "audio", "video", "moderation", "system-one") else None,
+                   "provider": provider_summary(row.get("provider_id"), providers),
                    "is_stopped": row.get("is_stopped") if type(row.get("is_stopped")) is bool else None,
                    "is_deprecated": row.get("is_deprecated") if type(row.get("is_deprecated")) is bool else None,
+                   "created_at": timestamp(row.get("created_at")),
                    "updated_at": timestamp(row.get("updated_at")),
+                   "deprecation_date": timestamp(row.get("deprecation_date")),
                    "availability_verified": complete and row.get("is_stopped") is False
-                   and row.get("is_deprecated") is False and row.get("type") in {"llm", "hosted-llm"}})
+                   and row.get("is_deprecated") is False and model_type in ("llm", "hosted-llm")}
     values = row.get("parameter_values")
     if not isinstance(values, dict):
         return report
     unit = values.get("pricing_unit", "token")
     in_rate = decimal_text(values.get("cost_in"), positive=True)
     out_rate = decimal_text(values.get("cost_out"), positive=True)
+    cache_read = decimal_text(values.get("cost_cache_read"))
+    cache_write = decimal_text(values.get("cost_cache_write"))
+    cache_prices_valid = ("cost_cache_read" not in values or cache_read is not None) and (
+        "cost_cache_write" not in values or cache_write is not None)
     report.update({"pricing_currency": "RUB", "pricing_unit": "token" if unit == "token" else None,
                    "input_rub_per_token": in_rate, "output_rub_per_token": out_rate,
-                   "cache_read_rub_per_token": decimal_text(values.get("cost_cache_read")),
-                   "cache_write_rub_per_token": decimal_text(values.get("cost_cache_write")),
+                   "cache_read_rub_per_token": cache_read,
+                   "cache_write_rub_per_token": cache_write,
+                   "cache_prices_verified": cache_prices_valid,
                    "context_window": integer(values.get("context_window")),
                    "max_output_tokens": integer(values.get("max_output_tokens"))})
     params = row.get("params_info")
@@ -189,9 +239,10 @@ def model_summary(payload):
                                "output_rub_per_token": output_price})
     report["price_tiers_verified"] = tiers_valid
     report["price_tiers"] = safe_tiers if tiers_valid else []
-    report["pricing_verified"] = complete and report["catalog_id"] is not None and unit == "token" and in_rate is not None and out_rate is not None and tiers_valid
+    report["pricing_verified"] = complete and report["catalog_id"] is not None and unit == "token" and in_rate is not None and out_rate is not None and tiers_valid and cache_prices_valid
     if report["pricing_verified"]:
-        input_ceiling = max([Decimal(in_rate)] + [Decimal(tier["input_rub_per_token"]) for tier in safe_tiers])
+        input_ceiling = max([Decimal(in_rate)] + [Decimal(tier["input_rub_per_token"]) for tier in safe_tiers]
+                            + [Decimal(rate) for rate in (cache_read, cache_write) if rate is not None])
         output_ceiling = max([Decimal(out_rate)] + [Decimal(tier["output_rub_per_token"]) for tier in safe_tiers])
         report["maximum_input_rub_per_million"] = format(input_ceiling * 1_000_000, "f")
         report["maximum_output_rub_per_million"] = format(output_ceiling * 1_000_000, "f")
@@ -258,8 +309,9 @@ def inspect(api):
         report["account_currency_rub_confirmed"] = isinstance(data, dict) and data.get("currency") == "RUB"
     models = read("model_catalog", MODELS)
     if models is not None:
+        providers = read("provider_catalog", PROVIDERS)
         try:
-            report["model"] = model_summary(models)
+            report["model"] = model_summary(models, providers)
         except InspectionError:
             report["model"] = {"availability_verified": False, "pricing_verified": False, "reason": "invalid_collection"}
     keys = read("key_metadata", KEYS)
