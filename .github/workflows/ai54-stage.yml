@@ -60,4 +60,4 @@ jobs:
 
 # Provider money limits use numeric JSON values.
 
-# Wait for read-only gateway key readiness before the single paid check.
+# Diagnose the provider authentication category without exposing key values.

@@ -39,10 +39,16 @@ def request(method, url, token, body=None):
                 raise ValueError('response_too_large')
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as error:
-        # Response bodies may contain sensitive provider metadata; do not log.
+        # Log only redacted first-line diagnostics; never credentials or payloads.
         try:
             detail = json.loads(error.read(32768))
-            code = str(detail.get('error_code') or (detail.get('error') or {}).get('type',''))
+            problem = detail.get('error') or {}
+            code = str(detail.get('error_code') or (problem.get('type','') if isinstance(problem, dict) else ''))
+            if error.code == 401 and url.startswith('https://api.timeweb.ai/'):
+                message = str(problem.get('message','') if isinstance(problem, dict) else problem)
+                message = message.replace(token, '[redacted]')
+                message = re.sub(r'sk-[^\\s,;]+|[A-Za-z0-9_./+:-]{24,}|https?://\\S+', '[redacted]', message)
+                print('AI54_AUTH_DIAGNOSTIC=' + json.dumps({'message':message.splitlines()[0][:350] if message else '', 'token_format_valid':token.startswith('sk-')}), flush=True)
             if not re.fullmatch(r'[a-z0-9_]{1,100}',code):
                 code = 'unspecified'
         except (ValueError, AttributeError):
