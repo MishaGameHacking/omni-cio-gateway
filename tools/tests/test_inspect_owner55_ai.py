@@ -243,6 +243,39 @@ class InspectionTests(unittest.TestCase):
         payload["models"][0]["parameter_values"]["max_output_tokens"] = 0
         self.assertIsNone(inspection.model_summary(payload)["max_output_tokens"])
 
+    def test_deprecated_nonstopped_row_still_bounds_prices_and_capacities(self):
+        payload = catalog(params_info={"max_tokens": {"type": "number", "max": 32768}})
+        old = catalog(id=209, is_deprecated=True,
+                      params_info={"max_tokens": {"type": "number", "max": 8192}})["models"][0]
+        old["parameter_values"].update({"cost_in": Decimal("0.000060"),
+                                       "cost_out": Decimal("0.000060"), "context_window": 128000})
+        payload["models"].append(old)
+        payload["meta"]["total"] = 2
+        report = inspection.model_summary(payload)
+        self.assertTrue(report["selection_verified"])
+        self.assertEqual(report["catalog_id"], 108)
+        self.assertTrue(report["pricing_verified"])
+        self.assertEqual(report["maximum_input_rub_per_million"], "60.000000")
+        self.assertEqual(report["maximum_output_rub_per_million"], "60.000000")
+        self.assertEqual(report["context_window"], 128000)
+        self.assertEqual(report["max_output_tokens"], 8192)
+        self.assertTrue(report["routable_capacities_verified"])
+        self.assertEqual(report["routable_catalog_ids"], [108, 209])
+
+    def test_deprecated_nonstopped_missing_price_or_capacity_blocks_verified_bound(self):
+        payload = catalog(params_info={"max_tokens": {"type": "number", "max": 32768}})
+        old = catalog(id=209, is_deprecated=True)["models"][0]
+        del old["parameter_values"]["cost_out"]
+        payload["models"].append(old)
+        payload["meta"]["total"] = 2
+        report = inspection.model_summary(payload)
+        self.assertTrue(report["selection_verified"])
+        self.assertFalse(report["pricing_verified"])
+        self.assertNotIn("maximum_input_rub_per_million", report)
+        self.assertIsNone(report["max_output_tokens"])
+        self.assertFalse(report["routable_capacities_verified"])
+        self.assertEqual(report["max_output_tokens_source"], "not_declared_for_every_nonstopped_row")
+
 
 if __name__ == "__main__":
     unittest.main()

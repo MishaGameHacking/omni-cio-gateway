@@ -188,6 +188,29 @@ def model_summary(payload, providers=None):
     # Unknown flags/types, duplicate catalog IDs or two active rows never resolve.
     report.update(candidates[0])
     report["selection_verified"] = True
+    # Deprecation excludes new-agent selection, but only is_stopped explicitly
+    # forbids inference. model_name alone does not prove a cheaper billing route.
+    # Bound costs/capacity across every matching non-stopped catalog row.
+    routable = [row for row in report["matching_rows"] if row["is_stopped"] is False]
+    report["pricing_scope"] = "maximum_all_nonstopped_exact_identifier_rows"
+    report["routable_catalog_ids"] = [row["catalog_id"] for row in routable]
+    report["pricing_verified"] = all(row["pricing_verified"] is True for row in routable)
+    if report["pricing_verified"]:
+        for name in ("maximum_input_rub_per_million", "maximum_output_rub_per_million"):
+            report[name] = format(max(Decimal(row[name]) for row in routable), "f")
+    else:
+        report.pop("maximum_input_rub_per_million", None)
+        report.pop("maximum_output_rub_per_million", None)
+    capacity_verified = True
+    for name in ("context_window", "max_output_tokens"):
+        capacities = [row.get(name) for row in routable]
+        known = all(type(value) is int and value > 0 for value in capacities)
+        report[name] = min(capacities) if known else None
+        capacity_verified = capacity_verified and known
+    report["routable_capacities_verified"] = capacity_verified
+    report["capacity_scope"] = "minimum_all_nonstopped_exact_identifier_rows"
+    if len(routable) > 1:
+        report["max_output_tokens_source"] = "minimum_all_nonstopped_exact_identifier_rows" if report["max_output_tokens"] is not None else "not_declared_for_every_nonstopped_row"
     return report
 
 
