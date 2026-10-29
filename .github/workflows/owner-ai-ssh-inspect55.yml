@@ -1,0 +1,70 @@
+name: Inspect temporary SSH key residue with GET only
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-ai-ssh-inspect55.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    # Administrative metadata only: no project checkout, app, tests or SSH.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Inspect exact failed-operation SSH key identity without key bodies
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        with:
+          script: |
+            const target='analyst-private-admin-40920081275';
+            const fail=code=>{throw new Error(code)};
+            const fixed=new Set(['credential_unavailable','http_rejected','response_too_large',
+              'response_invalid','collection_incomplete','key_identity_invalid','attachment_shape_unknown']);
+            let code='inspection_unconfirmed';
+            try {
+              const token=process.env.TIMEWEB_CLOUD_TOKEN;
+              if(typeof token!=='string'||token.length<16||token.length>8192||/\s/.test(token)) fail('credential_unavailable');
+              const response=await fetch('https://api.timeweb.cloud/api/v1/ssh-keys',{
+                method:'GET',redirect:'error',signal:AbortSignal.timeout(20000),
+                headers:{Authorization:'Bearer '+token,Accept:'application/json'}});
+              if(response.status!==200) fail('http_rejected');
+              const chunks=[]; let bytes=0;
+              for await(const chunk of response.body) {
+                bytes+=chunk.length;
+                if(bytes>4194304) fail('response_too_large');
+                chunks.push(Buffer.from(chunk));
+              }
+              const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              if(!data||!Array.isArray(data.ssh_keys)||data.ssh_keys.length>10000) fail('response_invalid');
+              const rows=data.ssh_keys;
+              if(!Number.isSafeInteger(data.meta?.total)||data.meta.total!==rows.length) fail('collection_incomplete');
+              const ids=new Set();
+              for(const row of rows) {
+                if(!row||!Number.isSafeInteger(row.id)||row.id<=0||typeof row.name!=='string'||ids.has(row.id))
+                  fail('key_identity_invalid');
+                ids.add(row.id);
+              }
+              const matches=rows.filter(row=>row.name===target);
+              if(matches.length>5) fail('key_identity_invalid');
+              const keys=matches.map(row=>{
+                if(!Array.isArray(row.used_by)||row.used_by.length>10000) fail('attachment_shape_unknown');
+                const serverIds=row.used_by.map(item=>Number.isSafeInteger(item)?item:item?.id);
+                if(serverIds.some(id=>!Number.isSafeInteger(id)||id<=0)||new Set(serverIds).size!==serverIds.length)
+                  fail('attachment_shape_unknown');
+                return {id:row.id,attached_server_ids:serverIds.sort((a,b)=>a-b),
+                  attached_to_owner_server:serverIds.includes(9417611)};
+              });
+              core.info(JSON.stringify({status:'inspected',failed_operation_run:'40920081275',
+                collection_complete:true,matching_key_count:keys.length,keys,
+                read_only:true,ssh_connection_attempted:false,cleanup_performed:false}));
+              return;
+            } catch(error) {
+              if(fixed.has(error?.message)) code=error.message;
+            } finally {
+              delete process.env.TIMEWEB_CLOUD_TOKEN;
+            }
+            core.info(JSON.stringify({status:'requires_inspection',reason:code,
+              failed_operation_run:'40920081275',read_only:true,
+              ssh_connection_attempted:false,cleanup_performed:false}));
+            core.setFailed('Temporary SSH key inventory is not verified');
