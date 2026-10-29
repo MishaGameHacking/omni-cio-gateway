@@ -54,7 +54,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
         self.assertIn('SpectrumGlyphButton',bar)
         self.assertNotIn('AnalystMenuButton(openMenu)',bar)
-        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Портфель','Portfolio'),
+        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Аналитика','Portfolio'),
                                  ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
             self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
             self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
@@ -137,4 +137,5 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

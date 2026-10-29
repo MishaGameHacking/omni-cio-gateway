@@ -62,36 +62,21 @@ internal fun AnalyticsWorkspace(state: PortfolioUiState, currency: PortfolioCurr
     val period = PortfolioPeriod(start, end)
     val accounts = snapshot?.accounts.orEmpty().filter { accountId == null || it.id == accountId }
     LaunchedEffect(destination, initialPositionId, snapshot?.accounts?.map { it.id }) {
-        val target = destination
-        val uid = target?.query?.takeIf { it.isNotBlank() } ?: initialPositionId
-        if (target != null) {
-            accountId = target.accountId
-            operationId = target.operationId
-            operationDate = target.operationDate
-            assetKind = target.kind
-            assetSector = target.sector
+        if (destination != null) {
+            accountId = destination.accountId; operationId = destination.operationId
+            operationDate = destination.operationDate; assetKind = destination.kind; assetSector = destination.sector
         }
-        if (uid != null && snapshot != null) {
-            val matches = snapshot.accounts.filter { target?.accountId == null || it.id == target.accountId }
-                .flatMap { account -> account.positions.filter { it.id == uid || it.ticker == uid }.map { account.id to it.id } }
-            if (matches.size == 1) { positionAccount = matches[0].first; positionId = matches[0].second }
-            else { page = "assets"; routeMessage = "Этот актив отсутствует в текущем составе счёта. Обновите данные или откройте его через поиск рынка." }
-        } else if (target != null) {
-            page = when { target.operationId != null -> "operations"; target.kind != null || target.sector != null -> "assets"; target.section == 2 -> "value"; target.section == 1 -> "assets"; target.section == 4 -> "payments"; else -> "overview" }
+        val route = resolveAnalyticsRoute(snapshot, destination, initialPositionId)
+        if (route != null) {
+            page = route.page; positionAccount = route.account; positionId = route.position; routeMessage = route.message
         }
-        if (target != null) consumed()
+        if (destination != null) consumed()
     }
     SpatialBackHandler(page != "overview" || positionId != null) {
         if (positionId != null) positionId = null else page = "overview"
     }
     if (positionId != null) {
-        val account = snapshot?.accounts?.firstOrNull { it.id == positionAccount }
-        val position = account?.positions?.firstOrNull { it.id == positionId }
-        if (position != null && account != null) InstrumentDetailsScreen(position, { positionId = null }, account.name, accountId = account.id)
-        else Column(modifier.padding(20.dp)) {
-            Text("Позиция больше не найдена в текущем портфеле")
-            SpectrumSecondaryButton("К аналитике", { positionId = null })
-        }
+        AnalyticsPosition(snapshot, positionAccount, positionId, modifier) { positionId = null }
         return
     }
     val requests = accounts.map { account -> key(account.id) {
@@ -100,81 +85,22 @@ internal fun AnalyticsWorkspace(state: PortfolioUiState, currency: PortfolioCurr
     val payments = accounts.map { account -> key("payments:" + account.id) {
         rememberAccountData(token, account.id, "payments", interval = 60_000)
     } }
-    val current = requests.size == accounts.size && accounts.isNotEmpty() && requests.all { it.json != null && !it.showingPreviousQuery && it.error == null }
     val total = if (accountId == null) snapshot?.totalValue else accounts.singleOrNull()?.totalValue
-    val open: (String) -> Unit = { page = it }
+    val data = AnalyticsViewData(accounts, requests, payments, total, currency.name, period, snapshot?.asOf)
     Column(modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (page != "overview") TextButton(onClick = { page = "overview" }) { Text("‹ Назад") }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { accountPicker = true }, enabled = snapshot != null) {
-                Text((accounts.singleOrNull()?.name ?: "Все счета") + " ▾", maxLines = 1)
-            }
-        }
-        Text(when(page) { "value" -> "Стоимость портфеля"; "payments" -> "Будущие выплаты"; "structure" -> "Структура портфеля"; "assets" -> "Активы"; "operations" -> "Операции"; else -> "Аналитика" },
-            Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.headlineLarge)
-        if (snapshot == null) {
-            AnalyticsCard(Modifier.padding(20.dp)) {
-                Text(when(state) { PortfolioUiState.Loading -> "Загружаем портфель…"; is PortfolioUiState.Error -> state.message; else -> "Подключите Т‑Инвестиции, чтобы видеть свои данные" })
-                SpectrumPrimaryButton("Подключение", connect)
-            }
-        } else AnimatedContent(page, modifier = Modifier.weight(1f), transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "analytics-page") { visible ->
-            if (visible == "operations" && accounts.size == 1) {
-                AccountOperations(token, accounts.single(), onPosition = { selected ->
-                    positionAccount = selected.accountId; positionId = selected.positionId
-                }, initialOperationId = operationId, initialOperationDate = operationDate)
-            } else LazyColumn(Modifier.fillMaxSize().testTag("portfolio-content"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (error != null || refreshing) item { Text(error ?: "Обновляем данные…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                routeMessage?.let { message -> item { Text(message); TextButton(onClick = { routeMessage = null }) { Text("Понятно") } } }
-                if (visible == "overview" || visible == "value") item { AnalyticsCard {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text(PrivateValue(total.moneyText()), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
-                        CurrencyChoice(total?.currency ?: currency.name)
-                    }
-                    Text("Стоимость портфеля", style = MaterialTheme.typography.bodyLarge)
-                    if (current) AnalyticsHistory(requests.mapNotNull { it.json }, currency.name)
-                    else Text(if (requests.any { it.error != null }) "История сейчас недоступна. Текущая стоимость получена отдельно." else "Получаем историю…", style = MaterialTheme.typography.bodySmall)
-                    PeriodControls(period) { start = it.start; end = it.end }
-                    AnalyticsTotals(requests, current, visible == "value")
-                    if (visible == "overview") AnalyticsMore { open("value") }
-                    else {
-                        HorizontalDivider()
-                        Text("Открытые позиции", style = MaterialTheme.typography.titleLarge)
-                        val daily = accounts.mapNotNull { it.dailyYieldAmount }.takeIf { it.size == accounts.size && it.all { m -> m.currency == total?.currency } }
-                        AnalyticsMetric("Сегодня", daily?.sumOf { it.value.toBigDecimal() }?.let { decimalText(it) + " " + currencySymbol(total?.currency ?: currency.name) } ?: "—")
-                        Text("Полная история графика накапливается с подключения приложения. Доходность недоступного периода не восстанавливается по догадке.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                } }
-                if (visible == "overview" || visible == "payments") item { AnalyticsCard {
-                    Text("Будущие выплаты", style = MaterialTheme.typography.titleLarge)
-                    AnalyticsPayments(payments, visible == "payments")
-                    if (visible == "overview") AnalyticsMore { open("payments") }
-                } }
-                if (visible == "overview" || visible == "structure") item { AnalyticsCard {
-                    Text("Структура портфеля", style = MaterialTheme.typography.titleLarge)
-                    AnalyticsChips(listOf("Активы", "Компании", "Отрасли", "Валюта"), structureMode) { structureMode = it }
-                    AnalyticsStructure(accounts, total, structureMode)
-                    if (visible == "overview") AnalyticsMore { open("structure") }
-                    else AnalyticsMore("Открыть активы") { open("assets") }
-                } }
-                if (visible == "overview") item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = { open("assets") }, modifier = Modifier.weight(1f)) { Text("Мои активы") }
-                    OutlinedButton(onClick = { if (accounts.size == 1) open("operations") else accountPicker = true }, modifier = Modifier.weight(1f)) { Text("Операции") }
-                } }
-                if (visible == "assets") {
-                    val rows = accounts.flatMap { a -> a.positions.filter { (assetKind == null || it.instrumentType == assetKind) && (assetSector == null || it.sector == assetSector) }.map { a to it } }
-                    if (rows.isEmpty()) item { Text("На выбранных счетах пока нет позиций") }
-                    items(rows, key = { it.first.id + ":" + it.second.id }) { (account, position) ->
-                        Row(Modifier.fillMaxWidth().clickable { positionAccount = account.id; positionId = position.id }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(position.title, style = MaterialTheme.typography.titleMedium)
-                                Text(position.ticker ?: account.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Text(PrivateValue(position.currentValue.moneyText()))
-                        }
-                    }
-                }
-                item { Text("Данные Т‑Инвестиций · " + relativeObservation(snapshot.asOf), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        AnalyticsHeader(page, accounts, snapshot != null, { page = "overview" }, { accountPicker = true })
+        if (snapshot == null) AnalyticsConnection(state, connect)
+        else if (page == "operations" && accounts.size == 1) AccountOperations(token, accounts.single(), onPosition = {
+            positionAccount = it.accountId; positionId = it.positionId
+        }, initialOperationId = operationId, initialOperationDate = operationDate)
+        else {
+            val duration = portfolioMotionDuration(180, 0)
+            AnimatedContent(page, modifier = Modifier.weight(1f), transitionSpec = {
+                fadeIn(androidx.compose.animation.core.tween(duration)) togetherWith fadeOut(androidx.compose.animation.core.tween(duration))
+            }, label = "analytics-page") { visible ->
+                AnalyticsPages(visible, data, refreshing, error, routeMessage, { routeMessage = null }, structureMode,
+                    { structureMode = it }, { start = it.start; end = it.end }, { page = it }, { accountPicker = true },
+                    assetKind, assetSector) { account, position -> positionAccount = account; positionId = position }
             }
         }
     }
@@ -182,6 +108,125 @@ internal fun AnalyticsWorkspace(state: PortfolioUiState, currency: PortfolioCurr
         TextButton(onClick = { accountId = null; accountPicker = false }) { Text("Все счета") }
         snapshot?.accounts.orEmpty().forEach { account ->
             TextButton(onClick = { accountId = account.id; accountPicker = false }) { Text(account.name) }
+        }
+    }
+}
+
+private data class AnalyticsRoute(val page: String, val account: String? = null, val position: String? = null, val message: String? = null)
+private fun resolveAnalyticsRoute(snapshot: PortfolioSnapshot?, target: PortfolioDestination?, initialPosition: String?): AnalyticsRoute? {
+    val uid = target?.query?.takeIf { it.isNotBlank() } ?: initialPosition
+    if (uid != null && snapshot != null) {
+        val matches = snapshot.accounts.filter { target?.accountId == null || it.id == target.accountId }
+            .flatMap { account -> account.positions.filter { it.id == uid || it.ticker == uid }.map { account.id to it.id } }
+        return if (matches.size == 1) AnalyticsRoute("assets", matches[0].first, matches[0].second)
+            else AnalyticsRoute("assets", message = "Этот актив не найден однозначно в текущем составе. Выберите счёт или откройте его через поиск рынка.")
+    }
+    if (target == null) return null
+    return AnalyticsRoute(when {
+        target.operationId != null -> "operations"
+        target.kind != null || target.sector != null || target.section == 1 -> "assets"
+        target.section == 2 -> "value"
+        target.section == 4 -> "payments"
+        else -> "overview"
+    })
+}
+
+@Composable
+private fun AnalyticsPosition(snapshot: PortfolioSnapshot?, accountId: String?, id: String?, modifier: Modifier, close: () -> Unit) {
+    val account = snapshot?.accounts?.firstOrNull { it.id == accountId }
+    val position = account?.positions?.firstOrNull { it.id == id }
+    if (position != null) InstrumentDetailsScreen(position, close, account.name, accountId = account.id)
+    else Column(modifier.padding(20.dp)) {
+        Text("Позиция больше не найдена в текущем портфеле")
+        SpectrumSecondaryButton("К аналитике", close)
+    }
+}
+
+@Composable
+private fun AnalyticsHeader(page: String, accounts: List<PortfolioAccount>, enabled: Boolean, back: () -> Unit, chooseAccount: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (page != "overview") TextButton(onClick = back) { Text("‹ Назад") }
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = chooseAccount, enabled = enabled) { Text((accounts.singleOrNull()?.name ?: "Все счета") + " ▾", maxLines = 1) }
+    }
+    Text(when(page) { "value" -> "Стоимость портфеля"; "payments" -> "Будущие выплаты"; "structure" -> "Структура портфеля"; "assets" -> "Активы"; "operations" -> "Операции"; else -> "Аналитика" },
+        Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.headlineLarge)
+}
+
+@Composable
+private fun AnalyticsConnection(state: PortfolioUiState, connect: () -> Unit) {
+    AnalyticsCard(Modifier.padding(20.dp)) {
+        Text(when(state) { PortfolioUiState.Loading -> "Загружаем портфель…"; is PortfolioUiState.Error -> state.message; else -> "Подключите Т‑Инвестиции, чтобы видеть свои данные" })
+        SpectrumPrimaryButton("Подключение", connect)
+    }
+}
+
+private data class AnalyticsViewData(val accounts: List<PortfolioAccount>, val requests: List<AccountData>, val payments: List<AccountData>,
+    val total: MoneyAmount?, val currency: String, val period: PortfolioPeriod, val asOf: String?) {
+    val current: Boolean get() = accounts.isNotEmpty() && requests.size == accounts.size &&
+        requests.all { it.json != null && !it.showingPreviousQuery && it.error == null }
+}
+
+@Composable
+private fun AnalyticsPages(page: String, data: AnalyticsViewData, refreshing: Boolean, error: String?, message: String?, clearMessage: () -> Unit,
+    mode: Int, selectMode: (Int) -> Unit, selectPeriod: (PortfolioPeriod) -> Unit, open: (String) -> Unit, chooseAccount: () -> Unit,
+    assetKind: String?, assetSector: String?, position: (String, String) -> Unit) {
+    LazyColumn(Modifier.fillMaxSize().testTag("portfolio-content"), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (error != null || refreshing) item { Text(error ?: "Обновляем данные…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (message != null) item { Text(message); TextButton(onClick = clearMessage) { Text("Понятно") } }
+        if (page == "overview" || page == "value") item { AnalyticsValueCard(data, page == "value", selectPeriod) { open("value") } }
+        if (page == "overview" || page == "payments") item { AnalyticsCard {
+            Text("Будущие выплаты", style = MaterialTheme.typography.titleLarge)
+            AnalyticsPayments(data.payments, page == "payments")
+            if (page == "overview") AnalyticsMore { open("payments") }
+        } }
+        if (page == "overview" || page == "structure") item { AnalyticsCard {
+            Text("Структура портфеля", style = MaterialTheme.typography.titleLarge)
+            AnalyticsChips(listOf("Активы", "Компании", "Отрасли", "Валюта"), mode, selectMode)
+            AnalyticsStructure(data.accounts, data.total, mode)
+            if (page == "overview") AnalyticsMore { open("structure") } else AnalyticsMore("Открыть активы") { open("assets") }
+        } }
+        if (page == "overview") item { Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedButton(onClick = { open("assets") }, modifier = Modifier.weight(1f)) { Text("Мои активы") }
+            OutlinedButton(onClick = { if (data.accounts.size == 1) open("operations") else chooseAccount() }, modifier = Modifier.weight(1f)) { Text("Операции") }
+        } }
+        if (page == "assets") analyticsAssets(data.accounts, assetKind, assetSector, position)
+        item { Text("Данные Т‑Инвестиций · " + relativeObservation(data.asOf), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+private fun androidx.compose.foundation.lazy.LazyListScope.analyticsAssets(accounts: List<PortfolioAccount>, kind: String?, sector: String?, open: (String, String) -> Unit) {
+    val rows = accounts.flatMap { a -> a.positions.filter { (kind == null || it.instrumentType == kind) && (sector == null || it.sector == sector) }.map { a to it } }
+    if (rows.isEmpty()) item { Text("На выбранных счетах пока нет подходящих позиций") }
+    items(rows, key = { it.first.id + ":" + it.second.id }) { (account, position) ->
+        Row(Modifier.fillMaxWidth().clickable { open(account.id, position.id) }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(position.title, style = MaterialTheme.typography.titleMedium)
+                Text(position.ticker ?: account.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Text(PrivateValue(position.currentValue.moneyText()))
+        }
+    }
+}
+
+@Composable
+private fun AnalyticsValueCard(data: AnalyticsViewData, full: Boolean, selectPeriod: (PortfolioPeriod) -> Unit, details: () -> Unit) {
+    AnalyticsCard {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(PrivateValue(data.total.moneyText()), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+            CurrencyChoice(data.total?.currency ?: data.currency)
+        }
+        Text("Стоимость портфеля", style = MaterialTheme.typography.bodyLarge)
+        if (data.current) AnalyticsHistory(data.requests.mapNotNull { it.json }, data.currency)
+        else Text(if (data.requests.any { it.error != null }) "История сейчас недоступна. Текущая стоимость получена отдельно." else "Получаем историю…", style = MaterialTheme.typography.bodySmall)
+        PeriodControls(data.period, selectPeriod)
+        AnalyticsTotals(data.requests, data.current, full)
+        if (!full) AnalyticsMore(open = details) else {
+            HorizontalDivider()
+            Text("Открытые позиции", style = MaterialTheme.typography.titleLarge)
+            val daily = data.accounts.mapNotNull { it.dailyYieldAmount }.takeIf { it.size == data.accounts.size && it.all { m -> m.currency == data.total?.currency } }
+            AnalyticsMetric("Сегодня", PrivateValue(daily?.sumOf { it.value.toBigDecimal() }?.let { decimalText(it) + " " + currencySymbol(data.total?.currency ?: data.currency) } ?: "—"))
+            Text("История накапливается с подключения приложения. Доход недоступного периода не восстанавливается по догадке.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

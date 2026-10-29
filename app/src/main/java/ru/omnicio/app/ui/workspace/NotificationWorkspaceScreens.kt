@@ -238,6 +238,6 @@ private fun NotificationImpact(event: JSONObject) {
     val share = visual?.text("share_percent", "")?.toFloatOrNull()
     if (share != null) {
         SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = tone)
-        Text("Доля " + visual?.text("share_percent") + "% · лимит " + visual?.text("limit_percent", "—") + "%", style = MaterialTheme.typography.bodySmall)
+        Text("Доля " + visual.text("share_percent") + "% · лимит " + visual.text("limit_percent", "—") + "%", style = MaterialTheme.typography.bodySmall)
     }
 }

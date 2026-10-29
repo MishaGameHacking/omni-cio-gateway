@@ -136,14 +136,15 @@ class SpectrumProductionTokens(unittest.TestCase):
 
     def test_portfolio_uses_new_presenter_and_live_position_resolution(self):
         screen = (UI / 'portfolio/PortfolioScreen.kt').read_text(encoding='utf-8')
-        dashboard = (UI / 'portfolio/PortfolioDashboard.kt').read_text(encoding='utf-8')
-        self.assertIn('PortfolioDashboard(', screen)
-        self.assertIn('resolveSelectedPosition(', screen)
-        self.assertNotIn('AccountPreviewCard(', screen)
-        self.assertIn('listOf("Структура", "Активы", "Динамика")', dashboard)
-        self.assertIn('AccountAnalytics(accessToken, account, historyOnly = true)', dashboard)
-        self.assertIn('AssetStructure(snapshot.allocations, snapshot.totalValue)', dashboard)
-        self.assertNotIn('PortfolioSnapshot(', dashboard)
+        analytics = (UI / 'portfolio/AnalyticsWorkspace.kt').read_text(encoding='utf-8')
+        self.assertIn('AnalyticsWorkspace(', screen)
+        self.assertNotIn('PortfolioDashboard(', screen)
+        self.assertIn('snapshot?.accounts?.firstOrNull', analytics)
+        self.assertIn('account?.positions?.firstOrNull', analytics)
+        self.assertIn('InstrumentDetailsScreen(position', analytics)
+        self.assertIn('rememberAccountData(token, account.id, "analytics"', analytics)
+        self.assertIn('rememberAccountData(token, account.id, "payments"', analytics)
+        self.assertNotIn('PortfolioSnapshot(', analytics)
 
     def test_history_keeps_validated_real_points_and_value_table(self):
         source = (UI / 'portfolio/HistoryChart.kt').read_text(encoding='utf-8')
@@ -162,5 +163,6 @@ class SpectrumProductionTokens(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 

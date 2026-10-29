@@ -247,8 +247,9 @@ class GuardedClientTests(DatabaseCase):
 
     def test_external_processing_requires_explicit_region_approval(self):
         self.env['AI_FAST_PROCESSING_REGION'] = 'EXTERNAL'
+        client = self.client()
         with self.assertRaisesRegex(GuardError, 'ai_processing_region_not_approved'):
-            self.run_call(self.client())
+            self.run_call(client)
         self.assertEqual(len(self.requests), 0)
 
     def test_gateway_request_is_accounted(self):

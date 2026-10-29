@@ -87,7 +87,7 @@ private fun AnalystStatusVisual(check: JSONObject?, ready: Boolean) {
             val share = after?.text("share_percent", "")?.toFloatOrNull()
             Text(row.text("title"), style = MaterialTheme.typography.titleSmall)
             if (share != null) {
-                Text("Доля " + after?.text("share_percent") + "% · лимит " + after?.text("limit_percent", "не получен") + "%")
+                Text("Доля " + after.text("share_percent") + "% · лимит " + after.text("limit_percent", "не получен") + "%")
                 SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = MaterialTheme.colorScheme.error)
             }
         }
