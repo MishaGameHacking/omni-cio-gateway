@@ -1,4 +1,4 @@
-name: Reviewed owner AI operation through existing laptop WSL
+name: Reviewed owner AI configuration through existing administrative transport
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -10,8 +10,9 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_AI_TOOLS_SHA: 60941621c98f49fb7e6822e3fa4a22895dfd5179
-  EXPECTED_AI_TOOLS_RUN: '40924243470'
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 876660bb193fe32d993af2f83f789175797b029e
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40926794501'
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
   EXPECTED_AI_DEPLOY_RUN: '40919271605'
   EXPECTED_AI_DEPLOY_WORKFLOW_SHA: b8ecdce47e1ecaff06190e46b1fc912687132b6b
   EXPECTED_AI_RUNTIME_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
@@ -23,8 +24,10 @@ env:
   OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
 jobs:
   operate:
-    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 30
+    # Administrative delivery only. Source/build/test execution remains on the
+    # owner's laptop, required by the exact successful tools run below.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     env:
       PYTHONUTF8: '1'
       PYTHONIOENCODING: utf-8
@@ -45,7 +48,7 @@ jobs:
             const gate=e.OWNER_AI_ACTION==='activate' ? e.OWNER_AI_ACTIVATION_REVIEW : e.OWNER_AI_PROVISION_REVIEW;
             if(!expected||gate!==expected) throw new Error('Explicit reviewed AI operation gate is not set');
             for(const [run_id,sha,path] of [
-              [Number(e.EXPECTED_AI_TOOLS_RUN),e.EXPECTED_AI_TOOLS_SHA,'.github/workflows/owner-ai-tools55.yml'],
+              [Number(e.EXPECTED_AI_ADMIN_TOOLS_RUN),e.EXPECTED_AI_ADMIN_TOOLS_SHA,'.github/workflows/owner-ai-admin-tools55.yml'],
               [Number(e.EXPECTED_AI_DEPLOY_RUN),e.EXPECTED_AI_DEPLOY_WORKFLOW_SHA,'.github/workflows/workspace-deploy.yml']]) {
               const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
               if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||
@@ -67,12 +70,12 @@ jobs:
             }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: ${{ env.EXPECTED_AI_TOOLS_SHA }}
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
           path: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
           sparse-checkout: |
-            .github/scripts/emulator_lease.py
-            tools/launch_owner55_ai_wsl.py
+            tools/owner_ai_admin_transport.py
+            tools/admin_owner55_ai.py
             tools/owner55_ai_guest.py
             tools/inspect_owner55_ai.py
             tools/provision_owner55_ai.py
@@ -94,11 +97,8 @@ jobs:
             tools/timeweb_actions_probe.py
             tools/timeweb_ci_catalog.py
           sparse-checkout-cone-mode: false
-      - name: Run reviewed controller only inside private existing owner WSL
-        shell: cmd
+      - name: Run reviewed configuration controller without transmitting credentials in logs or arguments
         working-directory: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
-        run: |
-          py -3 tools\launch_owner55_ai_wsl.py
-          if errorlevel 1 exit /b 1
+        run: python3 tools/admin_owner55_ai.py
