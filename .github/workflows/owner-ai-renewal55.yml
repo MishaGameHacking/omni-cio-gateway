@@ -1,0 +1,117 @@
+name: Renew reviewed owner AI prices every six hours
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/owner-ai-renewal55.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_RENEWAL_TOOLS_SHA: 960ac7293217513171ce84defe778ad5fbcafce7
+  EXPECTED_AI_RENEWAL_TOOLS_RUN: '40941433016'
+  EXPECTED_AI_PROBE_WORKFLOW_SHA: 952522798839a5cae0499a373a900286fdfbdeb0
+  EXPECTED_AI_PROBE_RUN: '40936772899'
+  OWNER_AI_CREATION_RUN_ID: owner-supplied
+  EXPECTED_AI_ACTIVATION_WORKFLOW_SHA: ad1cd15e6e7aeb7de398ce80675d7f145b5a893f
+  EXPECTED_AI_ACTIVATION_RUN: '40943112424'
+  OWNER_AI_STAGED_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
+  EXPECTED_AI_DEPLOY_RUN: '40919271605'
+  EXPECTED_AI_DEPLOY_WORKFLOW_SHA: b8ecdce47e1ecaff06190e46b1fc912687132b6b
+  EXPECTED_AI_RUNTIME_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+  OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
+  OWNER_AI_RENEWAL_REVIEW: renew-existing-owner55-prices-after-review
+  OWNER_AI_RENEWAL_ADMIN_HOST: reviewed-ubuntu24-metadata-only
+jobs:
+  renew:
+    if: github.ref == 'refs/heads/main'
+    # Administrative metadata and existing-server transport only. All tests run
+    # in the existing owner's WSL before this exact source pin is permitted.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require exact tested tools, deployment and supplied-key activation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            if(e.OWNER_AI_RENEWAL_REVIEW!=='renew-existing-owner55-prices-after-review'||
+               e.OWNER_AI_CREATION_RUN_ID!=='owner-supplied'||
+               !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(e.OWNER_AI_STAGED_KEY_ID))
+              throw new Error('Reviewed renewal identity is not configured');
+            const operation='.github/workflows/owner-ai-adopt55.yml';
+            for(const [id,sha,path] of [
+              [e.EXPECTED_AI_RENEWAL_TOOLS_RUN,e.EXPECTED_AI_RENEWAL_TOOLS_SHA,'.github/workflows/owner-ai-renewal-tools55.yml'],
+              [e.EXPECTED_AI_DEPLOY_RUN,e.EXPECTED_AI_DEPLOY_WORKFLOW_SHA,'.github/workflows/workspace-deploy.yml'],
+              [e.EXPECTED_AI_PROBE_RUN,e.EXPECTED_AI_PROBE_WORKFLOW_SHA,'.github/workflows/owner-ai-supplied-probe55.yml'],
+              [e.EXPECTED_AI_ACTIVATION_RUN,e.EXPECTED_AI_ACTIVATION_WORKFLOW_SHA,operation]]) {
+              if(!/^[0-9]{8,20}$/.test(id)||!/^[a-f0-9]{40}$/.test(sha))
+                throw new Error('Exact renewal evidence pins are missing');
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(id)});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||
+                 run.path!==path||run.run_attempt!==1||run.event!=='push')
+                throw new Error('Exact renewal evidence is not successful');
+            }
+            async function workflow(ref,path) {
+              const {data:file}=await github.rest.repos.getContent({...context.repo,path,ref});
+              return Buffer.from(file.content,'base64').toString('utf8');
+            }
+            function has(text,name,value) {
+              return text.includes('  '+name+': '+value+'\n')||text.includes('  '+name+": '"+value+"'\n");
+            }
+            const activation=await workflow(e.EXPECTED_AI_ACTIVATION_WORKFLOW_SHA,operation);
+            if(!has(activation,'OWNER_SUPPLIED_AI_ACTION','resume_runtime')||
+               !has(activation,'OWNER_SUPPLIED_AI_KEY_ID',e.OWNER_AI_STAGED_KEY_ID)||
+               !has(activation,'EXPECTED_SUPPLIED_PROBE_SHA',e.EXPECTED_AI_PROBE_WORKFLOW_SHA)||
+               !has(activation,'EXPECTED_SUPPLIED_PROBE_RUN',e.EXPECTED_AI_PROBE_RUN))
+              throw new Error('Evidence is not the reviewed activation of this exact supplied key');
+            const deployed=await workflow(e.EXPECTED_AI_DEPLOY_WORKFLOW_SHA,'.github/workflows/workspace-deploy.yml');
+            if(!has(deployed,'EXPECTED_SOURCE_SHA',e.EXPECTED_AI_RUNTIME_SOURCE_SHA))
+              throw new Error('Deployment does not bind the reviewed runtime');
+            const sources=JSON.parse(e.OWNER_AI_EXPECTED_BUDGET_SOURCES);
+            if(JSON.stringify(Object.keys(sources).sort())!==JSON.stringify(['ai_broker_access.py','ai_budget.py','ai_guarded_client.py']))
+              throw new Error('Budget source inventory is incomplete');
+            for(const [name,digest] of Object.entries(sources)) {
+              const {data:file}=await github.rest.repos.getContent({...context.repo,path:'backend/'+name,ref:e.EXPECTED_AI_RUNTIME_SOURCE_SHA});
+              if(require('node:crypto').createHash('sha256').update(Buffer.from(file.content,'base64')).digest('hex')!==digest)
+                throw new Error('Reviewed budget source identity changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_RENEWAL_TOOLS_SHA }}
+          path: owner-ai-renewal55
+          persist-credentials: false
+          sparse-checkout: |
+            tools/owner_ai_renewal_transport.py
+            tools/renew_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/owner_plan_transport_20261027.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/activate_owner55_ai.py
+            deploy/stage_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            deploy/renew_owner55_ai.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: owner-ai-renewal55/.transport-admin
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/prepare_owner_vm.py
+            deploy/access_owner_vm.py
+            tools/timeweb_ci_capacity.py
+            tools/timeweb_actions_probe.py
+            tools/timeweb_ci_catalog.py
+          sparse-checkout-cone-mode: false
+      - name: Refresh prices on existing server without key rotation or normal provider limit changes
+        working-directory: owner-ai-renewal55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: python3 tools/renew_owner55_ai.py
