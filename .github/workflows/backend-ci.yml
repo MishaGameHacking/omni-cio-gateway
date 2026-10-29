@@ -5,6 +5,8 @@ on:
     branches: [main]
   push:
     branches: [main]
+    paths-ignore:
+      - '.github/workflows/owner-ai-renewal55.yml'
 
 permissions:
   contents: read
