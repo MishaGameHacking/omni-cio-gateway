@@ -1,0 +1,82 @@
+name: Test Ubuntu AI administration adapters in existing owner WSL
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/owner-ai-admin-tools55.yml
+      - tools/inspect_owner55_ai.py
+      - tools/provision_owner55_ai.py
+      - tools/owner_ai_private_transport.py
+      - tools/check_owner55_ai_tools.py
+      - tools/run_owner55_ai_tests.py
+      - tools/tests/test_inspect_owner55_ai.py
+      - tools/tests/test_provision_owner55_ai.py
+      - tools/tests/test_owner_ai_private_transport.py
+      - deploy/stage_owner55_ai.py
+      - tools/activate_owner55_ai.py
+      - deploy/activate_owner55_ai.py
+      - tools/tests/test_activate_owner55_ai.py
+      - tools/launch_owner55_ai_wsl.py
+      - tools/owner55_ai_guest.py
+      - tools/tests/test_owner55_ai_launcher.py
+      - tools/owner_ai_admin_transport.py
+      - tools/admin_owner55_ai.py
+      - tools/tests/test_owner_ai_admin_transport.py
+      - tools/tests/test_admin_owner55_ai.py
+      - tools/check_owner55_ai_admin_tools.py
+      - tools/run_owner55_ai_admin_tests.py
+permissions:
+  contents: read
+concurrency:
+  group: owner-ai-tools55
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: owner-ai-admin-tools55-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/emulator_lease.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/check_owner55_ai_tools.py
+            tools/run_owner55_ai_tests.py
+            tools/tests/test_inspect_owner55_ai.py
+            tools/tests/test_provision_owner55_ai.py
+            tools/tests/test_owner_ai_private_transport.py
+            deploy/stage_owner55_ai.py
+            tools/activate_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            tools/tests/test_activate_owner55_ai.py
+            tools/launch_owner55_ai_wsl.py
+            tools/owner55_ai_guest.py
+            tools/tests/test_owner55_ai_launcher.py
+            tools/owner_ai_admin_transport.py
+            tools/admin_owner55_ai.py
+            tools/tests/test_owner_ai_admin_transport.py
+            tools/tests/test_admin_owner55_ai.py
+            tools/check_owner55_ai_admin_tools.py
+            tools/run_owner55_ai_admin_tests.py
+          sparse-checkout-cone-mode: false
+      - name: Compile sources and run mocked tests without cloud credentials
+        shell: cmd
+        working-directory: owner-ai-admin-tools55-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 tools\check_owner55_ai_admin_tools.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1

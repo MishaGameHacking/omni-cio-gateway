@@ -165,13 +165,19 @@ def _private_workspace(outcome):
 
 @_private_output
 def transport_secret(operation, payload, secret, receipt_contract):
+    """Existing owner WSL entry point; administrative alternatives guard separately."""
+    require_owner_wsl()
+    return _transport_secret(operation, payload, secret, receipt_contract)
+
+
+@_private_output
+def _transport_secret(operation, payload, secret, receipt_contract):
     """Return a sanitized receipt, or a fixed-code error with outcome metadata.
 
     The new credential is ENVELOPE['secret'] on the remote side. Never delete a
     newly provisioned key after an error with operation_started=True unless a
     separate inspected result proves the key was not stored on the server.
     """
-    require_owner_wsl()
     _need(isinstance(operation, str) and 0 < len(operation.encode()) <= 128 * 1024,
           'private_operation_size_invalid')
     _need(isinstance(payload, dict), 'private_payload_invalid')
