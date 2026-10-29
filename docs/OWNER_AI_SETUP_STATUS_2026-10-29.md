@@ -22,3 +22,5 @@ The previous attempt40927228133 also deleted its unused key after validation fai
 A usable Timeweb AI Gateway key is required through a protected secret channel, for example the repository Actions secret `TIMEWEB_AI_TOKEN`. Do not put credentials in issues, source files, PR descriptions or chat. Bind that credential to its verified dedicated provider key ID and limits before delivery; the current automatic creation path must not be rerun while the masking policy applies. Existing keys must not be rotated or overwritten by guess.
 
 The operational workflow now defaults to read-only preflight. No production AI activation, recurring price renewal, autonomous brokerage execution, real orders or physical-phone acceptance is claimed.
+
+Final read-only verification [40929472737](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40929472737) succeeded at18:19:07UTC: complete dedicated-key inventory was empty, runtime inference configuration absent, reviewed budget sources verified, no configuration or limits changed and no inference called. Main remains `f54912165127bfab42673743cd141d635e20881f`.
