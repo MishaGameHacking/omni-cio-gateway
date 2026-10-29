@@ -296,7 +296,7 @@ private fun Analytics54Fixture(page: String) {
         .put("history", JSONArray().apply { listOf(8000, 10000, 9500, 12000).forEachIndexed { i, value ->
             put(JSONObject().put("date", "2026-10-${25+i}T12:00:00Z").put("value", value.toString())) } })
         .put("summary", JSONArray().put(JSONObject().put("category", "coupons")
-            .put("amount", JSONObject().put("amount", "120").put("currency", "RUB"))))
+            .put("amount", JSONObject().put("value", JSONObject().put("units", "120").put("nano", 0)).put("currency", "RUB"))))
     val payments = JSONObject().put("complete", true).put("items", JSONArray())
     val data = ru.omnicio.app.ui.portfolio.AnalyticsViewData(listOf(account),
         listOf(ru.omnicio.app.ui.portfolio.AccountData(analytics, null, false)),
