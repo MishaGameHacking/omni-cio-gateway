@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 import urllib.request
 import urllib.error
 
@@ -41,7 +42,7 @@ def request(method, url, token, body=None):
         # Response bodies may contain sensitive provider metadata; do not log.
         try:
             detail = json.loads(error.read(32768))
-            code = str(detail.get('error_code',''))
+            code = str(detail.get('error_code') or (detail.get('error') or {}).get('type',''))
             if not re.fullmatch(r'[a-z0-9_]{1,100}',code):
                 code = 'unspecified'
         except (ValueError, AttributeError):
@@ -93,6 +94,24 @@ def setup(api):
             'daily_rub':'2','monthly_rub':'30','fallback_models':[]}
 
 
+def await_key_ready(payload, call=request, pause=time.sleep):
+    """Read-only key propagation check; never retry a paid completion."""
+    for attempt in range(5):
+        try:
+            models = call('GET', 'https://api.timeweb.ai/v1/models', payload['token'])
+            if not isinstance(models.get('data'), list):
+                raise ValueError('gateway_model_list_invalid')
+            if not any(row.get('id') == MODEL for row in models['data']):
+                raise ValueError('model_not_accessible_to_key')
+            print('AI54_KEY_READINESS=ready', flush=True)
+            return
+        except RuntimeError as error:
+            if not str(error).startswith('ai_http_401:') or attempt == 4:
+                raise
+            print('AI54_KEY_READINESS=propagating', flush=True)
+            pause(10)
+
+
 def smoke(payload):
     request_body = {'model':MODEL,'stream':False,'max_tokens':512,'enable_thinking':False,
         'response_format':{'type':'json_object'},'messages':[
@@ -124,6 +143,7 @@ def main():
     payload = setup(lambda method,path,body=None:request(method,BASE+path,admin,body))
     # A failed model check must not become an active runtime route.
     try:
+        await_key_ready(payload)
         receipt = smoke(payload)
         if receipt['model'] != MODEL:
             raise ValueError('model_identity_differs_from_catalogue')

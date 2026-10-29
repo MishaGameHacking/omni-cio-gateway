@@ -59,3 +59,5 @@ jobs:
 # Select the active catalogue entry when a retired alias also exists.
 
 # Provider money limits use numeric JSON values.
+
+# Wait for read-only gateway key readiness before the single paid check.

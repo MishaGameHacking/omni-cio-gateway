@@ -34,4 +34,24 @@ class ActivationTests(unittest.TestCase):
     def test_price_increase_aborts(self):
         with self.assertRaises(ValueError):m.prices({'models':[{'model_name':m.MODEL,'parameter_values':{'cost_in':1,'cost_out':1}}]})
 
+
+class ReadinessTests(unittest.TestCase):
+    def test_waits_for_key_propagation_without_paid_requests(self):
+        calls=[]
+        def call(method,url,token):
+            calls.append((method,url))
+            if len(calls)<3: raise RuntimeError('ai_http_401:unspecified')
+            return {'data':[{'id':m.MODEL}]}
+        m.await_key_ready({'token':'synthetic-key'},call,lambda seconds:None)
+        self.assertEqual(len(calls),3)
+        self.assertTrue(all(method=='GET' for method,url in calls))
+    def test_stops_on_non_authentication_failure(self):
+        def call(*args): raise RuntimeError('ai_http_429:rate_limited')
+        with self.assertRaisesRegex(RuntimeError,'429'):
+            m.await_key_ready({'token':'synthetic-key'},call,lambda seconds:None)
+    def test_never_substitutes_another_model(self):
+        def call(*args):return {'data':[{'id':'expensive-other-model'}]}
+        with self.assertRaisesRegex(ValueError,'model_not_accessible'):
+            m.await_key_ready({'token':'synthetic-key'},call,lambda seconds:None)
+
 if __name__=='__main__':unittest.main()
