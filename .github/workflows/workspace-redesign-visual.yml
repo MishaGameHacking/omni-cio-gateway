@@ -9,7 +9,7 @@ concurrency:
   group: workspace-redesign-visual
   cancel-in-progress: false
 env:
-  RENDER_SOURCE_SHA: 28ceef6b3ae24735321be73aeb6bd6eab624166d
+  RENDER_SOURCE_SHA: 2a33c5208e9e5e92c00fa73620c40453bb9d5372
 jobs:
   render:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -33,7 +33,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 28ceef6b3ae24735321be73aeb6bd6eab624166d
+          ref: 2a33c5208e9e5e92c00fa73620c40453bb9d5372
           path: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Render actual Compose layouts with synthetic data and restore reference files
