@@ -57,3 +57,5 @@ jobs:
 # Verify catalogue differences before creating any key.
 
 # Select the active catalogue entry when a retired alias also exists.
+
+# Provider money limits use numeric JSON values.

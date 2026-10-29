@@ -39,7 +39,14 @@ def request(method, url, token, body=None):
             return json.loads(raw) if raw else {}
     except urllib.error.HTTPError as error:
         # Response bodies may contain sensitive provider metadata; do not log.
-        raise RuntimeError('ai_http_' + str(error.code)) from None
+        try:
+            detail = json.loads(error.read(32768))
+            code = str(detail.get('error_code',''))
+            if not re.fullmatch(r'[a-z0-9_]{1,100}',code):
+                code = 'unspecified'
+        except (ValueError, AttributeError):
+            code = 'unspecified'
+        raise RuntimeError('ai_http_' + str(error.code) + ':' + code) from None
 
 
 def prices(data):
@@ -73,7 +80,7 @@ def setup(api):
         token = validate_key(created['key'])
         for period, amount in [('day', '2'), ('month', '30')]:
             api('POST', '/api/v1/cloud-ai/ai-keys/' + str(key_id) + '/entity-limits',
-                {'entity_type':'aikey','limit_type':period,'money_limit':amount})
+                {'entity_type':'aikey','limit_type':period,'money_limit':int(amount)})
         limits = api('GET', '/api/v1/cloud-ai/ai-keys/' + str(key_id) + '/entity-limits')['ai_key_entity_limits']
         for period, amount in [('day', '2'), ('month', '30')]:
             matching = [row for row in limits if row.get('limit_type') == period and row.get('model_id') is None]
