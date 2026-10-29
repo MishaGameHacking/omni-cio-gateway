@@ -1,4 +1,4 @@
-name: Observe deployed workspace runtime
+name: Inspect release54 crash and existing AI configuration
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -18,12 +18,16 @@ jobs:
           ref: cd1866ee944ccea2259669f4293379241fd4ee02
           path: .transport-admin
           persist-credentials: false
-      - run: python3 tools/prepare_workspace_observation.py
-      - name: Read existing runtime status and verify deployed file identities
+      - run: python3 tools/prepare_release54_observation.py
+      - name: Read sanitized crash frames and non-secret AI readiness
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
         run: python3 tools/owner_plan_transport_20261027.py
+      - name: Read current model prices without inference
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: python3 tools/read_ai_catalogue.py
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
