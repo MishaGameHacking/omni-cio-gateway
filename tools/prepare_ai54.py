@@ -43,7 +43,7 @@ def request(method, url, token, body=None):
 
 
 def prices(data):
-    rows = [row for row in data.get('models', []) if row.get('model_name') == MODEL]
+    rows = [row for row in data.get('models', []) if row.get('model_name') == MODEL and not row.get('is_stopped') and not row.get('is_deprecated')]
     if len(rows) != 1 or rows[0].get('is_stopped') or rows[0].get('is_deprecated'):
         raise ValueError('selected_model_unavailable:' + json.dumps({'count':len(data.get('models', [])), 'keys':list(data), 'candidates':[{k:r.get(k) for k in ('id','model_name','is_stopped','is_deprecated')} for r in data.get('models', []) if r.get('id') == 99 or 'qwen' in str(r.get('model_name',''))]}))
     row = rows[0]
@@ -109,6 +109,11 @@ def main():
     if os.environ.get('COMPUTERNAME') != 'LAPTOP-NPSGA016':
         raise RuntimeError('owner_laptop_required')
     admin = os.environ['TIMEWEB_CLOUD_TOKEN']
+    try:
+        public = prices(request('GET',BASE+'/api/v3/cloud-ai/models',''))
+        print('AI54_PUBLIC_CATALOGUE='+json.dumps({'available':True,'prices':public}),flush=True)
+    except (RuntimeError, ValueError, KeyError):
+        print('AI54_PUBLIC_CATALOGUE='+json.dumps({'available':False}),flush=True)
     payload = setup(lambda method,path,body=None:request(method,BASE+path,admin,body))
     # A failed model check must not become an active runtime route.
     try:

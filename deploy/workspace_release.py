@@ -20,9 +20,9 @@ import urllib.error
 import urllib.request
 import zipfile
 
-BASE = 'aad0a117074a1b083021f93ef9ff928102b95557'
+BASE = '4a154b14771fc882b30727620926604ab198d28c'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
-MODULES = {'volume_jobs.py', 'strategy_profiles.py', 'volume_purchases.py', 'volume_state.py', 'telegram_browser_app.py', 'app.py', 'volume_market.py', 'strategy_actions.py', 'strategy_construction.py', 'owner_app.py', 'strategy_activity.py', 'fund_policy.py', 'autonomous_controller.py', 'strategy_sales.py', 'portfolio_mandate.py', 'purchase_policy.py', 'strategy_yield.py'}
+MODULES = {'ai_guarded_client.py', 'analysis_engine.py', 'volume_monitor.py', 'volume_notifications.py', 'volume_state.py', 'volume_workspace.py'}
 SERVICES = ('analyst-ai-owner.service', 'analyst-ai-updates.service')
 PUBLIC = 'https://analyst-ai-2941515.twc1.net'
 
