@@ -96,8 +96,10 @@ private fun StrategyPendingRows(pending: List<JSONObject>) {
     if (pending.isNotEmpty()) DetailFold("Ожидают проверки · ${pending.size}") {
         pending.take(8).forEach { row ->
             Text(row.text("name"), style = MaterialTheme.typography.titleMedium)
-            Text(if (!row.optBoolean("evidence_current")) "Котировка или данные портфеля требуют обновления."
-                else strategyWaitingMessage(row), style = MaterialTheme.typography.bodySmall)
+            val message = if ((row.optJSONArray("missing_evidence")?.length() ?: 0) > 0)
+                strategyWaitingMessage(row)
+            else "Котировка или данные портфеля требуют обновления."
+            Text(message, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
