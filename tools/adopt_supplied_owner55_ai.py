@@ -20,6 +20,62 @@ from owner_ai_private_transport import PrivateTransportError
 
 PROVIDER_LIMITS = {'day':'100', 'month':'2900'}
 
+RUNTIME_INSPECTION = '''
+import hmac,json,os
+def run(envelope):
+    if os.getuid()!=0: raise RuntimeError('root_required')
+    payload=envelope['payload']
+    STAGING['verify_sources'](payload['source_sha256'])
+    settings=STAGING['parse_environment'](STAGING['configuration_snapshot']()[0])
+    result={'status':'runtime_inspected','server_id':9417611,
+      'key_present':bool(settings.get('TIMEWEB_AI_TOKEN')),
+      'key_matches_supplied':hmac.compare_digest(settings.get('TIMEWEB_AI_TOKEN',''),envelope.get('secret') or ''),
+      'key_identity_matches':settings.get('ANALYST_OWNER_AI_KEY_ID')==payload['key_id'],
+      'configuration_state':'other','service_active':False,'environment_file_verified':False,
+      'process_configuration_loaded':False,'health_verified':False,'auth_boundary_verified':False,
+      'gateway_metadata_verified':False,'last_failed_check':'none','configuration_changed':False}
+    if all(settings.get(k)==v for k,v in STAGING['DISABLED'].items()):
+        result['configuration_state']='staged_disabled'
+    if all(settings.get(k)==v for k,v in ACTIVATION['ENABLED'].items()):
+        result['configuration_state']='active'
+    selected={k:v for k,v in settings.items() if k.startswith(('AI_','TIMEWEB_AI_','ANALYST_OWNER_AI_'))}
+    checks=[('service_active',lambda:ACTIVATION['systemctl']('is-active','analyst-ai-owner.service')=='active'),
+      ('environment_file_verified',lambda:ACTIVATION['verify_environment_file']()),
+      ('process_configuration_loaded',lambda:ACTIVATION['verify_running_configuration'](selected)),
+      ('health_verified',lambda:ACTIVATION['read_get'](ACTIVATION['PUBLIC']+'/health')=={'status':'ok'}),
+      ('auth_boundary_verified',lambda:ACTIVATION['read_get'](ACTIVATION['PUBLIC']+'/workspace/live?wait=0',allowed_status=401)),
+      ('gateway_metadata_verified',lambda:ACTIVATION['verify_inference_key'](settings.get('TIMEWEB_AI_TOKEN','')))]
+    for name,check in checks:
+        try:
+            value=check()
+            result[name]=value is not False
+        except BaseException:
+            result['last_failed_check']=name
+    return result
+if __name__=='__main__':
+    print(json.dumps(run(ENVELOPE)),flush=True)
+'''
+
+
+def inspect_runtime(transfer, sources, key_id, secret):
+    need(isinstance(key_id,str) and provision.uuid_text(key_id)==key_id,'reviewed_key_identity_required')
+    root=Path(__file__).resolve().parents[1]
+    staging=(root/'deploy/stage_owner55_ai.py').read_text()
+    active=(root/'deploy/activate_owner55_ai.py').read_text()
+    operation=('support={"__name__":"owner_staging"}\nexec(compile('+repr(staging)+',"staging","exec"),support)\n'
+        'active={"__name__":"owner_active","STAGING":support}\nexec(compile('+repr(active)+',"activation","exec"),active)\n'
+        'exec(compile('+repr(RUNTIME_INSPECTION)+',"runtime-inspection","exec"),'
+        '{"STAGING":support,"ACTIVATION":active,"ENVELOPE":ENVELOPE,"__name__":"__main__"})\n')
+    fields=['key_present','key_matches_supplied','key_identity_matches','service_active',
+        'environment_file_verified','process_configuration_loaded','health_verified',
+        'auth_boundary_verified','gateway_metadata_verified','configuration_changed']
+    contract={name:bool for name in fields}
+    contract.update(status={'runtime_inspected'},server_id=int,
+        configuration_state={'other','staged_disabled','active'},
+        last_failed_check={'none','service_active','environment_file_verified','process_configuration_loaded',
+                           'health_verified','auth_boundary_verified','gateway_metadata_verified'})
+    return transfer(operation,{'source_sha256':sources,'key_id':key_id},secret,contract)
+
 
 class AdoptionError(RuntimeError):
     def __init__(self, code, *, blocked=None):
@@ -86,6 +142,7 @@ def inspect(api, transfer, sources, expected_id=None):
 
 
 def adopt(api, transfer, sources, secret, expected_id):
+    need(isinstance(expected_id,str) and provision.uuid_text(expected_id)==expected_id,'reviewed_key_identity_required')
     provision.require_gateway_key(secret)
     key_id, identities, pricing, operation = inspect(api, transfer, sources, expected_id)
     # Recheck the exact inventory before adding a monthly limit. No existing
@@ -140,7 +197,7 @@ def main():
         with redirect_stdout(DiscardedOutput()), redirect_stderr(DiscardedOutput()):
             require_admin_guard()
             action = os.environ.get('OWNER_SUPPLIED_AI_ACTION')
-            need(action in {'inspect', 'adopt_activate'}, 'reviewed_adoption_action_required')
+            need(action in {'inspect', 'adopt_activate', 'inspect_runtime'}, 'reviewed_adoption_action_required')
             api = API(os.environ['TIMEWEB_CLOUD_TOKEN'])
             sources = source_proof(os.environ)
             if action == 'inspect':
@@ -148,6 +205,9 @@ def main():
                 report = {'status':'supplied_key_ready', 'key_id':key_id,
                     'provider_daily_limit_rub':'100', 'provider_monthly_limit_present':'month' in identities,
                     'server_configuration_changed':False, 'inference_called':False}
+            elif action == 'inspect_runtime':
+                report = inspect_runtime(transport_admin, sources, os.environ.get('OWNER_SUPPLIED_AI_KEY_ID'),
+                                         os.environ['TIMEWEB_AI_TOKEN'])
             else:
                 report = adopt(api, transport_admin, sources, os.environ['TIMEWEB_AI_TOKEN'],
                                os.environ.get('OWNER_SUPPLIED_AI_KEY_ID'))

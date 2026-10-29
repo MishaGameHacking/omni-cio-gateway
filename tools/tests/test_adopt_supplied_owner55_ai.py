@@ -91,6 +91,29 @@ class AdoptionTests(unittest.TestCase):
         with self.assertRaisesRegex(adopt.AdoptionError,'identity_changed'):
             adopt.adopt(self.api,self.transfer,{},fixtures.SECRET,fixtures.DAY)
         self.assertEqual(self.calls,[])
+    def test_missing_uuid_stops_before_server_changes(self):
+        with self.assertRaisesRegex(adopt.AdoptionError,'identity_required'):
+            adopt.adopt(self.api,self.transfer,{},fixtures.SECRET,None)
+        self.assertEqual(self.calls,[])
+    def test_runtime_inspection_only_returns_fixed_booleans_and_no_secret(self):
+        namespace={'__name__':'inspection_test'}
+        exec(compile(adopt.RUNTIME_INSPECTION,'inspection','exec'),namespace)
+        settings={**fixtures.stage.DISABLED,'TIMEWEB_AI_TOKEN':fixtures.SECRET,'ANALYST_OWNER_AI_KEY_ID':fixtures.KEY_ID}
+        support={'verify_sources':mock.Mock(),'parse_environment':lambda raw:settings,
+                 'configuration_snapshot':lambda:(b'',None),'DISABLED':fixtures.stage.DISABLED}
+        active={'ENABLED':fixtures.remote.ENABLED,'PUBLIC':'https://unit.invalid',
+                'systemctl':lambda *args:'active','verify_environment_file':mock.Mock(),
+                'verify_running_configuration':mock.Mock(side_effect=RuntimeError('PRIVATE ERROR')),
+                'read_get':lambda *args,**kwargs:{'status':'ok'},'verify_inference_key':mock.Mock()}
+        namespace.update(STAGING=support,ACTIVATION=active)
+        with mock.patch.object(namespace['os'],'getuid',return_value=0):
+            result=namespace['run']({'payload':{'source_sha256':{},'key_id':fixtures.KEY_ID},'secret':fixtures.SECRET})
+        self.assertEqual(result['configuration_state'],'staged_disabled')
+        self.assertTrue(result['key_matches_supplied'])
+        self.assertFalse(result['process_configuration_loaded'])
+        self.assertEqual(result['last_failed_check'],'process_configuration_loaded')
+        self.assertNotIn(fixtures.SECRET,str(result))
+        self.assertNotIn('PRIVATE ERROR',str(result))
     def test_supplied_identity_does_not_depend_on_display_name(self):
         adopt.activation.owned_key(self.api,fixtures.KEY_ID,'owner-supplied')
         with self.assertRaises(adopt.activation.ActivationError):
