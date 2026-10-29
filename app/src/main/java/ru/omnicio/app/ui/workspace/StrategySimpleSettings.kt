@@ -57,7 +57,9 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
             val stability = listOf("unknown", "stable", "variable")
             WorkspaceChoices("Доход вне портфеля", listOf("Ещё не указано", "Стабильный", "Нерегулярный"),
                 stability.indexOf(settings.optString("income_stability", "unknown")), enabled) { change("income_stability", stability[it]) }
-            StrategyNumberChoice("Потери, которые смогу перенести", mandate.optString("loss_capacity_percent", "0"), "%", enabled,
+            val confirmedLoss = mandate.optString("loss_capacity_percent", "0")
+                .takeIf { settings.optBoolean("loss_capacity_confirmed") }.orEmpty()
+            StrategyNumberChoice("Потери, которые смогу перенести", confirmedLoss, "%", enabled,
                 "0", "30", listOf("0", "5", "10", "15", "20", "30"), listOf("5")) { value ->
                 edit(JSONObject(config.toString())
                     .put("mandate", JSONObject(mandate.toString()).put("loss_capacity_percent", value))
