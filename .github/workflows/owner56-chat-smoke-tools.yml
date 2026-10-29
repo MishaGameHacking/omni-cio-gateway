@@ -20,10 +20,21 @@ jobs:
           ref: ${{ github.sha }}
           path: chat-smoke-${{ github.run_id }}
           persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: a9574656fcac4507660c872ebcc22641154a3c8a
+          path: smoke-policy-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: |
+            backend/ai_policy.py
+            backend/investment_chat_policy.py
+          sparse-checkout-cone-mode: false
       - shell: cmd
         working-directory: chat-smoke-${{ github.run_id }}
         run: |
           py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
           if errorlevel 1 exit /b 1
           py -3 -m unittest discover -s tools\tests -p test_owner56_chat_smoke.py -v
+          if errorlevel 1 exit /b 1
+          py -3 -c "import sys; sys.path[:0]=['tools','../smoke-policy-${{ github.run_id }}/backend']; from owner56_chat_smoke import QUESTION; from investment_chat_policy import plan_chat; assert plan_chat(QUESTION).tier.value == 'fast'"
           if errorlevel 1 exit /b 1

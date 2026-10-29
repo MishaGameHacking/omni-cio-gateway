@@ -1,6 +1,6 @@
 """One bounded, idempotent conversation check; no orders or secret output."""
 
-QUESTION = "Кратко объясни, что означает диверсификация инвестиционного портфеля. Не предлагай сделки."
+QUESTION = "Что такое диверсификация инвестиционного портфеля?"
 MAX_COST_MICRO_RUB = 1_000_000
 
 
