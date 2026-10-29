@@ -1,0 +1,37 @@
+import importlib.util
+from pathlib import Path
+import unittest
+
+spec=importlib.util.spec_from_file_location('prepare_ai54',Path(__file__).resolve().parents[1]/'prepare_ai54.py')
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+
+class ActivationTests(unittest.TestCase):
+    def fake(self, bad_limit=False, stopped=False):
+        calls=[]
+        def api(method,path,body=None):
+            calls.append((method,path,body))
+            if path.endswith('/models'): return {'models':[{'id':99,'model_name':m.MODEL,'is_stopped':stopped,'parameter_values':{'cost_in':'0.000014','cost_out':'0.000052'}}]}
+            if method=='GET' and path.endswith('/ai-keys'): return {'ai_keys':[]}
+            if method=='POST' and path.endswith('/ai-keys'): return {'ai_key':{'id':123},'key':'synthetic-not-a-real-key'}
+            if method=='GET': return {'ai_key_entity_limits':[{'limit_type':p,'money_limit':a,'model_id':None} for p,a in [('day','200' if bad_limit else '2'),('month','30')]]}
+            return {}
+        return calls,api
+    def test_both_provider_budgets_before_any_inference(self):
+        calls,api=self.fake();p=m.setup(api)
+        self.assertEqual(p['daily_rub'],'2');self.assertEqual(p['monthly_rub'],'30')
+        self.assertEqual(calls[2][2]['fallback_models'],[])
+        self.assertEqual(len([c for c in calls if c[0]=='POST' and c[1].endswith('/entity-limits')]),2)
+    def test_invalid_provider_limit_revokes_new_key(self):
+        calls,api=self.fake(bad_limit=True)
+        with self.assertRaises(ValueError):m.setup(api)
+        self.assertEqual(calls[-1][:2],('DELETE','/api/v1/cloud-ai/ai-keys/123'))
+    def test_stopped_model_creates_nothing(self):
+        calls,api=self.fake(stopped=True)
+        with self.assertRaises(ValueError):m.setup(api)
+        self.assertTrue(all(c[0]=='GET' for c in calls))
+    def test_key_cannot_inject_environment_lines(self):
+        with self.assertRaises(ValueError):m.validate_key('synthetic\nAI_PROJECT_DAILY_RUB=100')
+    def test_price_increase_aborts(self):
+        with self.assertRaises(ValueError):m.prices({'models':[{'model_name':m.MODEL,'parameter_values':{'cost_in':1,'cost_out':1}}]})
+
+if __name__=='__main__':unittest.main()

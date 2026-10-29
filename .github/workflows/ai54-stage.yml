@@ -1,0 +1,55 @@
+name: Verify and stage bounded AI on owner laptop
+on:
+  push:
+    branches: [codex/strategy53-delivery-tools-2026-10-29]
+    paths: [.github/workflows/ai54-stage.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-ai54-setup
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: ai54-${{ github.run_id }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: ai54-${{ github.run_id }}/.transport-admin
+          persist-credentials: false
+      - name: Verify activation safeguards with synthetic unit tests
+        shell: cmd
+        working-directory: ai54-${{ github.run_id }}
+        run: py -3 -m unittest discover -s tools/tests -p test_prepare_ai54.py -v
+      - name: Create one bounded inference key and check synthetic facts on laptop
+        shell: cmd
+        working-directory: ai54-${{ github.run_id }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: py -3 tools/prepare_ai54.py
+      - name: Stage dedicated key on existing runtime without enabling paid background work
+        shell: cmd
+        working-directory: ai54-${{ github.run_id }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: py -3 tools/owner_plan_transport_20261027.py
+      - name: Remove transient secret payload
+        if: always()
+        shell: cmd
+        working-directory: ai54-${{ github.run_id }}
+        run: if exist deploy\plan-20261027\payload.json del /f /q deploy\plan-20261027\payload.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: ai54-stage-${{ github.run_id }}
+          path: ai54-${{ github.run_id }}/plan-reports/
+          retention-days: 7
