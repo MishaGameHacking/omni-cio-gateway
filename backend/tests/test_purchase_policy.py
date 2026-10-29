@@ -68,7 +68,7 @@ def test_costs_lots_and_concentration_use_decimal_and_all_accounts():
     ("meta", "forQualInvestorFlag", True, "broker_qualification_required"),
     ("meta", "requiredTests", ["bond-test"], "broker_tests_not_confirmed"),
     ("meta", "realExchange", "UNKNOWN", "market_not_allowed_or_unknown"),
-    ("meta", "instrumentType", "etf", "instrument_requires_separate_risk_model"),
+    ("meta", "instrumentType", "etf", "fund_terms_unverified"),
     ("meta", "subordinatedFlag", True, "complex_bond_not_allowed"),
     ("meta", "perpetualFlag", True, "complex_bond_not_allowed"),
     ("meta", "lot", "0.5", "instrument_lot_invalid"),
@@ -461,3 +461,4 @@ def test_cash_on_another_account_does_not_validate_stale_funding_snapshot():
     data = inputs()
     data["snapshot"]["positions"][1]["account_id"] = "owned-b"
     assert "snapshot_cash_requires_refresh" in policy.assess_purchase(**data)["reasons"]
+

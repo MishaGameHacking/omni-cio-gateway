@@ -32,6 +32,7 @@ private val limitTitles = linkedMapOf("position_percent" to "Одна позиц
 fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/strategy")
     val active = resource.data?.optJSONObject("active")
+    val allocation = resource.data?.optJSONObject("allocation")
     val auto = LocalWorkspaceAutoSave.current
     val record = auto?.get(AutoSaveKind.Strategy)
     val context = LocalContext.current
@@ -66,36 +67,44 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                 version, validStrategy(next))
         }
     }
-    val restoreVersion = rememberWorkspaceAction { result -> result.optJSONObject("config")?.let(edit) }
     val requestExit: (() -> Unit) -> Unit = { proceed -> proceed() }
     RegisterPanelExit(WorkspaceRoute.Strategies, requestExit)
     SpatialBackHandler(onBack = onBack)
-    WorkspaceDetailPage("Моя стратегия", "Правила сохраняются после проверки сервером", onBack, SpectrumSymbol.Strategy,
+    WorkspaceDetailPage("Моя стратегия", "Цель, понятные настройки и действия по портфелю", onBack, SpectrumSymbol.Strategy,
         adaptToIme = true) { padding ->
         val compact = LocalCompactWorkspaceInput.current
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Цель", "Профиль", "Резерв", "Лимиты", "Версии"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
+            if (!compact || !WindowInsets.isImeVisible) SpectrumTabs(listOf("Стратегия", "Настройки", "План"), tab, { tab = it }, Modifier.padding(horizontal = 20.dp))
             LazyColumn(Modifier.weight(1f).fillMaxWidth().semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
                 contentPadding = PaddingValues(horizontal = 20.dp, vertical = if (compact) 0.dp else 20.dp),
                 verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
                 item {
                     WorkspaceRequestState(resource)
-                    Text(if (version > 0) "Действует версия $version" else "Активной версии пока нет",
+                    Text("Профиль портфеля",
                         style = MaterialTheme.typography.labelLarge)
                     AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) }
                 }
                 when (tab) {
-                    0 -> item { StrategyGoalEditor(config, editor.canEdit, edit) }
-                    1 -> item { StrategyMandateEditor(config, resource.data?.records("available_accounts").orEmpty(), editor.canEdit, edit) }
-                    2 -> item { StrategyReserveEditor(config, editor.canEdit, edit) }
-                    3 -> limitTitles.forEach { (key, title) -> item { StrategyLimitEditor(title, key, config, editor.canEdit, edit) } }
-                    else -> resource.data?.records("history").orEmpty().forEach { old -> item {
-                        StrategyHistoryCard(old, active, loaded, editor, version, restoreVersion)
-                    } }
+                    0 -> {
+                        if (active?.optJSONObject("config")?.has("construction") == true) item {
+                            StrategyAllocationSummary(allocation)
+                        }
+                        item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
+                            editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
+                    }
+                    1 -> {
+                        item { StrategySimpleSettings(config, resource.data?.records("available_accounts").orEmpty(),
+                            editor.canEdit, edit) }
+                    }
+                    else -> item { StrategyActionPlanPanel() }
                 }
-                item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
-                item { WorkspaceActionState(restoreVersion) }
-                if (!validStrategy(config)) item { Text("Выберите обязательные параметры профиля; проверьте горизонт, резерв и лимиты. Черновик сохранён на устройстве.", color = MaterialTheme.colorScheme.error) }
+                if (!validStrategy(config)) item {
+                    SpectrumCard {
+                        Text("Завершите настройку", style = MaterialTheme.typography.titleMedium)
+                        strategyValidationIssues(config).forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+                        SpectrumSecondaryButton("Открыть параметры", { tab = 1 }, Modifier.fillMaxWidth())
+                    }
+                }
             }
         }
     }
@@ -115,16 +124,63 @@ internal data class StrategyEditorAvailability(val hasEditorState: Boolean, val 
     }
 }
 
-internal fun validStrategy(config: JSONObject): Boolean {
-    val horizon = config.opt("horizon_months") as? Int ?: return false
-    val amount = config.optJSONObject("reserve")?.optString("amount")?.toBigDecimalOrNull()
-    val limits = config.optJSONObject("limits") ?: return false
-    if (config.has("mandate") && (config.optJSONObject("mandate")?.let(::validPortfolioMandate) != true || config.optJSONObject("reserve")?.optString("currency") != "RUB")) return false
-    return horizon in 1..600 && amount != null && amount.signum() >= 0 && limitTitles.keys.all {
-        val number = limits.optString(it).toBigDecimalOrNull()
-        number != null && number.signum() > 0 && number <= java.math.BigDecimal(100)
+internal fun strategyValidationIssues(config: JSONObject): List<String> = buildList {
+    val horizon = config.opt("horizon_months") as? Int
+    if (horizon == null || horizon !in 1..600) add("Горизонт: выберите срок до 50 лет.")
+    val reserve = config.optJSONObject("reserve")
+    val amount = reserve?.optString("amount")?.toBigDecimalOrNull()
+    if (amount == null || amount.signum() < 0) add("Резерв: укажите сумму от нуля.")
+    addAll(strategyLimitIssues(config.optJSONObject("limits")))
+    if (config.has("mandate")) {
+        addAll(strategyMandateIssues(config.optJSONObject("mandate")))
+        if (reserve?.optString("currency") != "RUB") add("Для инвестиционного профиля выберите резерв в RUB.")
     }
 }
+
+private fun strategyLimitIssues(limits: JSONObject?): List<String> =
+    limitTitles.mapNotNull { (key, title) ->
+        val number = limits?.optString(key)?.toBigDecimalOrNull()
+        if (number == null || number.signum() <= 0 || number > java.math.BigDecimal(100))
+            "$title: лимит должен быть больше 0 и не больше 100%."
+        else null
+    }
+
+private fun mandatePercentIssues(mandate: JSONObject): List<String> {
+    val labels = mapOf("loss_capacity_percent" to "Допустимый убыток", "bond_target_percent" to "Доля облигаций",
+        "share_target_percent" to "Доля акций", "max_discretionary_turnover_percent" to "Предел оборота",
+        "max_trade_cost_percent" to "Предел издержек")
+    return labels.mapNotNull { (key, label) ->
+        val number = mandate.optString(key).toBigDecimalOrNull()
+        if (number == null || number < java.math.BigDecimal.ZERO || number > java.math.BigDecimal(100))
+            "$label: укажите значение от 0 до 100%."
+        else null
+    }
+}
+
+private fun mandateChoiceIssues(mandate: JSONObject): List<String> = buildList {
+    listOf(Triple("minimum_rating_level", "Минимальный рейтинг", 0..9),
+        Triple("turnover_window_days", "Период учёта оборота", 1..366),
+        Triple("rebalance_cooldown_days", "Пауза между перераспределениями", 0..365)).forEach { (key, label, range) ->
+        val number = mandate.opt(key) as? Int
+        if (number == null || number !in range) add("$label: выберите допустимое значение.")
+    }
+    if (mandate.opt("reinvest_coupons") !is Boolean) add("Купоны: выберите способ использования.")
+    if (mandate.opt("reinvest_dividends") !is Boolean) add("Дивиденды: выберите способ использования.")
+}
+
+private fun strategyMandateIssues(mandate: JSONObject?): List<String> = buildList {
+    if (mandate == null) {
+        add("Инвестиционный профиль: выберите состав и счёт.")
+        return@buildList
+    }
+    if (mandate.optString("account_id").isBlank()) add("Счёт: выберите подключённый счёт.")
+    addAll(mandatePercentIssues(mandate))
+    addAll(mandateChoiceIssues(mandate))
+    if (!validPortfolioMandate(mandate) && isEmpty())
+        add("Проверьте состав портфеля, сумму долей 100% и основную сессию.")
+}
+
+internal fun validStrategy(config: JSONObject): Boolean = strategyValidationIssues(config).isEmpty()
 
 @Composable
 private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSONObject) -> Unit) {
@@ -135,9 +191,9 @@ private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSON
         val riskLevels = listOf("conservative", "moderate", "aggressive")
         WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
             riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0), enabled) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
-        StrategyNumberChoice("Горизонт", config.opt("horizon_months")?.toString().orEmpty(), "мес.", enabled,
-            "1", "600", listOf("12", "36", "60", "120"), listOf("1", "12")) {
-            edit(JSONObject(config.toString()).put("horizon_months", it.toInt()))
+        StrategyNumberChoice("Горизонт", strategyYears(config.optInt("horizon_months", 36)), "лет", enabled,
+            "1", "50", listOf("1", "3", "5", "10", "20", "30", "50"), listOf("1")) {
+            edit(JSONObject(config.toString()).put("horizon_months", java.math.BigDecimal(it).multiply(java.math.BigDecimal(12)).toInt()))
         }
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
@@ -174,13 +230,14 @@ private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, 
 private fun StrategyDifference(before: JSONObject?, after: JSONObject) {
     if (before == null) Text("До подтверждения активной версии нет.")
     listOf("goal", "horizon_months", "risk_level").forEach { field ->
-        val label = when (field) { "goal" -> "Цель"; "horizon_months" -> "Горизонт, месяцев"; else -> "Профиль риска" }
-        if (before?.opt(field) != after.opt(field)) Text(label + ": " + strategyValue(before?.text(field, UNSPECIFIED_VALUE)) + " → " + strategyValue(after.text(field)))
+        val label = when (field) { "goal" -> "Цель"; "horizon_months" -> "Горизонт, лет"; else -> "Профиль риска" }
+        if (before?.opt(field) != after.opt(field)) Text(label + ": " + (if (field == "horizon_months") before?.optInt(field)?.let(::strategyYears) ?: UNSPECIFIED_VALUE else strategyValue(before?.text(field, UNSPECIFIED_VALUE))) + " → " + (if (field == "horizon_months") strategyYears(after.optInt(field)) else strategyValue(after.text(field))))
     }
     val oldLimits = before?.optJSONObject("limits")
     val newLimits = after.optJSONObject("limits")
     limitTitles.forEach { (key, label) -> if (oldLimits?.opt(key) != newLimits?.opt(key)) Text(label + ": " + (oldLimits?.text(key) ?: UNSPECIFIED_VALUE) + " → " + (newLimits?.text(key) ?: UNSPECIFIED_VALUE) + "%") }
-    Text("Резерв: " + PrivateValue(moneyText(before?.optJSONObject("reserve"))) + " → " + PrivateValue(moneyText(after.optJSONObject("reserve"))))
+    if (before?.optJSONObject("reserve")?.toString() != after.optJSONObject("reserve")?.toString())
+        Text("Резерв: " + PrivateValue(moneyText(before?.optJSONObject("reserve"))) + " → " + PrivateValue(moneyText(after.optJSONObject("reserve"))))
 }
 
 private fun strategyValue(value: String?): String = when (value) {
@@ -188,17 +245,4 @@ private fun strategyValue(value: String?): String = when (value) {
     "conservative" -> "Консервативный"; "aggressive" -> "Высокий"; else -> value ?: UNSPECIFIED_VALUE
 }
 
-@Composable
-private fun StrategyHistoryCard(old: JSONObject, active: JSONObject?, loaded: Boolean,
-    editor: StrategyEditorAvailability, version: Int, previewAction: WorkspaceAction) {
-    SpectrumCard {
-        Text("Версия " + old.optInt("version"), style = MaterialTheme.typography.titleMedium)
-        Text(localMoment(old.text("confirmed_at", "")), style = MaterialTheme.typography.bodySmall)
-        val previous = old.optJSONObject("config") ?: JSONObject()
-        StrategyDifference(active?.optJSONObject("config"), previous)
-        SpectrumSecondaryButton("Проверить возврат к этой версии", {
-            if (loaded && editor.canEdit) previewAction.perform("/workspace/strategy/preview", JSONObject().put("expected_version", version)
-                .put("rollback_to_version", old.optInt("version")))
-        }, Modifier.fillMaxWidth(), loaded && editor.canEdit)
-    }
-}
+

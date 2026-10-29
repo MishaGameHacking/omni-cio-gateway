@@ -22,7 +22,7 @@ internal fun AccountSelector(accounts: List<PortfolioAccount>, selectedId: Strin
     val scroll = rememberScrollState()
     Box(if (largeText) modifier.horizontalScroll(scroll) else modifier) {
         SpectrumTextButton(accounts.firstOrNull { it.id == selectedId }?.name ?: "Выберите счёт", { expanded = true },
-            symbol = SpectrumSymbol.Expand)
+            symbol = SpectrumSymbol.ChevronDown)
         if (expanded) WorkspaceDialog("Выберите счёт", { expanded = false }) {
             accounts.forEach { account -> SpectrumTextButton(account.name, {
                 onSelect(account.id); expanded = false
@@ -31,4 +31,5 @@ internal fun AccountSelector(accounts: List<PortfolioAccount>, selectedId: Strin
         }
     }
 }
+
 

@@ -54,7 +54,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
         self.assertIn('SpectrumGlyphButton',bar)
         self.assertNotIn('AnalystMenuButton(openMenu)',bar)
-        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Портфель','Portfolio'),
+        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Аналитика','Portfolio'),
                                  ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
             self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
             self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
@@ -76,16 +76,17 @@ class UnifiedUpdateContractTests(unittest.TestCase):
                       'resource.data?.takeIf { it.optInt("schema_version") == 1 }',
                       'status?.records("blockers")', 'status?.optJSONObject("discovery")',
                       'discovery?.records("candidates")', 'status?.text("last_observation_at", "")',
-                      'val currentError = resource.error',
+                      'HomeAutomationCard(status, resource.error, resource.busy, resource.refresh',
+                      'val currentError = error',
                       'execution?.text("mode", "") == "read_only"',
-                      'execution.optBoolean("real_orders_enabled") == false'):
+                      'execution.opt("real_orders_enabled") == false'):
             self.assertIn(token, home)
         for forbidden in ('snapshot.totalValue', 'snapshot.allocations', 'InteractiveBalance(',
                           'HoldToRevealBalance(', 'PortfolioSnapshot(', 'rememberWorkspaceAction(',
                           '1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
             self.assertNotIn(forbidden, home)
-        self.assertIn('status == null -> "Статус не получен"', home)
-        self.assertIn('Результаты ещё не получены.', home)
+        self.assertIn('status == null -> "Получаем состояние"', home)
+        self.assertIn('Новых проверенных решений пока нет.', home)
 
     def test_network_clients_send_same_version_and_handle_426(self):
         for file in ('data/backend/AnalystBackendClient.kt', 'data/analysis/AnalysisBackendClient.kt', 'data/portfolio/PortfolioDataClient.kt'):
@@ -136,4 +137,5 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

@@ -1,0 +1,410 @@
+{
+  "schema": 1,
+  "reviewed_on": "2026-10-29",
+  "full_books_read": false,
+  "books": [
+    {
+      "name": "105684187.a4(1).pdf",
+      "bytes": 1705148,
+      "sha256": "7b01a25dcfaefd07a4e53729909c7f920b3edfca656dffa2af97f0a7b6aba3b8",
+      "Title": "Японские свечи. Графический анализ финансовых рынков",
+      "Author": "Стив Нисон",
+      "Pages": "64",
+      "File size": "1705148 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_4b082e887d548191b01749e217ddeff8&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "61MNNPU22_копия(1).pdf",
+      "bytes": 2808994,
+      "sha256": "7d83c3477b5c36024a5d6627712106c1afec9fe1f75bd7b2c5ac22668f46bfe0",
+      "Title": "Основы инвестирования",
+      "Author": "А.В. Федорова;Н.Н. Петрова;Н.И. Петрова",
+      "Pages": "72",
+      "File size": "2808994 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_b68d35cd51248191be0e77352130ef3e&account_id=personal",
+      "review_status": "contents_and_selected_risk_sections_29_30_42_43_not_complete"
+    },
+    {
+      "name": "Android Programming  The Big Nerd Ranch Guide (1)_копия(1).pdf",
+      "bytes": 33600675,
+      "sha256": "41a602c550d6908c4b2b69cccb810bf03a63eb4aec2cd619015c9eddf7d904af",
+      "Title": "Android Programming - The Big Nerd Ranch Guide",
+      "Author": "Bill Phillips, Chris Stewart, Brian Hardy and Kristin Marsicano",
+      "Pages": "640",
+      "File size": "33600675 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_bd10dcd10b708191b31d42e25b0129e4&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "data_structures_and_algorithms_in_java.pdf",
+      "bytes": 4270155,
+      "sha256": "b7017538e255a128d216493847f7173fec855a899d8d6d06d83147e9bf6d63aa",
+      "Title": "Data Structures and Algorithms in Java",
+      "Author": "Lafore, Robert.",
+      "Pages": "801",
+      "File size": "4270155 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_f0dfb608ff5c8191942531c4d895a6a0&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "ilja_kantor_sovremennyj_uchebnik-1chast_копия.pdf",
+      "bytes": 6151589,
+      "sha256": "32997ad1239768b0af624b1a7d10b3a3bba4aa95655d6dcfb448ea8398cf9712",
+      "Pages": "415",
+      "File size": "6151589 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_f24ecfa75c408191affeb0d261739e1f&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "ilja_kantor_sovremennyj_uchebnik-2chast_копия.pdf",
+      "bytes": 5431721,
+      "sha256": "504b753b7608b8b3a94999fc024263ec4fae9cda46a3d51fa621813830ff46a3",
+      "Pages": "353",
+      "File size": "5431721 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_2e407206b8888191a576ed76be26c5d0&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "ilja_kantor_sovremennyj_uchebnik-3chast_копия.pdf",
+      "bytes": 4784195,
+      "sha256": "81d3a951e42d41711806ffbc4123215867044ba78020a47413bf7319d0148f75",
+      "Pages": "263",
+      "File size": "4784195 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_85cdc13470948191bf3ace897bf339ba&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "kotlin-reference_копия.pdf",
+      "bytes": 119346846,
+      "sha256": "c3a83a8d5a360f4c081f7e6923824a1be6d9d662f70320fcb76bf344cc4aaca1",
+      "Title": "Vivliostyle Viewer",
+      "Pages": "2457",
+      "File size": "119346846 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_8c9f7699b1d48191ac32b08ec4b56dbd&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "the-candlestick-trading-bible-(KohanFx.com)_копия(2).pdf",
+      "bytes": 2977808,
+      "sha256": "fd56995510e59a544fd70781047d5eda411d2d8bb3277c7a2631434f348c12a4",
+      "Title": "THE CANDLESTICK TRADING BIBLE",
+      "Author": "Bella Ealie",
+      "Pages": "168",
+      "File size": "2977808 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_dc7b72099e6081919b917dc2bbe22e61&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    },
+    {
+      "name": "Японские_свечи._Графический_анализ_финансовых_рынков(1).pdf",
+      "bytes": 260525,
+      "sha256": "70b7a309d50daf84de843a02fe5051bcea951dc8c578abdf391d83f26ea1023d",
+      "Pages": "5",
+      "File size": "260525 bytes",
+      "library_url": "https://chatgpt.com/library?file_id=libfile_7d4ad874ddd4819192bb39d86e308e77&account_id=personal",
+      "review_status": "metadata_and_opening_pages_only_not_complete"
+    }
+  ],
+  "links": [
+    {
+      "url": "https://thecode.media/kak-vyuchit-javascript-s-nulya/amp/",
+      "title": "JavaScript с нуля",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/5AN4va8uvn2nQiBbD",
+      "title": "Инвестиционные стратегии: виды и выбор",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/riupxlem7SEi3mNdB",
+      "title": "Стратегии инвестирования: инвестиционный план",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/4gVJMxozL6cSp35tg",
+      "title": "JetLend: инвестиционные стратегии",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/OYNn4jeb16OF6d2Ek",
+      "title": "Определитель риска инвестиций",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/wkCNxrzBfIFNT1Jva",
+      "title": "Цель, активы и издержки",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/3EeaQFTcyXYpLaFEO",
+      "title": "15 инвестиционных инструментов",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/PqZf5Ozz5rSf6t3pr",
+      "title": "Инструкция для новичков",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/Z6xEZeXmF1rbm8MPK",
+      "title": "Покупка и продажа ценных бумаг",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/2ZzHcz7s1zPhank7r",
+      "title": "Пять ошибок инвесторов",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/P8hFfsPT7qXltvFxB",
+      "title": "Банки.ру: подводные камни",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/jSaB8kQsqXxnGieDY",
+      "title": "Шесть признаков опасных инвестиций",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/pfX1zYmegrx4OZhZG",
+      "title": "СберСова: ошибки инвестирования",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/c3W5sgX7Tfb98IOH2",
+      "title": "Виды инвестиционных рисков",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/aWPD02c98Dg2hqCc2",
+      "title": "Финам: принятие убытков",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/VXoyOKQlRzF2CiABK",
+      "title": "Альфа-Капитал: диверсификация",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/GdNuPwR0EoFtWYb6a",
+      "title": "ИнгоБанк: диверсификация",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/AVKoNujv2RE5laTHg",
+      "title": "NFK: четыре уровня диверсификации",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/trgEiL0d9BE0giQ0Y",
+      "title": "Распределение активов",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/kaA32XwvLeFUaCiHK",
+      "title": "Золотой запас: диверсифицированный портфель",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/3O27VLSMm1B0wIku1",
+      "title": "ЭОС: диверсификация",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/w4VORSaZbGLdkDVwW",
+      "title": "Диверсификация: распределение активов",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/kpoOWt4FSUJrNdvXP",
+      "title": "ЦифраБрокер: инвестиционный портфель",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/6h87QzFvibQxF6O7b",
+      "title": "РСХБ: финансовый портфель",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/W4MSwCfuCa7KcB5Ms",
+      "title": "Банки.ру: типы портфелей",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/0rSeS3GUF79jEWJWz",
+      "title": "СберСова: формирование портфеля",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/LN6s26Wmsr8HFtysg",
+      "title": "Выбор портфеля по риску",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/qjRWt6ojHiKjS3pfH",
+      "title": "GoInvest: формирование портфеля",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/46penGeK4oONUBmiE",
+      "title": "Как не потерять деньги на Мосбирже",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/iwY8nefE9NySC9Acu",
+      "title": "Банки.ру: принципы сохранения денег",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/9A5ZlX1BromBVYxAT",
+      "title": "Московская биржа: начало инвестирования",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/1qoCpjRywCamNNM2N",
+      "title": "Как не потерять деньги на бирже",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/Krc0SFWD7a5xjxt34",
+      "title": "АОСтатус: особенности инвестиций",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/7wtFU55lXsLLMkgBw",
+      "title": "МБАМосква: инструкция новичку",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/3BbDdWtx73j0LoXQv",
+      "title": "Сохранение капитала новичка",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/ezfmxBOCaTpw0xkMQ",
+      "title": "Вредные советы инвестору",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/9n7rKbCkNBgS9m1cw",
+      "title": "Четыре правила во время паники",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://vse-dengy.ru/teoriya-veroyatnosti-v-investitsiyah.html",
+      "title": "Теория вероятностей в инвестициях",
+      "checked_on": "2026-10-29",
+      "status": "read_not_primary_source"
+    },
+    {
+      "url": "https://share.google/XZyxamlQXA99XCx2u",
+      "title": "Инвестиции с позиции вероятностей",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/ixnrxWZZFDuBFg6mG",
+      "title": "Forbes: вероятность и хаос рынка",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/qmxxNmxS18373ANF4",
+      "title": "CFA: вероятность финансовых событий",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/IxnjbQoGp60cRd8tN",
+      "title": "Теория вероятностей в торговле",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/uwqeuNItyd9FrGMuZ",
+      "title": "Ведомости: вероятность для инвестора",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/EPTz1SlUruNmbqs0A",
+      "title": "Хабр: теория инвестиций",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/onGK2AOjJ8N9EmbVh",
+      "title": "vc.ru: инвестиции и вероятности",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/CTIjUq66SJbS5dYTQ",
+      "title": "InteractiveBrokers: ProbabilityLab",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/ZuJGZNlGPMiYgMIkz",
+      "title": "Расчёт вероятности события",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    },
+    {
+      "url": "https://share.google/yJRqftmBvgNj3NWUf",
+      "title": "Вероятности в трейдинге",
+      "checked_on": "2026-10-29",
+      "status": "fetch_failed_destination_or_content_unverified"
+    }
+  ],
+  "image_references": [
+    {
+      "name": "icons.jpg",
+      "library_file_id": "libfile_7015f01f77f08191ae68ed68a0a19f7d",
+      "use": "semantic clay icon reference"
+    },
+    {
+      "name": "Glassmorphism+Neon(1).jpeg",
+      "library_file_id": "libfile_c76b5338293c8191ac9e48d5ba1a6499",
+      "use": "expanding left rail reference"
+    }
+  ]
+}

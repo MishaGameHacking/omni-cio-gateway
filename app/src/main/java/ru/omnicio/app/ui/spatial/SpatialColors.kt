@@ -38,8 +38,8 @@ internal fun spatialSurfaceColors(
 
 /** Mode is an asset/control decision, never a comparison against a literal white ink. */
 internal fun spatialIconMode(asset: String): SpatialColorMode = when (asset) {
-    "brand", "orbit", "avatar", "analyst" -> SpatialColorMode.Decorative
-    else -> SpatialColorMode.Monochrome
+    "back", "forward", "arrow", "check", "close", "search", "plus", "minus", "chevron_down", "chevron_up", "monogram" -> SpatialColorMode.Monochrome
+    else -> SpatialColorMode.Decorative
 }
 
 internal fun spatialIconInk(palette: SpectrumPalette, asset: String, tint: Color, state: SpatialState): Color = when {
@@ -55,6 +55,7 @@ internal fun spatialIconInk(palette: SpectrumPalette, asset: String, tint: Color
 @Immutable
 internal data class FlatArtworkColors(
     val ink: Color, val teal: Color, val violet: Color, val amber: Color, val rose: Color,
+    val highlight: Color = ink,
 )
 
 internal fun flatArtworkColors(
@@ -78,3 +79,4 @@ internal fun spatialToggleColors(palette: SpectrumPalette, checked: Boolean, ena
 /** Explicit per-observation colors avoid assigning a separate series to only index zero. */
 internal fun historyBarColors(palette: SpectrumPalette, values: List<Double?>): List<Color> =
     values.map { if (it != null && it < 0.0) palette.rose else palette.blue }
+

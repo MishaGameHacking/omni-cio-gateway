@@ -16,12 +16,15 @@ class CompactHomeTests(unittest.TestCase):
         order = re.findall(r'item\(key = "([\w-]+)"\)', home)
         self.assertEqual(order[:4], ["system-header", "portfolio-overview", "portfolio-actions", "automation-state"])
         self.assertLess(order.index("automation-state"), order.index("automation-blockers"))
-        self.assertLess(order.index("automation-blockers"), order.index("analysis-results"))
-        self.assertLess(order.index("analysis-results"), order.index("system-connections"))
+        self.assertEqual(order, ["system-header", "portfolio-overview", "portfolio-actions", "automation-state", "automation-blockers"])
+        for removed in ("analysis-results", "system-connections"):
+            self.assertNotIn(removed, order)
         self.assertIn('Text("Главная"', home)
         self.assertIn('status?.records("blockers")', home)
         self.assertIn('discovery?.records("candidates")', home)
-        self.assertIn('onOpenRecommendations, Modifier.fillMaxWidth()', home)
+        self.assertRegex(home, r'SpectrumTextButton\("Открыть решения", onOpenRecommendations,\s*Modifier.fillMaxWidth\(\)')
+        self.assertIn('if (blockers.isNotEmpty())', home)
+        self.assertIn('if (disconnected) onConnect else onOpenProfile', home)
         for forbidden in ('portfolio-hero', 'snapshot.totalValue', 'snapshot.allocations',
                           'InteractiveBalance(', 'HoldToRevealBalance(', 'SpectrumMetricPill',
                           'normalizedDashboardOrder', 'saveDashboardOrder'):
@@ -37,8 +40,9 @@ class CompactHomeTests(unittest.TestCase):
         self.assertIn('LaunchedEffect(foreground)', home)
         self.assertIn('if (foreground) while (isActive)', home)
         self.assertIn('status?.text("last_observation_at", "")', home)
-        self.assertIn('if (hasObservation) Text("Последняя проверка · " + localMoment(observation)', home)
-        self.assertIn('val currentError = resource.error', home)
+        self.assertIn('if (hasObservation) Text("Проверка · " + localMoment(observation)', home)
+        self.assertIn('HomeAutomationCard(status, resource.error, resource.busy, resource.refresh', home)
+        self.assertIn('val currentError = error', home)
         self.assertIn('Сохранённые сведения могут быть устаревшими.', home)
         for forbidden in ('rememberWorkspaceAction(', '/analysis/refresh', '/workspace/refresh',
                           'System.currentTimeMillis()', 'Instant.now()'):

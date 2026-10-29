@@ -5,12 +5,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
+import kotlin.math.roundToInt
 import ru.omnicio.app.ui.spectrum.*
 
 /** Stepping preserves the loaded decimal exactly; no Float is persisted. */
@@ -25,39 +29,44 @@ internal fun steppedStrategyNumber(value: String, step: String, direction: Int,
     return (current + delta * BigDecimal(direction)).coerceIn(lower, upper).stripTrailingZeros().toPlainString()
 }
 
+/** Decimal text is never rounded through Float. A field commits on Done or focus loss. */
+internal fun strategyNumberInput(raw: String, minimum: String, maximum: String, whole: Boolean): String? {
+    val normalized = raw.trim().replace(',', '.')
+    if (!Regex("[0-9]+(?:\\.[0-9]+)?").matches(normalized)) return null
+    val number = normalized.toBigDecimalOrNull() ?: return null
+    if (number < minimum.toBigDecimal() || number > maximum.toBigDecimal()) return null
+    if (whole && number.stripTrailingZeros().scale() > 0) return null
+    return number.stripTrailingZeros().toPlainString()
+}
+
+/** Index-based slider: persisted values stay exact decimal strings. No keyboard. */
 @Composable
 internal fun StrategyNumberChoice(title: String, value: String, unit: String, enabled: Boolean,
     minimum: String, maximum: String, presets: List<String>, steps: List<String>,
     percentSlider: Boolean = false, onChange: (String) -> Unit) {
-    var increment by rememberSaveable(title) { mutableStateOf(steps.first()) }
-    val current = value.toBigDecimalOrNull()
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(if (current == null) "Выберите значение" else "$value $unit", style = MaterialTheme.typography.titleLarge)
-        WorkspaceSuggestionRow("", presets.map { WorkspaceSuggestion(it, "$it $unit") }, enabled) { onChange(it) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            val minus = steppedStrategyNumber(value, increment, -1, minimum, maximum)
-            val plus = steppedStrategyNumber(value, increment, 1, minimum, maximum)
-            SpectrumSecondaryButton("− $increment", { minus?.let(onChange) },
-                Modifier.weight(1f).semantics { contentDescription = "$title, уменьшить на $increment $unit" },
-                enabled && minus != null && minus.toBigDecimal() != current)
-            SpectrumSecondaryButton("+ $increment", { plus?.let(onChange) },
-                Modifier.weight(1f).semantics { contentDescription = "$title, увеличить на $increment $unit" },
-                enabled && plus != null && plus.toBigDecimal() != current)
+    val values = remember(minimum, maximum, presets, steps, percentSlider, value) {
+        val low = minimum.toBigDecimal(); val high = maximum.toBigDecimal()
+        val increment = if (percentSlider) BigDecimal.ONE else steps.firstOrNull()?.toBigDecimalOrNull() ?: BigDecimal.ONE
+        val generated = if ((high - low) / increment <= BigDecimal(600))
+            generateSequence(low) { it + increment }.takeWhile { it <= high }.map { it.stripTrailingZeros().toPlainString() }.toList()
+        else presets
+        (generated + presets + listOf(value)).mapNotNull { it.toBigDecimalOrNull() }
+            .filter { it in low..high }.distinctBy { it.stripTrailingZeros() }.sorted()
+            .map { it.stripTrailingZeros().toPlainString() }
+    }
+    val index = values.indexOfFirst { it.toBigDecimal().compareTo(value.toBigDecimalOrNull() ?: BigDecimal(-1)) == 0 }
+    var position by remember(title, value) { mutableFloatStateOf(index.coerceAtLeast(0).toFloat()) }
+    var dragging by remember(title, value) { mutableStateOf(false) }
+    val visibleValue = values.getOrNull(position.roundToInt().coerceAtLeast(0)) ?: value
+    Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
+        .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            Text(if (index < 0 && !dragging) "Выберите" else "$visibleValue $unit", style = MaterialTheme.typography.labelLarge)
         }
-        if (steps.size > 1) DetailFold("Шаг изменения · $increment $unit") {
-            WorkspaceSuggestionRow("", steps.map { WorkspaceSuggestion(it, "$it $unit") }, enabled) { increment = it }
-        }
-        if (percentSlider && current != null && current >= BigDecimal.ZERO && current <= BigDecimal(100)) {
-            SpectrumSlider(current.toFloat(), { selected ->
-                // Each deliberate tick chooses a visible whole percentage. The
-                // exact fractional value stays intact until the user moves it.
-                val chosen = BigDecimal(kotlin.math.round(selected).toInt())
-                    .coerceIn(minimum.toBigDecimal(), maximum.toBigDecimal()).stripTrailingZeros().toPlainString()
-                onChange(chosen)
-            }, Modifier.fillMaxWidth().semantics { contentDescription = "$title, целые проценты" },
-                enabled = enabled, valueRange = 0f..100f, steps = 99)
-        }
+        if (values.size > 1) SpectrumSlider(position, { position = it; dragging = true }, enabled = enabled,
+            valueRange = 0f..values.lastIndex.toFloat(), steps = (values.size - 2).coerceAtLeast(0),
+            onValueChangeFinished = { onChange(values[position.roundToInt().coerceIn(values.indices)]) })
     }
 }
 
@@ -96,8 +105,8 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
     }
     SpectrumCard(emphasized = true) {
         Text("Инвестиционный профиль", style = MaterialTheme.typography.titleLarge)
-        Text("Выбор сохраняется автоматически. Пока обязательные параметры не выбраны, изменения остаются вашим черновиком.")
-        Text("Торговля выключена. Состав портфеля, счёт и рейтинг учитываются в проверках. Перераспределение и реинвестирование пока недоступны.", style = MaterialTheme.typography.bodySmall)
+        Text("Заполните профиль один раз. Изменения сохраняются после проверки сервером.", style = MaterialTheme.typography.bodySmall)
+        SpectrumBadge("Режим анализа · сделки выключены")
         val modes = listOf("bonds", "shares", "mixed")
         WorkspaceChoices("Состав", listOf("Облигации", "Акции", "Облигации и акции"),
             modes.indexOf(mandate.optString("asset_mode")), enabled) { index ->
@@ -120,11 +129,11 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
             }
             Text("Доля акций: " + mandate.optString("share_target_percent", "не выбрана") + "%")
         }
-        Text("Счёт", style = MaterialTheme.typography.titleMedium)
-        val selected = accounts.firstOrNull { it.optString("id") == mandate.optString("account_id") }
-        Text(selected?.optString("name")?.takeIf { it.isNotBlank() } ?: "Выберите подключённый счёт")
-        WorkspaceSuggestionRow("", accounts.map { WorkspaceSuggestion(it.getString("id"),
-            it.optString("name").ifBlank { "Счёт · " + it.getString("id").takeLast(4) }) }, enabled) { change("account_id", it) }
+        WorkspaceChoices("Счёт", accounts.map { account ->
+            account.optString("name").ifBlank { "Счёт · " + account.getString("id").takeLast(4) }
+        }, accounts.indexOfFirst { it.optString("id") == mandate.optString("account_id") }, enabled) {
+            change("account_id", accounts[it].getString("id"))
+        }
         if (accounts.isEmpty()) Text("Подключённые счета появятся после обновления портфеля.")
         Text("Валюта профиля · RUB. Основная биржевая сессия.", style = MaterialTheme.typography.bodySmall)
     }
@@ -132,17 +141,15 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
         StrategyNumberChoice("Допустимый убыток", mandate.optString("loss_capacity_percent"), "%", enabled,
             "0", "100", listOf("0", "1", "5", "10", "20"), listOf("1", "0.1", "0.01"), true) { change("loss_capacity_percent", it) }
         Text("0% запрещает увеличение риска. Выбранное значение не гарантирует ограничения фактических потерь.", style = MaterialTheme.typography.bodySmall)
-        DetailFold("Минимальный кредитный рейтинг") {
-            val ratings = listOf("AAA", "AA+", "AA", "AA−", "A+", "A", "A−", "BBB+", "BBB", "BBB−")
-            Text((mandate.opt("minimum_rating_level") as? Int)?.let { ratings.getOrNull(it) } ?: "Выберите порог")
-            WorkspaceSuggestionRow("", ratings.mapIndexed { index, text -> WorkspaceSuggestion(index.toString(), text) }, enabled) {
-                change("minimum_rating_level", it.toInt())
-            }
-            Text("Порог можно только сузить в диапазоне AAA–BBB−. Для ОФЗ действует отдельная политика.", style = MaterialTheme.typography.bodySmall)
+        val ratings = listOf("AAA", "AA+", "AA", "AA−", "A+", "A", "A−", "BBB+", "BBB", "BBB−")
+        WorkspaceChoices("Минимальный рейтинг", ratings, mandate.optInt("minimum_rating_level", -1), enabled) {
+            change("minimum_rating_level", it)
         }
+
     }
     SpectrumCard {
-        DetailFold("Оборот и расходы") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Оборот и расходы", style = MaterialTheme.typography.titleMedium)
             StrategyNumberChoice("Период учёта оборота", mandate.opt("turnover_window_days")?.toString().orEmpty(), "дн.", enabled,
                 "1", "366", listOf("7", "30", "90", "365"), listOf("1", "7", "30")) { change("turnover_window_days", it.toInt()) }
             StrategyNumberChoice("Предел обычного оборота", mandate.optString("max_discretionary_turnover_percent"), "%", enabled,
@@ -161,3 +168,5 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
         }
     }
 }
+
+

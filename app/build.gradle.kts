@@ -16,8 +16,8 @@ android {
         minSdk = 37
         targetSdk = 37
         // Preserve the installed preview identity; each published update has a new code.
-        versionCode = 50
-        versionName = "0.14.3"
+        versionCode = 54
+        versionName = "0.18.0"
     }
 
     buildTypes {
@@ -81,4 +81,6 @@ dependencies {
     screenshotTestImplementation(libs.compose.ui.tooling)
     screenshotTestImplementation("com.android.tools.screenshot:screenshot-validation-api:0.0.1-alpha16")
 }
+
+
 

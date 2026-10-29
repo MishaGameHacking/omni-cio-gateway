@@ -260,6 +260,11 @@ def record_initial_observation(user: Any, snapshot: dict, now: int) -> None:
         owner = db.execute("SELECT tinvest_token_encrypted FROM users WHERE id=?", (user_id,)).fetchone()
         if owner is None or state.broker_key(owner) != key:
             raise HTTPException(409, "monitoring_connection_changed")
+        try:
+            from .decision_views import prune_obsolete_events
+        except ImportError:
+            from decision_views import prune_obsolete_events
+        prune_obsolete_events(db, user_id, now)
         cursor = db.execute("INSERT OR IGNORE INTO automation_observations VALUES (?,?,?,?)",
                             (user_id, key, now, snapshot["snapshot_id"]))
         if cursor.rowcount:
@@ -275,7 +280,7 @@ def _empty_discovery(state_name: str = "waiting", codes: list[str] | None = None
             "automatic_orders": False, "recommendation_complete": False, "sources": []}
 
 
-def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
+def _claim_discovery(user: Any, now: int, *, force: bool = False) -> tuple[str, int] | None:
     user_id, key, owner = int(user["id"]), state.broker_key(user), uuid.uuid4().hex
     active = state.active_strategy(user_id)
     version = (active or {}).get("version", 0)
@@ -291,7 +296,7 @@ def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
         same = row is not None and row["broker_key"] == key
         if same and row["lease_until"] and row["lease_until"] > now:
             return None
-        if same and row["strategy_version"] == version and 0 <= now - row["attempted_at"] < DISCOVERY_INTERVAL_SECONDS:
+        if same and row["strategy_version"] == version and 0 <= now - row["attempted_at"] < (60 if force else DISCOVERY_INTERVAL_SECONDS):
             return None
         cursor = row["cursor"] if same else 0
         # The new strategy cannot inherit candidates calculated under old limits.
@@ -313,8 +318,11 @@ def _catalogue_candidate(row: dict, config: dict) -> bool:
     exchange = {"REAL_EXCHANGE_MOEX": "MOEX", "REAL_EXCHANGE_RTS": "SPB"}.get(row.get("realExchange"))
     lot = decimal(row.get("lot"))
     mandate = config.get("mandate")
-    permitted = {"bonds": {"bond"}, "shares": {"share"}, "mixed": {"bond", "share"}}
-    if mandate and row.get("instrument_type") not in permitted[mandate["asset_mode"]]:
+    try:
+        from .strategy_construction import permitted_classes
+    except ImportError:
+        from strategy_construction import permitted_classes
+    if mandate and row.get("instrument_type") not in permitted_classes(config):
         return False
     return bool(exchange and ({exchange, "RU"} & set(config["allowed_markets"]))
                 and str(row.get("currency", "")).upper() == config["reserve"]["currency"]
@@ -340,10 +348,50 @@ def _account_for_research(snapshot: dict, config: dict) -> str | None:
     selected = (config.get("mandate") or {}).get("account_id")
     eligible = [(amount, account) for account, amount in cash.items()
                 if amount > reserve and (selected is None or account == selected)]
-    return max(eligible)[1] if eligible else None
+    if eligible:
+        return max(eligible)[1]
+    if config.get("construction") and selected in {row.get("id") for row in snapshot.get("accounts", [])}:
+        return selected  # Reductions still matter when no cash is available.
+    return None
 
 
 def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
+    assert_enabled(int(user["id"]))
+    assert_monitoring_access(backend.connect)
+    active = state.active_strategy(int(user["id"]))
+    if active and active["version"] == version and active["config"].get("construction"):
+        return _strategy_candidate(user, item, account, active)
+    return _legacy_candidate(user, item, account, version)
+
+
+def _strategy_candidate(user, item, account, active):
+    try:
+        from .strategy_actions import assess_candidate
+    except ImportError:
+        from strategy_actions import assess_candidate
+    snapshot = state.saved_snapshot(user, active["config"]["reserve"]["currency"])
+    return assess_candidate(user, item, account, active, snapshot)
+
+
+def _legacy_ask(book, uid):
+    if book.get("instrumentUid") != uid:
+        raise HTTPException(502, "purchase_market_identity_mismatch")
+    # Unary GetOrderBookResponse has no isConsistent field; it belongs to
+    # streamed OrderBook. Do not invent a positive flag or ignore a bad one.
+    if "isConsistent" in book and book["isConsistent"] is not True:
+        raise HTTPException(409, "order_book_not_consistent")
+    if not purchases.policy.fresh(book.get("orderbookTs"), datetime.now(timezone.utc), 60):
+        raise HTTPException(409, "order_book_stale_or_undated")
+    asks = book.get("asks")
+    if not isinstance(asks, list) or not asks or not isinstance(asks[0], dict):
+        raise HTTPException(409, "order_book_invalid")
+    price, quantity = decimal(asks[0].get("price")), decimal(asks[0].get("quantity"))
+    if price is None or price <= 0 or quantity is None or quantity < 1 or quantity % 1:
+        raise HTTPException(409, "order_book_invalid")
+    return price
+
+
+def _legacy_candidate(user, item, account, version):
     uid = item["uid"]
     base = {"instrument_uid": uid, "ticker": item.get("ticker") or "", "name": item.get("name") or uid,
             "instrument_type": item["instrument_type"], "currency": str(item.get("currency") or "").upper(),
@@ -356,20 +404,7 @@ def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
     try:
         with details.BrokerReader(user) as reader:
             book = market.broker_read(reader, "order_book", {"instrumentId": uid, "depth": 1})
-        if book.get("instrumentUid") != uid:
-            raise HTTPException(502, "purchase_market_identity_mismatch")
-        # Unary GetOrderBookResponse has no isConsistent field; it belongs to
-        # streamed OrderBook. Do not invent a positive flag or ignore a bad one.
-        if "isConsistent" in book and book["isConsistent"] is not True:
-            raise HTTPException(409, "order_book_not_consistent")
-        if not purchases.policy.fresh(book.get("orderbookTs"), datetime.now(timezone.utc), 60):
-            raise HTTPException(409, "order_book_stale_or_undated")
-        asks = book.get("asks")
-        if not isinstance(asks, list) or not asks or not isinstance(asks[0], dict):
-            raise HTTPException(409, "order_book_invalid")
-        price, quantity = decimal(asks[0].get("price")), decimal(asks[0].get("quantity"))
-        if price is None or price <= 0 or quantity is None or quantity < 1 or quantity % 1:
-            raise HTTPException(409, "order_book_invalid")
+        price = _legacy_ask(book, uid)
         assert_enabled(int(user["id"]))
         result = purchases._check_purchase(purchases.PurchaseCheck(
             account_id=account, instrument_uid=uid, lots=1, limit_price=text_number(price), strategy_version=version), user,
@@ -391,6 +426,58 @@ def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
     return base
 
 
+def _research_catalogues(user, config, classes):
+    user_id = int(user["id"])
+    found, scanned, sources, errors = {}, 0, [], []
+    for kind in classes:
+        assert_enabled(user_id)
+        assert_monitoring_access(backend.connect)
+        try:
+            observed = catalogue.load_catalogue(user, kind)
+            scanned += len(observed["items"])
+            sources.append(observed["source"])
+            for item in observed["items"]:
+                if _catalogue_candidate(item, config):
+                    found[item["uid"]] = item
+        except HTTPException as error:
+            if error_code(error) in {"monitoring_connection_changed", "automation_paused"}:
+                raise
+            errors.append(error_code(error))
+    return found, scanned, sources, errors
+
+
+def _ordered_candidates(found, config, snapshot, account):
+    if not config.get("construction"):
+        return [found[key] for key in sorted(found)]
+    try:
+        from .strategy_construction import ranking_key
+    except ImportError:
+        from strategy_construction import ranking_key
+    held = set()
+    for position in snapshot.get("positions", []):
+        uid, meta, kind = position.get("instrument_uid"), position.get("metadata") or {}, position.get("instrument_type")
+        if position.get("account_id") != account or kind not in {"bond", "share", "etf"} or not decimal(meta.get("lot")):
+            continue
+        held.add(uid)
+        found.setdefault(uid, {"uid": uid, "ticker": position.get("ticker"), "name": position.get("title"),
+            "instrument_type": kind, "lot": meta["lot"], "currency": "RUB"})
+    return sorted(found.values(), key=lambda item: ranking_key(item, held))
+
+
+def _review_candidates(user, batch, account, active, deadline):
+    candidates, errors = [], []
+    for item in batch:
+        if time.monotonic() >= deadline:
+            errors.append("discovery_time_budget")
+            break
+        candidate = _check_candidate(user, item, account, active["version"])
+        candidates.append(candidate)
+        ready = candidate.get("suggested_lots", 0) > 0 and not candidate.get("missing_evidence")
+        if active["config"].get("construction") and ready:
+            break  # Publish the first funded step while its quote is still fresh.
+    return candidates, errors
+
+
 def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     user_id = int(user["id"])
     active = state.active_strategy(user_id)
@@ -405,23 +492,14 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     account = _account_for_research(snapshot, config)
     if account is None:
         return _empty_discovery("blocked", ["observed_cash_not_above_reserve"]), cursor
-    found, scanned, sources, errors = {}, 0, [], []
     deadline = time.monotonic() + DISCOVERY_TIME_BUDGET_SECONDS
-    for kind in ("share", "bond"):
-        assert_enabled(user_id)
-        assert_monitoring_access(backend.connect)
-        try:
-            observed = catalogue.load_catalogue(user, kind)
-            scanned += len(observed["items"])
-            sources.append(observed["source"])
-            for item in observed["items"]:
-                if _catalogue_candidate(item, config):
-                    found[item["uid"]] = item
-        except HTTPException as error:
-            if error_code(error) in {"monitoring_connection_changed", "automation_paused"}:
-                raise
-            errors.append(error_code(error))
-    ordered = [found[key] for key in sorted(found)]
+    try:
+        from .strategy_profiles import research_tuning
+    except ImportError:
+        from strategy_profiles import research_tuning
+    tuning = research_tuning(config, snapshot)
+    found, scanned, sources, errors = _research_catalogues(user, config, tuning["asset_classes"])
+    ordered = _ordered_candidates(found, config, snapshot, account)
     result = _empty_discovery("partial", ["research_incomplete"])
     result.update(as_of=now_iso(), snapshot_id=snapshot["snapshot_id"], strategy_version=version, sources=sources)
     result["coverage"].update(scanned=scanned, eligible=len(ordered), catalogue_classes_complete=not errors)
@@ -429,25 +507,24 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         result["state"] = "blocked"
         result["reasons"] = [reason("catalogue_unavailable" if errors else "catalogue_no_eligible_instruments")]
         return result, cursor
-    batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, len(ordered)))]
-    for item in batch:
-        if time.monotonic() >= deadline:
-            errors.append("discovery_time_budget")
-            break
-        result["candidates"].append(_check_candidate(user, item, account, version))
+    batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, tuning['candidate_batch'], len(ordered)))]
+    candidates, review_errors = _review_candidates(user, batch, account, active, deadline)
+    result["candidates"] = candidates
+    errors.extend(review_errors)
     result["coverage"]["reviewed"] = len(result["candidates"])
     result["coverage"]["constraint_checks_passed"] = sum(item["constraints_passed"] for item in result["candidates"])
     result["reasons"] += [reason(code) for code in sorted(set(errors))]
+    result["tuning"] = tuning
     current = state.active_strategy(user_id)
     if not current or current["version"] != version:
         raise HTTPException(409, "strategy_changed")
     return result, (cursor + len(result["candidates"])) % len(ordered)
 
 
-def observe_and_discover(user: Any, snapshot: dict, current_time: datetime) -> None:
+def observe_and_discover(user: Any, snapshot: dict, current_time: datetime, *, force: bool = False) -> None:
     now, user_id, key = int(time.time()), int(user["id"]), state.broker_key(user)
     record_initial_observation(user, snapshot, int(current_time.timestamp()))
-    claim = _claim_discovery(user, now)
+    claim = _claim_discovery(user, now, force=force)
     if claim is None:
         return
     owner, cursor = claim
@@ -613,11 +690,26 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
 
 @router.get("/decisions")
 def decisions(user: Any = Depends(backend.current_user)) -> dict:
+    try:
+        from .decision_views import project
+    except ImportError:
+        from decision_views import project
     user_id, key = int(user["id"]), state.broker_key(user)
     with closing(backend.connect()) as db:
         rows = db.execute("""SELECT payload_json FROM automation_events WHERE user_id=? AND broker_key=?
             ORDER BY created_at DESC,id DESC LIMIT 30""", (user_id, key)).fetchall()
     summary = status(user)
-    return {"schema_version": 1, "events": [json.loads(row[0]) for row in rows],
+    views = project(summary["discovery"], [json.loads(row[0]) for row in rows], int(time.time()))
+    return {"schema_version": 1, "views": views, "events": views["history"],
             "state": summary["state"], "blockers": summary["blockers"],
             "discovery": summary["discovery"], "execution": summary["execution"]}
+
+
+@router.get("/strategy-plan")
+def strategy_plan(user: Any = Depends(backend.current_user)) -> dict:
+    try:
+        from .strategy_actions import next_action_plan
+    except ImportError:
+        from strategy_actions import next_action_plan
+    active = state.active_strategy(int(user["id"]))
+    return next_action_plan(_discovery(user, active, int(time.time())))

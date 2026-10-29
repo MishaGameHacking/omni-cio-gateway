@@ -5,7 +5,7 @@ import org.junit.Test
 
 class WorkspaceEndpointPolicyTest {
     @Test fun controllerRoutesAreAcceptedWithoutOpeningArbitraryEndpoints() {
-        listOf("/automation/status", "/automation/preferences", "/automation/decisions").forEach {
+        listOf("/automation/status", "/automation/preferences", "/automation/decisions", "/automation/strategy-plan").forEach {
             assertTrue(it, WorkspaceEndpointPolicy.permits(it))
         }
         listOf("/automation/orders", "/admin", "/client/apk", "https://other.invalid/workspace",
@@ -24,3 +24,4 @@ class WorkspaceEndpointPolicyTest {
         }
     }
 }
+

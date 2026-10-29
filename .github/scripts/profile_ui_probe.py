@@ -15,7 +15,9 @@ LIGHT_THEME_LABEL = 'Светлая'
 
 PACKAGE = "ru.omnicio.app.debug"
 ACTIVITY = PACKAGE + "/ru.omnicio.app.ProfileUiProbeActivity"
-THEME_LABEL = "Оформление"
+THEME_LABEL = "Экран и удобство"
+MOTION_PREFIX = "Движение · "
+MOTION_OFF = "Без движения"
 WORKSPACE_BACK = "Назад"
 CONFIRM_LABEL = "Понятно"
 SETTINGS_LABEL = "Настройки"
@@ -24,8 +26,8 @@ EDUCATION_LABEL = "Обучение"
 BACK_FROM_EDUCATION = "Назад"
 FIRST_LESSON = "Сначала цель, срок и резерв"
 FIRST_LESSON_TOGGLE = "lesson-toggle-start-plan"
-LIGHT_BACKGROUND = "ff050e1c"
-DARK_BACKGROUND = "ff050e1c"
+LIGHT_BACKGROUND = "fff5f7fb"
+DARK_BACKGROUND = "fff5f7fb"
 
 
 def matching_node(tree: ET.Element, text: str) -> ET.Element | None:
@@ -410,7 +412,7 @@ class ProfileProbe:
 
     def palette(self, expected):
         self.marker("probe-background:" + expected)
-        foreground = "ffedf5ff" if expected == DARK_BACKGROUND else "ffedf5ff"
+        foreground = "ff17243a"
         self.marker("probe-foreground:" + foreground)
 
     def open(self):
@@ -487,7 +489,7 @@ class ProfileProbe:
 
     def workspace(self):
         from profile_launch import launch_profile
-        for screen, label in (("appearance", "Оформление"), ("strategy", "Моя стратегия"),
+        for screen, label in (("appearance", THEME_LABEL), ("strategy", "Моя стратегия"),
                               ("assistant", "Ассистент"), ("market", "Рынки и география"), ("ux100", "Проверка UX100")):
             launch_profile(self.command, self.tree, self.wait_for, expected_screen=screen)
             self.find(label)
@@ -499,8 +501,9 @@ class ProfileProbe:
                 self.reveal("Минимум: BBB-", "workspace-content")
                 self.capture("workspace-ratings")
                 self.tap_visible("Доход")
-                self.reveal("Пополнять резерв", "workspace-content")
-                self.tap("Пополнять резерв", "workspace-content")
+                self.tap("Поступления · Реинвестировать", "workspace-content")
+                self.tap_visible("Пополнять резерв")
+                self.find("Поступления · Пополнять резерв")
                 self.reveal("Сохранить черновик", "workspace-content")
                 self.tap("Сохранить черновик", "workspace-content")
                 self.find("Черновик сохранён")
@@ -519,6 +522,7 @@ class ProfileProbe:
                 self.command("shell", "input", "tap", str(left + (right - left) // 34), str((top + bottom) // 2))
                 self.find("Выбранный интервал: 2026-10-01 — 2026-10-01")
                 self.capture("bars-selected")
+                self.tap("Выбрать наблюдение или диапазон", "workspace-content")
                 self.tap_resource("history-selection-next", "workspace-content")
                 self.find("Выбранный интервал: 2026-10-02 — 2026-10-02")
                 self.tap_resource("history-selection-reset", "workspace-content")
@@ -533,8 +537,7 @@ class ProfileProbe:
                 self.tap("Обновления события (2)", "workspace-content")
                 self.find("Уточнение источника")
             elif screen == "appearance":
-                self.reveal("Без движения", "workspace-content")
-                self.tap("Без движения", "workspace-content")
+                self.choose_motion(MOTION_OFF)
                 self.find("Цветное оформление сохраняется. Элементы сразу принимают конечное состояние без движения.")
                 self.reveal("Вернуть оформление по умолчанию", "workspace-content")
                 self.tap("Вернуть оформление по умолчанию", "workspace-content")
@@ -552,16 +555,33 @@ class ProfileProbe:
         self.dialogs(capture_evidence=False)
         self.section_scroll_reset()
 
+    def open_motion_choices(self):
+        # One current-value button opens the actual native radio-choice dialog.
+        choices = ("Живое", "Сдержанное", MOTION_OFF)
+        tree = self.tree()
+        current = [label for label in choices if matching_node(tree, MOTION_PREFIX + label) is not None]
+        if len(current) != 1:
+            self.reveal("Яркое освещение", "workspace-content", direction="start")
+            tree = self.tree()
+            current = [label for label in choices if matching_node(tree, MOTION_PREFIX + label) is not None]
+        if len(current) != 1:
+            raise AssertionError("Missing or ambiguous current motion selection")
+        self.tap(MOTION_PREFIX + current[0], "workspace-content", direction="start")
+
+    def choose_motion(self, label):
+        self.open_motion_choices()
+        self.tap_visible(label)
+        self.find(MOTION_PREFIX + label)
+
     def themes(self):
         # Stable full-suite stage name; owner replaced theme selection with one style.
-        # Six real captures cover OS day/night, persisted motion and cancelled preview.
+        # Six real captures cover OS day/night, persisted autosave and dialog dismissal.
         self.command("shell", "cmd", "uimode", "night", "no")
         self.open()
         self.palette(LIGHT_BACKGROUND)
         self.capture("style-system-day-initial")
         self.tap(THEME_LABEL)
-        self.tap("Без движения", "workspace-content")
-        self.tap(APPLY_LABEL, "workspace-content", direction="start")
+        self.choose_motion(MOTION_OFF)
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("style-motion-off")
@@ -569,16 +589,18 @@ class ProfileProbe:
         self.open()
         self.palette(DARK_BACKGROUND)
         self.tap(THEME_LABEL)
-        self.reveal("Без движения", "workspace-content")
+        self.find(MOTION_PREFIX + MOTION_OFF)
+        self.open_motion_choices()
         from portfolio_preferences_probe import selected_control
-        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Motion setting was not restored")
+        self.wait_for(lambda: selected_control(self.tree(), MOTION_OFF), "Motion setting was not restored")
         self.capture("style-motion-restored")
-        self.tap("Сдержанное", "workspace-content")
-        self.tap("Отменить", "workspace-content", direction="start")
-        self.reveal("Без движения", "workspace-content")
-        self.wait_for(lambda: selected_control(self.tree(), "Без движения"), "Cancel did not restore saved motion")
-        self.tap("Живое", "workspace-content")
-        self.tap(APPLY_LABEL, "workspace-content", direction="start")
+        self.tap_visible("Закрыть")
+        self.find(MOTION_PREFIX + MOTION_OFF)
+        self.open_motion_choices()
+        self.wait_for(lambda: selected_control(self.tree(), MOTION_OFF), "Dismissed choices changed saved motion")
+        self.tap_visible("Сдержанное")
+        self.find("Движение · Сдержанное")
+        self.choose_motion("Живое")
         self.tap_visible(WORKSPACE_BACK)
         self.palette(DARK_BACKGROUND)
         self.capture("style-motion-live")
@@ -603,7 +625,7 @@ class ProfileProbe:
         if capture_evidence:
             self.capture("about")
         if not any(
-            "Версия " in node.get("text", "")
+            "Оболочка Android: " in node.get("text", "")
             for node in self.tree().iter("node")
         ):
             raise AssertionError("About version text missing")
@@ -613,7 +635,7 @@ class ProfileProbe:
         # The redesigned settings are one scroll hierarchy. Start from a real visible top control.
         self.reveal("Автоматический анализ", direction="start", max_swipes=20)
         for group in ("Анализ и стратегия", "Подключения", "Интерфейс",
-                      "Приватность", "Дополнительно", "Аккаунт"):
+                      "Приватность", "Аккаунт"):
             node_bounds(self.reveal(group, direction="end", max_swipes=20))
         self.reveal("Автоматический анализ", direction="start", max_swipes=20)
         self.wait_for(lambda: checkable_label(self.tree(), "Автоматический анализ"),
@@ -632,7 +654,9 @@ class ProfileProbe:
 
     def education(self, screenshot="education"):
         area = "education-content"
-        self.tap(EDUCATION_LABEL)
+        # Education is a separate app route, no longer a duplicate settings row.
+        from profile_launch import launch_profile
+        launch_profile(self.command, self.tree, self.wait_for, expected_screen="education")
         self.find(EDUCATION_LABEL)
         self.reveal(FIRST_LESSON, area)
         self.capture(screenshot)
@@ -664,6 +688,7 @@ class ProfileProbe:
         self.reveal("Изменение стоимости", "workspace-content")
         self.reveal("Минимум / максимум", "workspace-content")
         self.capture("bars-large-font")
+        self.tap("Выбрать наблюдение или диапазон", "workspace-content", direction="start")
         self.tap_resource("history-selection-reset", "workspace-content", direction="start")
         self.reveal("За показанный период", "workspace-content")
 
@@ -765,4 +790,5 @@ def exercise_checks(device, read_tree) -> dict:
             original_night,
             sys.exc_info()[1],
         )
+
 

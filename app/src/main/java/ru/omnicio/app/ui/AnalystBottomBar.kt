@@ -37,7 +37,7 @@ val LocalWideNavigation = staticCompositionLocalOf { false }
 val LocalAnalystTabNavigator = staticCompositionLocalOf<(AnalystTab) -> Unit> { {} }
 private val primaryTabs = analystPrimaryDestinations.mapNotNull { it.tab }
 
-/** A compact icon dock; labels remain available to accessibility and tooltips. */
+/** All four destinations stay visible; narrow large-text layouts use two rows. */
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
@@ -48,13 +48,24 @@ fun AnalystBottomBar(selected: AnalystTab, onPortfolioClick: () -> Unit,
         color = MaterialTheme.colorScheme.surface) {
         Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)
-                .selectableGroup(), horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically) {
-                primaryTabs.forEach { tab ->
-                    SpectrumGlyphButton(tab.symbol(), tab.label(), { navigate(tab) },
-                        Modifier.size(56.dp).testTag("bottom-destination-" + tab.name.lowercase()),
-                        active = tab == selected.primaryDestination(), role = Role.Tab)
+            BoxWithConstraints(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 6.dp)) {
+                val density = LocalDensity.current
+                val measurer = rememberTextMeasurer()
+                val labelStyle = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold)
+                val needed = primaryTabs.maxOf {
+                    measurer.measure(AnnotatedString(it.label()), labelStyle, softWrap = false).size.width
+                }
+                val columns = if (with(density) { needed.toDp() + 12.dp } <= maxWidth / 4) 4 else 2
+                Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    primaryTabs.chunked(columns).forEach { row ->
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            row.forEach { tab ->
+                                DockDestination(tab, tab == selected.primaryDestination(),
+                                    Modifier.weight(1f).testTag("bottom-destination-" + tab.name.lowercase())) { navigate(tab) }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -72,17 +83,17 @@ internal fun DockDestination(tab: AnalystTab, active: Boolean, modifier: Modifie
     val state = when { pressed -> SpatialState.Pressed; active || focused -> SpatialState.Selected; else -> SpatialState.Idle }
     val action = rememberSpatialHapticClick(SpatialHaptic.Selection, click)
     val accessible = if (showLabel) modifier else modifier.semantics { contentDescription = tab.label() }
-    SpatialSurface(accessible.heightIn(min = 68.dp).selectable(active,
+    SpatialSurface(accessible.heightIn(min = 64.dp).selectable(active,
         interactionSource = interaction, indication = null, role = Role.Tab, onClick = action),
         SpatialSurfaceKind.Chip,
         color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         state = state, interactive = true) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            SpatialIcon(tab.symbol().asset, Modifier.size(26.dp),
+        Column(Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            SpatialIcon(tab.symbol().asset, Modifier.size(32.dp),
                 tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 motionAllowed = active, state = state, colorMode = SpatialColorMode.Decorative)
-            if (showLabel) Text(tab.label(), Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelMedium,
+            if (showLabel) Text(tab.label(), Modifier.fillMaxWidth(), style = MaterialTheme.typography.labelSmall,
                 textAlign = TextAlign.Center, softWrap = true,
                 fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                 color = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -112,3 +123,4 @@ fun AnalystSideRail(selected: AnalystTab, selectedWorkspace: ru.omnicio.app.ui.w
         }
     }
 }
+

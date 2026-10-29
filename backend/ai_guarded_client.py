@@ -182,7 +182,7 @@ def _configured_label(label: str, env, now: int) -> Route:
         reject('ai_processing_approval_required')
     region = env.get(prefix + 'PROCESSING_REGION', '')
     permitted = [part.strip() for part in env.get('AI_ALLOWED_PROCESSING_REGIONS', 'RU').split(',')]
-    if re.fullmatch('[A-Z]{2}', region) is None or region not in permitted:
+    if (re.fullmatch('[A-Z]{2}', region) is None and region != 'EXTERNAL') or region not in permitted:
         reject('ai_processing_region_not_approved')
     url = env.get('TIMEWEB_AI_BASE_URL', '').strip() or GATEWAY
     key = env.get('TIMEWEB_AI_TOKEN', '').strip()
@@ -239,6 +239,18 @@ def _assert_complete_response(response):
         raise GuardError('ai_incomplete_response')
 
 
+def completion_payload(route: Route, messages, max_output_tokens: int) -> dict:
+    payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
+    if route.mode == 'gateway':
+        payload['model'] = route.model
+        if route.model == 'dashscope/qwen3.5-flash':
+            # Provider catalogue exposes this exact parameter; avoid hidden
+            # reasoning tokens for bounded fact explanations. No model fallback.
+            payload['enable_thinking'] = False
+            payload['response_format'] = {'type': 'json_object'}
+    return payload
+
+
 class GuardedAIClient:
     def __init__(self, user_id: int, connect, *, transport=None, env=None,
                  attempt_id=None, budget_guard=None, before_send=None, after_response=None, route_guard=None):
@@ -266,6 +278,9 @@ class GuardedAIClient:
         except BudgetDenied as error:
             raise GuardError(str(error)) from None
 
+    def _monthly_cap(self, name):
+        return micro_rub(self.env[name]) if name in self.env else None
+
     def _complete(self, tier, messages, max_output_tokens: int):
         assert_monitoring_access(self.connect)
         encoded = _encoded_messages(messages, max_output_tokens)
@@ -285,10 +300,10 @@ class GuardedAIClient:
         reservation = hashlib.sha256((attempt + ':' + tier.value + ':' + route.identifier).encode()).hexdigest()
         self.ledger.reserve(user_id=self.user_id, key=reservation, route=route.identifier, model=route.model,
                             ceiling=ceiling, user_cap=micro_rub(self.env.get('AI_USER_DAILY_RUB', '0')),
-                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard)
-        payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
-        if route.mode == 'gateway':
-            payload['model'] = route.model
+                            project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard,
+                            user_month_cap=self._monthly_cap('AI_USER_MONTHLY_RUB'),
+                            project_month_cap=self._monthly_cap('AI_PROJECT_MONTHLY_RUB'))
+        payload = completion_payload(route, messages, max_output_tokens)
         sent = False
         try:
             if job:
@@ -376,3 +391,4 @@ class GuardedAIClient:
         if values[0] + values[1] != values[2] or values[0] == 0:
             raise GuardError('ai_usage_inconsistent')
         return ModelUsage(*values)
+

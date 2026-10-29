@@ -172,6 +172,8 @@ class _SpatialSession:
         if (mesh, button) != form_bounds(self.probe.tree(), density):
             raise AssertionError("Spatial evidence layout changed during capture")
         image = read_screenshot(path)
+        print("SPATIAL_FORM_COLORS=" + json.dumps({"button_bounds": button,
+              "foreground_rgb": primary_foreground(before), "screenshot": name}), flush=True)
         result = {"scenario": name, "runtime": observed,
                   "artwork": (artwork_witness if observed.get("renderer") == "native-2d" else mesh_witness)(image, mesh, background),
                   "primary_button": native_label_contrast(image, button, primary_foreground(before))}
@@ -185,10 +187,10 @@ class _SpatialSession:
         self.probe.palette(DARK_BACKGROUND)
         self.probe.tap("OFF", "workspace-content")
         self.probe.marker("probe-spatial-motion:Off")
-        self.capture_form("spatial-dark", (15, 23, 42))
+        self.capture_form("spatial-dark", (245, 247, 251))
         self.probe.tap("Тени: включены", "workspace-content")
         self.probe.find("Тени: выключены")
-        self.capture_form("spatial-shadow-reference", (15, 23, 42))
+        self.capture_form("spatial-shadow-reference", (245, 247, 251))
         self.probe.tap("Тени: выключены", "workspace-content")
         self.probe.find("Тени: включены")
         action = self.probe.resource_tap_target("spatial-action", "workspace-content")
@@ -228,7 +230,7 @@ class _SpatialSession:
         self.probe.palette(LIGHT_BACKGROUND)
         self.probe.wait_for(lambda: not keyboard_visible(self.probe.tree()),
                             "Theme selection reopened the explicitly dismissed keyboard")
-        self.capture_form("spatial-light", (248, 250, 252))
+        self.capture_form("spatial-light", (245, 247, 251))
         for choice, motion in (("SUBDUED", "Subdued"), ("OFF", "Off")):
             self.probe.tap(choice, "workspace-content")
             self.probe.marker("probe-spatial-motion:" + motion)
@@ -274,7 +276,7 @@ class _SpatialSession:
         outer = node_bounds(self.probe.reveal_resource("spatial-clip-region", "workspace-content"))
         inner = node_bounds(self.probe.reveal_resource("spatial-clip-window", "workspace-content"))
         path = self.probe.capture("spatial-clipping")
-        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (248, 250, 252))})
+        self.records.append({"scenario": "material-scissor", **clipping_witness(read_screenshot(path), outer, inner, (245, 247, 251))})
 
     def long_scroll(self):
         from persistent_ui import FrameReader
@@ -384,3 +386,4 @@ def _visible_scroll_rows(tree):
     return {label for node in tree.iter("node")
             for label in node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
             if label.startswith("Тестовая строка ")}
+

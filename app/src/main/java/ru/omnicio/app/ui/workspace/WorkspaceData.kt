@@ -72,6 +72,10 @@ fun rememberWorkspaceResource(path: String, enabled: Boolean = true): WorkspaceR
             if (result.signedOut) reauthenticate()
             if (result.data != null) data = result.data
             error = result.error
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            error = "Не удалось загрузить данные. Повторите обновление."
         } finally { busy = false }
     }
     return WorkspaceResource(data, busy, error) { revision++ }
@@ -274,3 +278,4 @@ private suspend fun discardRejectedCheckpoint(checkpoints: JobCheckpointStore, u
         reply.ambiguous || reply.status !in 400..499 || reply.code == "request_id_payload_conflict") return false
     return withContext(Dispatchers.IO) { checkpoints.removeRequest(userId, requestId) }
 }
+

@@ -165,6 +165,8 @@ def get_strategy(user: Any = Depends(backend.current_user)) -> dict:
     snapshot = saved_snapshot(user, "RUB")
     result["available_accounts"] = (snapshot or {}).get("accounts", [])
     result["mandate_execution_mode"] = "read_only"
+    result["profiles"] = strategy_catalogue(result["active"], snapshot)
+    result["allocation"] = allocation_policy((result["active"] or {}).get("config", {}))
     return result
 
 
@@ -216,7 +218,7 @@ def _exposure_groups(rows: list, axis: str, currency: str) -> tuple:
     groups, unknown = {}, []
     known = not_applicable = 0
     for item in rows:
-        if axis in {"issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
+        if axis in {"position", "issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
             not_applicable += 1
             continue
         identifier, label, refs = _axis_identity(item, axis)
@@ -352,8 +354,12 @@ class Limits(StrictModel):
 
 
 try:
+    from .strategy_profiles import StrategyTuning, catalogue as strategy_catalogue
+    from .strategy_construction import StrategyConstruction, preserve_construction, allocation_policy
     from .portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
 except ImportError:
+    from strategy_profiles import StrategyTuning, catalogue as strategy_catalogue
+    from strategy_construction import StrategyConstruction, preserve_construction, allocation_policy
     from portfolio_mandate import PortfolioMandate, validated_mandate, preserve_mandate, assert_mandate_account
 
 
@@ -365,6 +371,8 @@ class StrategyConfig(StrictModel):
     risk_level: Literal["conservative", "moderate", "aggressive"]
     allowed_markets: list[Literal["MOEX", "SPB", "RU"]] = Field(min_length=1, max_length=3)
     mandate: PortfolioMandate | None = None
+    tuning: StrategyTuning | None = None
+    construction: StrategyConstruction | None = None
 
 
 def validate_config(config: StrategyConfig | dict) -> dict:
@@ -392,6 +400,20 @@ class StrategyPreview(StrictModel):
     rollback_to_version: int | None = Field(default=None, ge=1)
 
 
+def _preserve_tuning(config, active, payload):
+    if (active or {}).get("config", {}).get("tuning") and payload.config is not None and "tuning" not in payload.config.model_fields_set:
+        config["tuning"] = active["config"]["tuning"]
+
+
+def _preserve_editor_fields(config, active, payload):
+    supplied = payload.config.model_fields_set if payload.config is not None else set()
+    rollback = payload.rollback_to_version is not None
+    config = preserve_mandate(config, active, supplied=("mandate" in supplied or (rollback and config.get("mandate") is not None)))
+    config = preserve_construction(config, active, supplied=("construction" in supplied or rollback))
+    _preserve_tuning(config, active, payload)
+    return config
+
+
 @router.post("/strategy/preview", responses=HTTP_ERRORS)
 def preview_strategy(payload: StrategyPreview, user: Any = Depends(backend.current_user)) -> dict:
     return _preview_strategy(payload, user)
@@ -413,7 +435,7 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
         config = validate_config(json.loads(row[0]))
     else:
         config = validate_config(payload.config)
-    config = preserve_mandate(config, active, supplied=((payload.config is not None and "mandate" in payload.config.model_fields_set) or (payload.rollback_to_version is not None and config.get("mandate") is not None)))
+    config = _preserve_editor_fields(config, active, payload)
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
         raise HTTPException(409, "workspace_refresh_required")
@@ -754,3 +776,4 @@ def _risk_check_scope(snapshot, event, payload):
     checked_sources = list({ref["id"]: ref for ref in all_sources if ref.get("id") in source_ids}.values())
     linked_source_ids = sorted({ref["id"] for ref in checked_sources})
     return selected_uids, selected_positions, checked_sources, linked_source_ids
+

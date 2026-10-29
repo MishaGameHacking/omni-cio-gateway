@@ -61,6 +61,7 @@ def main():
                 ci.need(process.returncode == 0, "version_client_checks_failed")
                 ci.need(ci.source_identity(root, identity) == before, "verified_sources_changed")
                 report["apk"] = ci.read_json(root / "app/build/outputs/apk/preview/apk-verification.json")
+                report["runtime_inputs"] = {name: ci.file_identity(root / name) for name in ci.APK_PATHS}
                 report["status"] = "passed"
         finally:
             try:

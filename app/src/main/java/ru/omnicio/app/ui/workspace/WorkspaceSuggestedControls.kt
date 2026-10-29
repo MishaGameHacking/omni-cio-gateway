@@ -29,7 +29,7 @@ fun WorkspaceChoicePicker(title: String, value: String, options: List<WorkspaceS
     val selected = options.firstOrNull { it.value == value }
     val label = selected?.label ?: value.takeIf { it.isNotBlank() } ?: "Выбрать"
     SpectrumTextButton("$title · $label", { open = true }, modifier.fillMaxWidth().heightIn(min = 48.dp),
-        enabled = enabled, symbol = SpectrumSymbol.Expand)
+        enabled = enabled, symbol = SpectrumSymbol.ChevronDown)
     if (open) SuggestionPickerDialog(title, value, options, enabled, { open = false }) {
         if (enabled && options.any { candidate -> candidate.value == it }) { onSelect(it); open = false }
     }
@@ -74,10 +74,10 @@ fun WorkspaceSuggestionRow(query: String, options: List<WorkspaceSuggestion>,
     if (found.isNotEmpty()) LazyRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(found.take(4), key = { it.value }) { item ->
             SpectrumTextButton(item.label, { if (enabled) onSelect(item.value) },
-                enabled = enabled, symbol = SpectrumSymbol.Search)
+                enabled = enabled)
         }
         if (found.size > 4) item { SpectrumTextButton("Все варианты · " + found.size,
-            { all = true }, enabled = enabled, symbol = SpectrumSymbol.Expand) }
+            { all = true }, enabled = enabled, symbol = SpectrumSymbol.ChevronDown) }
     }
     if (all) SuggestionPickerDialog("Выбор из доступных данных", "", found, enabled, { all = false }) {
         if (enabled && found.any { candidate -> candidate.value == it }) { onSelect(it); all = false }
@@ -121,3 +121,4 @@ fun WorkspaceCheckbox(title: String, checked: Boolean, enabled: Boolean = true, 
         Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
     }
 }
+

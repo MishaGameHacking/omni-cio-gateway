@@ -1,0 +1,104 @@
+name: Verify workspace redesign and strategies on owner laptop
+on:
+  push:
+    branches: [codex/workspace-strategies-2026-10-28]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-workspace-redesign
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 65
+    env:
+      EXPECTED_TESTED_MERGE_SHA: ${{ github.sha }}
+      EXPECTED_PR_HEAD_SHA: ''
+      EXPECTED_PR_BASE_SHA: ''
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
+    steps:
+      - name: Checkout exact GitHub source on the owner laptop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          fetch-depth: 64
+          persist-credentials: false
+      - name: Verify all Python sources and complete backend suite in existing WSL
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\laptop_backend_ci.py
+          if errorlevel 1 exit /b 1
+      - name: Package the exact verified server changes
+        id: package
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\package_server_runtime.py
+          if errorlevel 1 exit /b 1
+      - name: Retain synthetic verification and source release bundle
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/windows-backend-report.json
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/python-source-audit.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/sonar-helper-tests.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/backend-ci-regressions.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/linux-backend.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/server-runtime.json
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-client:
+    needs: verify
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 190
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
+    steps:
+      - name: Checkout exact version-display source on the owner laptop
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Check source, JVM behavior, Android lint, signing and build the transitional shell
+        shell: cmd
+        working-directory: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\verify_server_version_client.py
+          if errorlevel 1 exit /b 1
+      - name: Preserve client verification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: server-version-client-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+            ${{ runner.temp }}/server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/*.log
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/preview/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/outputs/apk/debug/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/ci-ui-driver/build/outputs/apk/debug/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/test-results/
+            server-version-client-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/lint-results-debug.*
+          if-no-files-found: error
+          retention-days: 7
+

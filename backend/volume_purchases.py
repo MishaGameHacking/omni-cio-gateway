@@ -89,6 +89,16 @@ def _reviewed_credit(uid: str, kind: str, now: datetime) -> tuple[dict, dict]:
     return identity, credit_assessment(ratings, issuer_id=issuer, instrument_id=uid, at=now, bond=kind == "bond")
 
 
+def _fund_terms(reader, meta):
+    asset = market.broker_read(reader, "asset", {"id": meta.get("assetUid")}).get("asset")
+    if not isinstance(asset, dict) or not meta.get("assetUid") or asset.get("uid") != meta["assetUid"]:
+        raise HTTPException(502, "fund_asset_identity_mismatch")
+    security = asset.get("security") or {}
+    if security.get("type") != "etf" or not isinstance(security.get("etf"), dict):
+        raise HTTPException(502, "fund_terms_unverified")
+    return {"asset_uid": asset["uid"], "details": security["etf"]}
+
+
 def _broker_observations(user, payload, price):
     with details.BrokerReader(user) as reader:
         reader.account(payload.account_id)  # Ownership before any account-specific read.
@@ -96,7 +106,7 @@ def _broker_observations(user, payload, price):
         if not isinstance(meta, dict) or meta.get("uid") != payload.instrument_uid:
             raise HTTPException(502, "instrument_identity_mismatch")
         kind = market.instrument_kind(meta)
-        if kind not in {"share", "bond"}:
+        if kind not in {"share", "bond", "etf"}:
             raise HTTPException(422, "instrument_requires_separate_risk_model")
         # GetInstrumentBy omits bond-specific risk flags. A typed observation is
         # mandatory; never interpret missing subordinate/perpetual flags as false.
@@ -109,6 +119,8 @@ def _broker_observations(user, payload, price):
             # typed BondBy response, not a generic Instrument response.
             for flag in ("subordinatedFlag", "perpetualFlag"):
                 meta[flag] = full.get(flag, False)
+        if kind == "etf":
+            meta["fund_policy"] = _fund_terms(reader, meta)
         info = market.broker_read(reader, "user_info", {})
         query = {"accountId": payload.account_id, "instrumentId": payload.instrument_uid,
                  "price": settlement_price(meta, price)}
@@ -241,6 +253,9 @@ def _check_purchase(payload: PurchaseCheck, user: Any, *, archive: bool = True) 
         expires_at=observation_expiry(started, snapshot, book, now).isoformat(), snapshot_id=snapshot["snapshot_id"],
         strategy_version=active["version"], evidence_revision=asdict(revision),
         advice_kind="personalized_purchase_constraint_check",
+        investor_qualified=info.get("qualStatus") is True,
+        investor_tests=info.get("qualifiedForWorkWith", []),
+        estimated_commission=quote.get("executedCommission"),
         suitability_complete=False,
         remaining_checks=["loss_capacity_and_full_investment_profile", "investment_thesis_and_valuation", "tax_and_settlement_effects"],
         explanation="Проверка ограничений конкретной покупки. Полная инвестиционная рекомендация требует оценки способности нести убытки и инвестиционного обоснования.")
@@ -257,3 +272,4 @@ def _check_purchase(payload: PurchaseCheck, user: Any, *, archive: bool = True) 
         # transactional input/expiry checks still run before returning.
         archive_check(user, result, inputs, persist=False)
     return result
+

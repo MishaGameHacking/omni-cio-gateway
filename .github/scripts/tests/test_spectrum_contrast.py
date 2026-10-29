@@ -12,8 +12,8 @@ UI = ROOT / 'app/src/main/java/ru/omnicio/app/ui'
 def _production():
     source = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
     result = {}
-    for name in ('Dark',):
-        material = source.split('private val ' + name + 'Colors = ' + name.lower() + 'ColorScheme(', 1)[1].split('\n)', 1)[0]
+    for name in ('Workspace',):
+        material = source.split('private val ' + name + 'Colors = ' + 'lightColorScheme(', 1)[1].split('\n)', 1)[0]
         semantic = source.split('private val ' + name + 'Semantic = AnalystSemanticColors(', 1)[1].split('\n)', 1)[0]
         result[name] = dict(re.findall(r'\b(\w+)\s*=\s*Color\(0xFF([0-9A-Fa-f]{6})\)', material + '\n' + semantic))
     return result
@@ -79,4 +79,5 @@ class SpectrumContrastTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

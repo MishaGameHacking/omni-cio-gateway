@@ -45,6 +45,7 @@ READ_METHODS = {
     'order_price': 'OrdersService/GetOrderPrice',
     'bond_by': 'InstrumentsService/BondBy',
     'share_by': 'InstrumentsService/ShareBy',
+    'etf_by': 'InstrumentsService/EtfBy',
 }
 _rate_lock = threading.Lock()
 _next_instrument_read: dict[tuple, float] = {}
@@ -618,3 +619,4 @@ def _news_reason(complete, errors):
     if complete:
         return None
     return errors[0] if errors else 'news_page_limit_or_cursor_failure'
+

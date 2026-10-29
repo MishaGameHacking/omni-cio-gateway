@@ -191,7 +191,7 @@ def ingest(user, raw, now: datetime) -> dict:
         from volume_credit import critical
     credit = [uid for uid, rating in normalized.get("rating_observations", {}).items()
               if critical(rating, old.get("rating_observations", {}).get(uid))]
-    fingerprint = digest({"limits": [{k: row[k] for k in ("direction", "id", "share_percent", "limit_percent")} for row in breaches],
+    fingerprint = digest({"limits": [{**{k: row[k] for k in ("direction", "id", "limit_percent")}, "share_percent": str(int(decimal(row["share_percent"])))} for row in breaches],
                           "credit": normalized.get("rating_signature") if credit else None})
     risk_message = None
     if breaches:
@@ -228,3 +228,4 @@ def _monitor_accounts(raw, previous):
                               "blockedQuantity": item.get("blockedQuantity", prior.get("blocked_quantity"))})
         accounts.append({**account, "positions": positions})
     return accounts, metadata
+

@@ -17,6 +17,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -57,7 +58,7 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
         while (isActive) {
             request = request.start(query)
             val id = request.requestId
-            val waitMillis: Long
+            var waitMillis: Long
             try {
                 when (val result = withContext(Dispatchers.IO) { client.account(token, accountId, section, query) }) {
                     is BackendResult.Success -> {
@@ -70,6 +71,11 @@ internal fun rememberAccountData(token: String, accountId: String, section: Stri
                         waitMillis = backoff.failure()
                     }
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                request = request.fail(id, "Не удалось обновить данные. Повторим запрос.")
+                waitMillis = backoff.failure()
             } finally { request = request.cancel(id) }
             delay(waitMillis)
         }
@@ -112,7 +118,7 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
         today.minusYears(1).plusDays(1), today.withDayOfYear(1), null)
     val selected = if (period.end != null) 6 else starts.indexOfFirst { it?.toString() == period.start }.let { if (it < 0) 6 else it }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        ChoiceRow(listOf("День", "Месяц", "6 мес", "12 мес", "С начала года", "Всё время", "Период"), selected) { index ->
+        ChoiceRow(listOf("День", "Месяц", "Полгода", "Год", "С начала года", "Всё время", "Период"), selected) { index ->
             if (index == 6) calendar = true else {
                 onChange(PortfolioPeriod(starts[index]?.toString(), null))
             }
@@ -148,4 +154,5 @@ internal fun PeriodControls(period: PortfolioPeriod, onChange: (PortfolioPeriod)
         }
     }
 }
+
 

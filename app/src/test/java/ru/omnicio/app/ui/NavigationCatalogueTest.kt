@@ -26,7 +26,7 @@ class NavigationCatalogueTest {
         assertTrue(analystMenuDestinations.containsAll(analystPrimaryDestinations))
         assertEquals(WorkspaceRoute.entries.toSet(),analystMenuDestinations.mapNotNull { it.workspace }.toSet())
         assertTrue(analystMenuDestinations.any { it.tab == AnalystTab.Risk })
-        assertEquals("Портфель",AnalystTab.Portfolio.destination().title)
+        assertEquals("Аналитика",AnalystTab.Portfolio.destination().title)
     }
     @org.junit.Test fun everyMenuDestinationHasItsOwnIcon() {
         val icons = analystMenuDestinations.map { it.symbol.asset }

@@ -5,7 +5,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -45,20 +46,24 @@ fun WorkspaceToggle(title: String, detail: String, checked: Boolean, modifier: M
 
 @Composable
 fun WorkspaceChoices(title: String, choices: List<String>, selected: Int, enabled: Boolean = true, onSelect: (Int) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
+    var open by rememberSaveable(title) { mutableStateOf(false) }
+    SpectrumTextButton(title + " · " + (choices.getOrNull(selected) ?: "Выбрать"),
+        onClick = { open = true }, modifier = Modifier.fillMaxWidth(), enabled = enabled,
+        symbol = SpectrumSymbol.ChevronDown)
+    if (open) WorkspaceDialog(title, { open = false }) {
         Column(Modifier.selectableGroup()) {
             choices.forEachIndexed { index, choice ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .selectable(selected == index, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(index) })
-                    .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    .selectable(selected == index, enabled = enabled, role = Role.RadioButton,
+                        onClick = { onSelect(index); open = false }).padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SpatialChoiceVisual(selected == index, Modifier.size(24.dp), enabled = enabled)
-                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge,
-                        color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk)
+                    Text(choice, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
                 }
             }
         }
+        SpectrumSecondaryButton("Закрыть", { open = false }, Modifier.fillMaxWidth())
     }
 }
 
@@ -70,3 +75,4 @@ fun WorkspaceSection(title: String, detail: String = "") {
             style = MaterialTheme.typography.bodyMedium)
     }
 }
+

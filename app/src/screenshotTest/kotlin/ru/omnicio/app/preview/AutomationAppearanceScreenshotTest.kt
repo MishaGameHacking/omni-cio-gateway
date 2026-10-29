@@ -2,6 +2,9 @@ package ru.omnicio.app.preview
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import ru.omnicio.app.ui.StrategyNavigationRail
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -27,7 +30,7 @@ import ru.omnicio.app.ui.theme.AnalystTheme
 import ru.omnicio.app.ui.workspace.*
 
 /**
- * Real production Compose layouts rendered by Layoutlib on the Timeweb host.
+ * Real production Compose layouts rendered by Layoutlib on the owner laptop.
  * Explicit synthetic state, no authentication, networking, device runtime, or
  * interaction evidence. These images cannot satisfy an Android release gate.
  */
@@ -121,7 +124,7 @@ private fun HostAppearance(page: String, state: String) {
         AnalystTheme {
             Column(Modifier.fillMaxSize()) {
                 Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ\nTimeweb · Layoutlib · без Android runtime",
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ\nНоутбук · Layoutlib · без Android runtime",
                         Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -177,4 +180,137 @@ private fun appearanceResource(state: String): WorkspaceResource {
         .put("events", JSONArray())
     val error = if (state == "error") "Синтетическая ошибка связи. Настоящая сеть не вызывалась." else null
     return WorkspaceResource(data, false, error) {}
+}
+
+@PreviewTest
+@Preview(name = "profiles-compact", widthDp = 390, heightDp = 1100, locale = "ru")
+@Preview(name = "profiles-large", widthDp = 320, heightDp = 1500, fontScale = 2f, locale = "ru")
+@Composable
+fun Profiles53() {
+    val catalogue = JSONObject().put("items", JSONArray().apply {
+        listOf("capital" to "Бережный старт", "coupon" to "Регулярный доход", "balanced" to "Сбалансированный портфель",
+            "growth" to "Долгосрочный рост", "equity" to "Долевое участие").forEach { (id, title) ->
+            put(JSONObject().put("id", id).put("title", title).put("description", "Синтетический пример профиля")
+                .put("config", strategy53Fixture()))
+        }
+    })
+    AnalystTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().padding(16.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                StrategyProfilesPanel(catalogue, JSONObject(), true, {}, {})
+            }
+        }
+    }
+}
+
+private fun strategy53Fixture(): JSONObject = JSONObject()
+    .put("horizon_months", 120)
+    .put("mandate", JSONObject().put("account_id", "synthetic").put("loss_capacity_percent", "10"))
+    .put("construction", JSONObject().put("version", 1).put("age", 35).put("reserve_percent", 20)
+        .put("income_stability", "stable").put("loss_capacity_confirmed", true).put("reinvest", true)
+        .put("key_rate_mode", "at_least_key_rate").put("enabled_classes", JSONArray(listOf("bond", "share", "etf"))))
+
+@PreviewTest
+@Preview(name = "settings53-light", widthDp = 390, heightDp = 1200, locale = "ru")
+@Preview(name = "settings53-graphite", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "settings53-large-text", widthDp = 320, heightDp = 1200, fontScale = 1.5f, locale = "ru")
+@Composable
+fun Settings53() {
+    AnalystTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
+            }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "plan53-light", widthDp = 390, heightDp = 1050, locale = "ru")
+@Preview(name = "plan53-graphite", widthDp = 390, heightDp = 1050, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Plan53() {
+    val data = JSONObject().put("actions", JSONArray().put(JSONObject().put("name", "Синтетический актив").put("ticker", "TEST")
+        .put("action", "buy").put("suggested_lots", 2).put("quantity", "20")
+        .put("total_cost", JSONObject().put("amount", "2000").put("currency", "RUB"))
+        .put("as_of", "2026-10-29T10:00:00Z").put("expires_at", "2026-10-29T10:01:00Z")
+        .put("explanation", "Синтетический пример. Просроченная цена отключает переход к покупке.")))
+    CompositionLocalProvider(LocalWorkspacePreviewResources provides mapOf("/automation/strategy-plan" to WorkspaceResource(data, false, null) {})) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { StrategyActionPlanPanel() }
+        } }
+    }
+}
+
+@PreviewTest
+@Preview(name = "rail53-light", widthDp = 1000, heightDp = 900, locale = "ru")
+@Preview(name = "rail53-graphite", widthDp = 1000, heightDp = 900, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Rail53() {
+    AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+        Row(Modifier.fillMaxSize()) {
+            StrategyNavigationRail(AnalystTab.Actions, WorkspaceRoute.Strategies, {}, {}, initiallyExpanded = true)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp)) {
+                Text("Моя стратегия", style = MaterialTheme.typography.headlineMedium)
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
+            }
+        }
+    } }
+}
+
+
+@PreviewTest
+@Preview(name = "analytics54-dark", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "analytics54-light", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "analytics54-large-text", widthDp = 320, heightDp = 1500, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Overview() = Analytics54Fixture("overview")
+
+@PreviewTest
+@Preview(name = "analytics54-value", widthDp = 390, heightDp = 1400, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Value() = Analytics54Fixture("value")
+
+@PreviewTest
+@Preview(name = "analytics54-structure", widthDp = 390, heightDp = 1100, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun Analytics54Structure() = Analytics54Fixture("structure")
+
+/** Pure production rendering: no API requests, account access or trade execution. */
+@Composable
+private fun Analytics54Fixture(page: String) {
+    check(LocalInspectionMode.current)
+    fun money(amount: Long) = ru.omnicio.app.data.portfolio.MoneyAmount(ru.omnicio.app.data.portfolio.ApiDecimal(amount, 0), "RUB")
+    val total = money(12000)
+    val positions = listOf(
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-share", "Тестовая акция", "TEST", null, money(6000), null, instrumentType = "share", company = "Тестовая компания", sector = "Технологии"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-bond", "Тестовая облигация", "TESTB", null, money(4800), null, instrumentType = "bond", company = "Тестовый эмитент", sector = "Промышленность"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("synthetic-cash", "Деньги", "RUB", null, money(1200), null, instrumentType = "cash"),
+    )
+    val account = ru.omnicio.app.data.portfolio.PortfolioAccount("synthetic-layout", "Тестовый счёт", total, null, positions,
+        allocations = listOf("Акции" to 50L, "Облигации" to 40L, "Деньги" to 10L).map { (name, share) ->
+            ru.omnicio.app.data.portfolio.PortfolioAllocation(name, ru.omnicio.app.data.portfolio.ApiDecimal(share, 0)) })
+    val analytics = JSONObject().put("currency", "RUB").put("complete", true)
+        .put("history", JSONArray().apply { listOf(8000, 10000, 9500, 12000).forEachIndexed { i, value ->
+            put(JSONObject().put("date", "2026-10-${25+i}T12:00:00Z").put("value", value.toString())) } })
+        .put("summary", JSONArray().put(JSONObject().put("category", "coupons")
+            .put("amount", JSONObject().put("value", JSONObject().put("units", "120").put("nano", 0)).put("currency", "RUB"))))
+    val payments = JSONObject().put("complete", true).put("items", JSONArray())
+    val data = ru.omnicio.app.ui.portfolio.AnalyticsViewData(listOf(account),
+        listOf(ru.omnicio.app.ui.portfolio.AccountData(analytics, null, false)),
+        listOf(ru.omnicio.app.ui.portfolio.AccountData(payments, null, false)),
+        total, "RUB", ru.omnicio.app.ui.portfolio.PortfolioPeriod(null, null), "2026-10-29T12:00:00Z")
+    CompositionLocalProvider(LocalWorkspacePreferences provides WorkspacePreferenceController(WorkspacePreferences(motion = MotionLevel.OFF))) {
+        AnalystTheme {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize()) {
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                    ru.omnicio.app.ui.portfolio.AnalyticsHeader(page, listOf(account), true, {}, {})
+                    ru.omnicio.app.ui.portfolio.AnalyticsPages(page, data, false, null, null, {}, 0, {}, {}, {}, {}, null, null) { _, _ -> }
+                }
+            }
+        }
+    }
 }

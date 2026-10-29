@@ -14,7 +14,7 @@ data class AnalystDestination(val id: String, val title: String, val symbol: Spe
 /** IDs remain compatible with restored navigation, notifications and saved drafts. */
 val analystDestinations: List<AnalystDestination> = listOf(
     AnalystDestination("Home", "Главная", SpectrumSymbol.Home, NavigationGroup.Main, AnalystTab.Home, tab = AnalystTab.Home),
-    AnalystDestination("Portfolio", "Портфель", SpectrumSymbol.Portfolio, NavigationGroup.Main, AnalystTab.Portfolio, tab = AnalystTab.Portfolio),
+    AnalystDestination("Portfolio", "Аналитика", SpectrumSymbol.Portfolio, NavigationGroup.Main, AnalystTab.Portfolio, tab = AnalystTab.Portfolio),
     AnalystDestination("Recommendations", "Решения", SpectrumSymbol.Decisions, NavigationGroup.Main, AnalystTab.Actions, tab = AnalystTab.Actions),
     AnalystDestination("Profile", "Настройки", SpectrumSymbol.Settings, NavigationGroup.Main, AnalystTab.Profile, tab = AnalystTab.Profile),
     AnalystDestination("Risk", "Риски", SpectrumSymbol.Risk, NavigationGroup.Portfolio, AnalystTab.Portfolio, tab = AnalystTab.Risk),
@@ -25,7 +25,7 @@ val analystDestinations: List<AnalystDestination> = listOf(
     AnalystDestination("Assistant", "Аналитик", SpectrumSymbol.Analyst, NavigationGroup.Research, AnalystTab.Actions, workspace = WorkspaceRoute.Assistant),
     AnalystDestination("Reports", "Выводы аналитика", SpectrumSymbol.Reports, NavigationGroup.Research, AnalystTab.Actions, workspace = WorkspaceRoute.Reports),
     AnalystDestination("Library", "Исследования", SpectrumSymbol.Sources, NavigationGroup.Research, AnalystTab.Actions, workspace = WorkspaceRoute.Library),
-    AnalystDestination("AnalysisTimeline", "История проверок", SpectrumSymbol.Timeline, NavigationGroup.Research, AnalystTab.Actions, workspace = WorkspaceRoute.AnalysisTimeline),
+    AnalystDestination("AnalysisTimeline", "Работа аналитика", SpectrumSymbol.Timeline, NavigationGroup.Research, AnalystTab.Actions, workspace = WorkspaceRoute.AnalysisTimeline),
     AnalystDestination("Messages", "События", SpectrumSymbol.Events, NavigationGroup.Research, AnalystTab.Home, workspace = WorkspaceRoute.Messages),
     AnalystDestination("AnalysisSettings", "Правила анализа", SpectrumSymbol.Rules, NavigationGroup.Personal, AnalystTab.Profile, workspace = WorkspaceRoute.AnalysisSettings),
     AnalystDestination("NotificationSettings", "Уведомления", SpectrumSymbol.Notifications, NavigationGroup.Personal, AnalystTab.Profile, workspace = WorkspaceRoute.NotificationSettings),
@@ -50,3 +50,4 @@ fun sectionBackStack(destinationId: String): List<String>? {
 }
 
 val LocalAnalystSectionNavigator = staticCompositionLocalOf<(String) -> Unit> { {} }
+

@@ -93,7 +93,7 @@ fun spectrumPalette(dark: Boolean, accent: AccentStyle = AccentStyle.AURORA): Sp
 
 val DarkSpectrumPalette = spectrumPalette(dark = true)
 // Legacy preview alias: there is no second production colorway.
-val LightSpectrumPalette = DarkSpectrumPalette
+val LightSpectrumPalette = spectrumPalette(dark = false)
 
 val LocalSpectrumPalette = staticCompositionLocalOf { DarkSpectrumPalette }
 
@@ -126,7 +126,7 @@ fun SpectrumCard(
         emphasized = emphasized, interactive = onClick != null) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
             Column(Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
+                verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
         }
     }
 }
@@ -185,16 +185,16 @@ fun SpectrumPrimaryButton(
     val state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }
     SpatialSurface(modifier.clickable(interactionSource = interaction, indication = null,
         enabled = enabled, role = Role.Button, onClick = click), SpatialSurfaceKind.Button,
-        color = if (enabled) MaterialTheme.colorScheme.primaryContainer else LocalSpectrumPalette.current.semantic.disabledContainer, state = state) {
-        Row(Modifier.fillMaxWidth().heightIn(min = 54.dp).padding(horizontal = 18.dp, vertical = 12.dp),
+        color = if (enabled) MaterialTheme.colorScheme.primary else LocalSpectrumPalette.current.semantic.disabledContainer, state = state) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
             horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             if (symbol != null) {
                 SpatialIcon(symbol.asset, Modifier.size(26.dp),
-                    tint = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else LocalSpectrumPalette.current.semantic.disabledInk,
+                    tint = if (enabled) MaterialTheme.colorScheme.onPrimary else LocalSpectrumPalette.current.semantic.disabledInk,
                     state = state, colorMode = SpatialColorMode.Monochrome)
                 Spacer(Modifier.width(9.dp))
             }
-            Text(text, color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else LocalSpectrumPalette.current.semantic.disabledInk,
+            Text(text, color = if (enabled) MaterialTheme.colorScheme.onPrimary else LocalSpectrumPalette.current.semantic.disabledInk,
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
     }
@@ -210,7 +210,7 @@ fun SpectrumSecondaryButton(text: String, onClick: () -> Unit, modifier: Modifie
         enabled = enabled, role = Role.Button, onClick = click), SpatialSurfaceKind.Button,
         color = LocalSpectrumPalette.current.cardStrong,
         state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle }) {
-        Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+        Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 10.dp),
             contentAlignment = Alignment.Center) {
             Text(text, color = if (enabled) MaterialTheme.colorScheme.onSurface else LocalSpectrumPalette.current.semantic.disabledInk, fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center)
@@ -294,4 +294,6 @@ fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
     SpatialIcon(if (compact) "analyst" else "brand", modifier.aspectRatio(1f),
         tint = LocalSpectrumPalette.current.cyan, motionAllowed = true)
 }
+
+
 

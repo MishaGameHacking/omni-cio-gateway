@@ -235,6 +235,23 @@ class GuardedClientTests(DatabaseCase):
     def run_call(self, client):
         return client.complete_json(tier=FAST, messages=[{'role':'user','content':'synthetic'}], max_output_tokens=100)
 
+    def test_qwen_flash_disables_reasoning_and_accounts_json_response(self):
+        self.env.update(AI_MODEL_FAST='dashscope/qwen3.5-flash', AI_FAST_PRICING_MODEL='dashscope/qwen3.5-flash',
+                        AI_FAST_PROCESSING_REGION='EXTERNAL', AI_ALLOWED_PROCESSING_REGIONS='EXTERNAL')
+        self.run_call(self.client(model_response(model='dashscope/qwen3.5-flash')))
+        body = json.loads(self.requests[0].content)
+        self.assertIs(body['enable_thinking'], False)
+        self.assertEqual(body['response_format'], {'type':'json_object'})
+        self.assertEqual(body['max_tokens'], 100)
+        self.assertEqual(self.ledger.user_summary(1)['unresolved_attempts'], 0)
+
+    def test_external_processing_requires_explicit_region_approval(self):
+        self.env['AI_FAST_PROCESSING_REGION'] = 'EXTERNAL'
+        client = self.client()
+        with self.assertRaisesRegex(GuardError, 'ai_processing_region_not_approved'):
+            self.run_call(client)
+        self.assertEqual(len(self.requests), 0)
+
     def test_gateway_request_is_accounted(self):
         result = self.run_call(self.client())
         self.assertEqual(result.data, {'ok':True})
@@ -368,3 +385,4 @@ class GuardedClientTests(DatabaseCase):
 
 if __name__ == '__main__':
     unittest.main()
+

@@ -1,16 +1,19 @@
 package ru.omnicio.app.ui.theme
 
-import org.junit.Assert.assertTrue
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class DisplayedThemeTest {
-    @Test fun savedModesCannotChangeTheSingleStyleWhenSystemPreferenceChanges() {
-        for (mode in ThemeMode.entries) for (systemDark in listOf(false, true))
-            for (last in listOf(null, false, true)) for (configuration in listOf(false, true))
-                assertTrue(displayedThemeDark(mode, SystemThemeObservation.Known(systemDark), last, configuration))
+    @Test fun explicitThemesSurviveOppositeSystemPreference() {
+        for (system in listOf(false, true)) {
+            assertEquals(false, displayedThemeDark(ThemeMode.LIGHT, SystemThemeObservation.Known(system), true, true))
+            assertEquals(true, displayedThemeDark(ThemeMode.DARK, SystemThemeObservation.Known(system), false, false))
+            assertEquals(system, displayedThemeDark(ThemeMode.SYSTEM, SystemThemeObservation.Known(system), null, !system))
+        }
     }
-    @Test fun unavailableDisplayCannotIntroduceAnotherPalette() {
-        for (reason in SystemThemeUnavailableReason.entries) for (mode in ThemeMode.entries)
-            assertTrue(displayedThemeDark(mode, SystemThemeObservation.Unknown(reason), false, false))
+    @Test fun unknownSystemUsesLastDisplayedBeforeApplicationFallback() {
+        val unknown = SystemThemeObservation.Unknown(SystemThemeUnavailableReason.NO_DISPLAY)
+        assertEquals(true, displayedThemeDark(ThemeMode.SYSTEM, unknown, true, false))
+        assertEquals(false, displayedThemeDark(ThemeMode.SYSTEM, unknown, null, false))
     }
 }

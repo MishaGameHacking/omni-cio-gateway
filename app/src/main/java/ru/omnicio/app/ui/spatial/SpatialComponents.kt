@@ -59,20 +59,23 @@ fun SpatialSurface(
     val layered = LocalWorkspacePreferences.current.value.depth
     val highContrast = LocalFlatContrast.current
     val shape = RoundedCornerShape(when (kind) {
-        SpatialSurfaceKind.Card -> 22.dp
-        SpatialSurfaceKind.Dock -> 20.dp
-        SpatialSurfaceKind.Chip -> 14.dp
+        SpatialSurfaceKind.Card -> 18.dp
+        SpatialSurfaceKind.Dock -> 16.dp
+        SpatialSurfaceKind.Chip -> 12.dp
         SpatialSurfaceKind.Heading -> 0.dp
-        else -> 18.dp
+        else -> 12.dp
     })
     val resolved = spatialSurfaceColors(palette, color, state, interactive, emphasized && layered, highContrast)
     val fill = if (kind == SpatialSurfaceKind.Heading) Color.Transparent else resolved.fill
-    val border = if (kind == SpatialSurfaceKind.Heading) Color.Transparent else resolved.border
-    val borderWidth = if (state == SpatialState.Selected) 2.dp else 1.dp
+    val border = when {
+        kind == SpatialSurfaceKind.Heading -> Color.Transparent
+        state == SpatialState.Idle && !highContrast && kind != SpatialSurfaceKind.Input -> Color.Transparent
+        else -> resolved.border
+    }
+    val borderWidth = if (state == SpatialState.Selected) 1.5.dp else 1.dp
     val tint = if (emphasized) palette.colors.secondaryContainer else palette.colors.surfaceContainerLow
-    val gradient = Brush.verticalGradient(listOf(fill, if (kind == SpatialSurfaceKind.Card && !highContrast)
-        lerp(fill, tint, .35f) else fill))
-    Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 2.dp else 0.dp, shape, clip = false)
+    val gradient = Brush.verticalGradient(listOf(fill, fill))
+    Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 1.dp else 0.dp, shape, clip = false)
         .clip(shape).background(gradient).border(borderWidth, border, shape)) {
         CompositionLocalProvider(LocalSpatialDepth provides 0f,
             LocalContentColor provides resolved.foreground) { content() }
@@ -89,13 +92,9 @@ fun SpatialField(
 ) {
     val palette = LocalSpectrumPalette.current
     val state = when { !enabled -> SpatialState.Disabled; error -> SpatialState.Attention; focused -> SpatialState.Selected; else -> SpatialState.Idle }
-    SpatialSurface(modifier, SpatialSurfaceKind.Input,
-        color = when { error -> palette.rose; focused -> palette.cyan; else -> palette.cardStrong },
-        state = state, emphasized = focused) {
-        // Keep the editor at the same composition location when focus/error changes.
-        // A conditional wrapper disposes the focused native editor and its IME session.
-        SpatialSurface(Modifier.padding(2.dp), SpatialSurfaceKind.Input,
-            color = palette.cardStrong, state = state, content = content)
+    SpatialSurface(modifier, SpatialSurfaceKind.Input, color = palette.card,
+        state = state) {
+        Box(Modifier.padding(vertical = 6.dp), content = content)
     }
 }
 
@@ -232,3 +231,4 @@ fun SpatialRing(
     }
     SpatialCanvas(primitives, modifier)
 }
+

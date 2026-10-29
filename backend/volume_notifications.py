@@ -125,7 +125,7 @@ def _iso(value: int | None) -> str | None:
 
 
 def eligibility(preferences: dict, kind: str, at: int) -> tuple[str, int, str | None]:
-    if not preferences["enabled"] or (kind == "risk" and not preferences["critical_enabled"]) or (kind != "risk" and not preferences["briefs_enabled"]):
+    if not preferences["enabled"] or (kind == "risk" and not preferences["critical_enabled"]) or (kind == "brief" and not preferences["briefs_enabled"]):
         return "suppressed", at, "rule_disabled"
     zone = ZoneInfo(preferences["timezone"])
     local = datetime.fromtimestamp(at, zone)
@@ -148,6 +148,11 @@ def enqueue_in(db, user_id: int, *, kind: str, title: str, body: str, source_car
     at = int(time.time()) if at is None else at
     preferences, _, _ = _preferences(db, user_id)
     state, due, _ = eligibility(preferences, kind, at)
+    duplicate = db.execute("""SELECT 1 FROM workspace_notification_outbox
+        WHERE user_id=? AND kind=? AND title=? AND body=? AND created_at>? LIMIT 1""",
+        (user_id, kind, title[:200], body[:2000], at - 86400)).fetchone()
+    if duplicate:
+        return
     db.execute("""INSERT OR IGNORE INTO workspace_notification_outbox
         (id,user_id,kind,title,body,source_card_id,event_id,created_at,state,eligible_at)
         VALUES (?,?,?,?,?,?,?,?,?,?)""",
@@ -189,7 +194,34 @@ def update_preferences(payload: PreferencesWrite, user: Any = Depends(backend.cu
 def events(limit: int = 100, user: Any = Depends(backend.current_user)) -> dict:
     with closing(backend.connect()) as db:
         rows = db.execute("SELECT * FROM workspace_notification_outbox WHERE user_id=? ORDER BY created_at DESC,id LIMIT ?", (int(user["id"]), min(max(limit, 1), 500))).fetchall()
-    return {"items": [_item(row) for row in rows], "channel": "app_poll"}
+    seen, items = set(), []
+    with closing(backend.connect()) as db:
+        for row in rows:
+            key = (row["kind"], row["title"], row["body"])
+            if key in seen:
+                continue
+            seen.add(key)
+            item = _item(row)
+            item["visual"] = notification_visual(db, int(user["id"]), row)
+            items.append(item)
+    return {"items": items, "channel": "app_poll"}
+
+
+def notification_visual(db, user_id: int, row) -> dict:
+    event = db.execute("SELECT payload_json FROM workspace_events WHERE user_id=? AND id=?",
+                       (user_id, row["event_id"])).fetchone() if row["event_id"] else None
+    data = json.loads(event[0]) if event else {}
+    kind = data.get("kind", "")
+    details = data.get("details", {})
+    after = details.get("after") or {}
+    severity = "watch" if row["kind"] == "risk" else "info"
+    if kind == "risk_limit_resolved":
+        severity = "resolved"
+    elif after.get("breached"):
+        severity = "warning"
+    return {"severity": severity, "share_percent": after.get("share_percent"),
+            "limit_percent": after.get("limit_percent"), "label": after.get("label"),
+            "action": "Проверка сохранена. Торговых поручений система не отправляла."}
 
 
 class Claim(StrictModel):
@@ -305,3 +337,4 @@ def due_flags(user_id: int, now: datetime, has_run) -> tuple[bool, bool]:
         due = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
         flags.append(0 <= (local - due).total_seconds() <= 7200 and not has_run(slot, local))
     return tuple(flags)
+

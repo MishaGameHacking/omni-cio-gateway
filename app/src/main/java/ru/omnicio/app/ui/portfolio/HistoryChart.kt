@@ -53,7 +53,9 @@ internal fun HistoryChart(
         Notice("График скрыт режимом приватности."); controls(); return
     }
     var grouping by rememberSaveable(selectionKey.substringBefore(':')) { mutableIntStateOf(0) }
-    ChoiceRow(listOf("Авто", "Дни", "Недели", "Месяцы"), grouping) { grouping = it }
+    DetailFold("Масштаб · " + listOf("Авто", "Дни", "Недели", "Месяцы")[grouping]) {
+        ChoiceRow(listOf("Авто", "Дни", "Недели", "Месяцы"), grouping) { grouping = it }
+    }
     val model = remember(points, grouping) { historyBars(points, listOf("auto", "day", "week", "month")[grouping]) }
     if (model == null) {
         Notice(if (points.isEmpty()) "За этот период пока нет сохранённых снимков стоимости." else "Для выбранного шага слишком много интервалов либо история содержит несовместимые значения. Выберите авто/месяцы или сузьте период; пропуски не заменяются нулями.")
@@ -93,15 +95,17 @@ internal fun HistoryChart(
         })
         Notice("Столбик ниже показывает последнее наблюдение своего интервала; оно может отличаться от точной записи по ссылке.")
     }
-    BarTooltip(model, selected, currency)
+    if (selected >= 0) BarTooltip(model, selected, currency)
     HistoryBarPlot(model, selected, currency, choose)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(model.bars.first().start.format(DateTimeFormatter.ofPattern("dd.MM.yy")), style = MaterialTheme.typography.labelSmall)
         Text(model.bars.last().end.format(DateTimeFormatter.ofPattern("dd.MM.yy")), style = MaterialTheme.typography.labelSmall)
     }
     controls()
-    BarNavigation(model, selected, choose) { selectedStart = null; selectedObservation = null; rangeStart = null; rangeEnd = null }
-    if (model.bars.size > 1) HistoryRangeSelector(model, selectedRange, selectionKey) { rangeStart = it?.start; rangeEnd = it?.end }
+    DetailFold("Выбрать наблюдение или диапазон") {
+        BarNavigation(model, selected, choose) { selectedStart = null; selectedObservation = null; rangeStart = null; rangeEnd = null }
+        if (model.bars.size > 1) HistoryRangeSelector(model, selectedRange, selectionKey) { rangeStart = it?.start; rangeEnd = it?.end }
+    }
     val visiblePoints = if (selectedRange == null) bar?.points ?: model.source.coordinates.map { it.point }
         else model.bars.filter { !it.end.isBefore(LocalDate.parse(rangeStart)) && !it.start.isAfter(LocalDate.parse(rangeEnd)) }.flatMap { it.points }
     HistoryStatistics(visiblePoints, selectedRange?.let { "${it.start} — ${it.end}" } ?: bar?.title(), currency)

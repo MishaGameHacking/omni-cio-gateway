@@ -970,3 +970,39 @@ def test_supported_national_rating_notations_are_kept_per_agency(agency, grade, 
                     status="active", outlook="stable", source=Source(**reviewed("fixture-" + agency, domain)))
     assert rating.level() == 9
     assert rating.bucket().startswith(agency + ":")
+
+
+
+def test_cash_is_not_a_security_concentration_but_currency_risk_remains(fixture):
+    raw = dict(fixture["dashboard"])
+    raw["accounts"] = [{"id": "owned-account-a", "name": "A", "totalValue": {"value": "200", "currency": "RUB"},
+                        "positions": [position("cash:RUB", "200", kind="cash", quantity="200")]}]
+    normalized = workspace.normalize_snapshot(fixture["user"], raw)
+    exposure = state.exposure_data(normalized, config(position=5, currency=80))
+    security = next(row for row in exposure["axes"] if row["id"] == "position")
+    currency = next(row for row in exposure["axes"] if row["id"] == "currency")
+    assert security["items"] == []
+    assert any(item["breached"] for item in currency["items"])
+
+
+def test_duplicate_notifications_do_not_interrupt_twice(fixture):
+    user_id = int(fixture["user"]["id"])
+    with transaction(backend.connect) as db:
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="70%", event_id="first")
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="70%", event_id="repeat")
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="90%", event_id="worsened")
+    events = notifications.events(user=fixture["user"])["items"]
+    assert len(events) == 2
+    assert {item["body"] for item in events} == {"70%", "90%"}
+    assert all(item["visual"]["share_percent"] is None for item in events)
+
+
+def test_material_events_remain_enabled_without_scheduled_briefs(fixture):
+    prefs = {**notifications.DEFAULTS, "briefs_enabled": False, "quiet_start": "00:00", "quiet_end": "00:00"}
+    at = int(datetime(2026, 10, 29, 12, tzinfo=timezone.utc).timestamp())
+    assert notifications.eligibility(prefs, "brief", at)[0] == "suppressed"
+    for kind in ("risk", "portfolio", "news"):
+        assert notifications.eligibility(prefs, kind, at)[0] == "pending"
+    assert notifications.eligibility({**prefs, "enabled": False}, "portfolio", at)[0] == "suppressed"
+    assert notifications.eligibility({**prefs, "critical_enabled": False}, "risk", at)[0] == "suppressed"
+

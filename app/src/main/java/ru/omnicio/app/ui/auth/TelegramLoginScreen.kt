@@ -9,6 +9,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -27,7 +28,7 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
         Scaffold(containerColor = Color.Transparent, contentWindowInsets = WindowInsets.safeDrawing) { padding ->
             Column(
                 Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-                    .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp),
+                    .verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 horizontalAlignment = Alignment.Start,
             ) {
@@ -35,18 +36,19 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    SpatialIcon("brand", Modifier.size(56.dp),
+                    SpatialIcon("brain", Modifier.size(56.dp),
                         tint = MaterialTheme.colorScheme.primary, motionAllowed = true)
                     Text("Analyst AI", style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Ваш инвестиционный аналитик", style = MaterialTheme.typography.headlineLarge,
+                    Text("Ваш портфель.\nЯсная картина.", style = MaterialTheme.typography.headlineLarge,
                         modifier = Modifier.semantics { heading() })
-                    Text("Портфель, важные изменения и основания решений — в одном месте.",
+                    Text("Стоимость, выплаты и аналитика на основе данных вашего счёта Т-Инвестиций.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                LoginBenefits()
                 SpectrumCard {
                     errorMessage?.let {
                         Text(it, color = MaterialTheme.colorScheme.error,
@@ -66,7 +68,36 @@ fun TelegramLoginScreen(loading: Boolean, errorMessage: String?, onLoginClick: (
                         }
                     } else {
                         SpectrumPrimaryButton("Войти через Telegram", onLoginClick, Modifier.fillMaxWidth())
+                        Text("Подтвердите вход в Telegram. Токен брокера подключается отдельно после входа.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                }
+            }
+        }
+    }
+}
+
+
+@Composable
+private fun LoginBenefits() {
+    val benefits = listOf(SpectrumSymbol.Portfolio to "Активы", SpectrumSymbol.Capital to "Риски",
+        SpectrumSymbol.Growth to "Стратегия")
+    if (LocalDensity.current.fontScale > 1.2f) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            benefits.forEach { (symbol, label) ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SpectrumIcon(symbol, Modifier.size(40.dp), motionAllowed = false)
+                    Text(label, style = MaterialTheme.typography.labelMedium)
+                }
+            }
+        }
+    } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            benefits.forEach { (symbol, label) ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SpectrumIcon(symbol, Modifier.size(56.dp), motionAllowed = false)
+                    Text(label, style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
