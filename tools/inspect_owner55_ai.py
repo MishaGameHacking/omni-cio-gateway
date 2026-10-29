@@ -170,13 +170,59 @@ def model_summary(payload, providers=None):
     matches = [row for row in rows if isinstance(row, dict) and row.get("model_name") == MODEL]
     report = {"expected_model": MODEL, "catalog_complete": complete,
               "matching_model_count": len(matches), "availability_verified": False,
-              "pricing_verified": False}
+              "pricing_verified": False, "selection_verified": False,
+              "selection_policy": "unique_active_nondeprecated_exact_identifier"}
     report["matching_rows"] = [model_row_summary(row, complete, providers) for row in matches]
-    if len(matches) != 1:
+    known_states = all(type(row.get("is_stopped")) is bool and type(row.get("is_deprecated")) is bool
+                       and row.get("model_type") in ("llm", "hosted-llm")
+                       and row.get("catalog_id") is not None for row in report["matching_rows"])
+    unique_ids = len({row["catalog_id"] for row in report["matching_rows"]}) == len(matches)
+    candidates = [row for row in report["matching_rows"]
+                  if row["is_stopped"] is False and row["is_deprecated"] is False]
+    report["active_matching_model_count"] = len(candidates)
+    report["all_matching_states_recognized"] = known_states
+    if not complete or not known_states or not unique_ids or len(candidates) != 1:
         return report
-    # Preserve the unique-row contract; ambiguity never selects a preferred row.
-    report.update(report["matching_rows"][0])
+    # Official get_models_v3 includes deprecated/stopped rows and requires checking
+    # these flags. A known inactive row is retained as evidence, not another route.
+    # Unknown flags/types, duplicate catalog IDs or two active rows never resolve.
+    report.update(candidates[0])
+    report["selection_verified"] = True
     return report
+
+
+def parameter_integer(value):
+    if isinstance(value, Decimal):
+        if not value.is_finite() or value != value.to_integral_value() or not 0 <= value <= 1_000_000_000:
+            return None
+        return int(value)
+    return integer(value)
+
+
+def generation_parameter_summary(params):
+    if not isinstance(params, dict):
+        return {}
+    result = {}
+    for name in ("max_tokens", "max_completion_tokens", "enable_thinking", "response_format"):
+        if name not in params:
+            continue
+        parameter = params[name]
+        if not isinstance(parameter, dict):
+            result[name] = {"schema_recognized": False}
+            continue
+        parameter_type = parameter.get("type")
+        recognized = parameter_type in ("number", "integer", "boolean", "bool", "enum", "object", "string")
+        detail = {"schema_recognized": recognized, "type": parameter_type if recognized else None}
+        if name in ("max_tokens", "max_completion_tokens"):
+            detail.update({"minimum": parameter_integer(parameter.get("min")),
+                           "maximum": parameter_integer(parameter.get("max")),
+                           "default": parameter_integer(parameter.get("default"))})
+        if name == "enable_thinking":
+            detail["default"] = parameter.get("default") if type(parameter.get("default")) is bool else None
+            choices = parameter.get("enum")
+            detail["boolean_enum"] = choices if isinstance(choices, list) and len(choices) <= 2 and all(type(value) is bool for value in choices) else None
+        result[name] = detail
+    return result
 
 
 def model_row_summary(row, complete, providers):
@@ -215,9 +261,38 @@ def model_row_summary(row, complete, providers):
                    "context_window": integer(values.get("context_window")),
                    "max_output_tokens": integer(values.get("max_output_tokens"))})
     params = row.get("params_info")
+    parameter_details = generation_parameter_summary(params)
+    report["generation_parameters"] = parameter_details
     report["documented_generation_parameters"] = sorted(set(params) & {
         "max_tokens", "max_completion_tokens", "enable_thinking", "response_format"
     }) if isinstance(params, dict) else []
+    catalog_cap = report["max_output_tokens"]
+    token_parameter = parameter_details.get("max_tokens", {})
+    parameter_cap = token_parameter.get("maximum") if token_parameter.get("type") in ("number", "integer") else None
+    minimum_tokens = token_parameter.get("minimum")
+    if parameter_cap is not None and minimum_tokens is not None and parameter_cap < minimum_tokens:
+        parameter_cap = None
+    catalog_cap_invalid = values.get("max_output_tokens") is not None and (catalog_cap is None or catalog_cap <= 0)
+    declared_caps = [value for value in (catalog_cap, parameter_cap) if value is not None and value > 0]
+    report["max_output_tokens_catalog"] = catalog_cap
+    report["max_output_tokens"] = min(declared_caps) if declared_caps and not catalog_cap_invalid else None
+    report["max_output_tokens_source"] = (
+        "invalid_catalog_limit" if catalog_cap_invalid
+        else "minimum_of_declared_catalog_and_max_tokens_limits" if len(declared_caps) == 2
+        else "parameter_values.max_output_tokens" if catalog_cap is not None and catalog_cap > 0
+        else "params_info.max_tokens.max" if parameter_cap is not None and parameter_cap > 0
+        else "not_declared")
+    # The catalog lists parameters configurable for agents, not the full gateway
+    # API. AiGatewayChatCompletionRequest.md documents response_format passthrough;
+    # Alibaba qwen-structured-output lists Qwen3.5-Flash JSON Object non-thinking.
+    report["adapter_documentation"] = {
+        "response_format_json_object_supported": True,
+        "requires_enable_thinking_false": True,
+        "requires_json_word_in_prompt": True,
+        "live_inference_verified": False,
+        "gateway_schema": "https://github.com/timeweb-cloud/sdk-python/blob/main/docs/AiGatewayChatCompletionRequest.md",
+        "provider_schema": "https://www.alibabacloud.com/help/en/model-studio/qwen-structured-output",
+    }
     tiers = row.get("price_tiers")
     tiers_valid = isinstance(tiers, list) and len(tiers) <= 32
     safe_tiers = []

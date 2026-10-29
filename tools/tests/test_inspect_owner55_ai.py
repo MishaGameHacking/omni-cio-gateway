@@ -148,7 +148,7 @@ class InspectionTests(unittest.TestCase):
         payload["models"] *= 2
         self.assertFalse(inspection.model_summary(payload)["pricing_verified"])
 
-    def test_every_duplicate_row_is_reported_without_selecting_an_active_version(self):
+    def test_known_inactive_duplicate_is_retained_and_unique_active_row_resolves(self):
         payload = catalog(version="2026-04-16")
         second = catalog(id=209, provider_id=2, type="hosted-llm", is_stopped=True,
                          version=SENSITIVE)["models"][0]
@@ -158,9 +158,10 @@ class InspectionTests(unittest.TestCase):
         providers = {"providers": [{"id": 1, "name": "Alibaba", "type": "external"},
                                     {"id": 2, "name": SENSITIVE, "type": "internal"}], "meta": {"total": 2}}
         report = inspection.model_summary(payload, providers)
-        self.assertFalse(report["pricing_verified"])
-        self.assertFalse(report["availability_verified"])
-        self.assertNotIn("catalog_id", report)
+        self.assertTrue(report["pricing_verified"])
+        self.assertTrue(report["availability_verified"])
+        self.assertTrue(report["selection_verified"])
+        self.assertEqual(report["catalog_id"], 108)
         self.assertEqual(len(report["matching_rows"]), 2)
         self.assertEqual([row["catalog_id"] for row in report["matching_rows"]], [108, 209])
         self.assertEqual(report["matching_rows"][0]["numeric_version"], "2026-04-16")
@@ -170,6 +171,8 @@ class InspectionTests(unittest.TestCase):
         self.assertEqual(report["matching_rows"][1]["provider"]["type"], "internal")
         self.assertIsNone(report["matching_rows"][1]["provider"]["name_canonical"])
         self.assertNotIn(SENSITIVE, json.dumps(report))
+        payload["models"].reverse()
+        self.assertEqual(inspection.model_summary(payload, providers)["catalog_id"], 108)
 
     def test_explicit_cache_prices_contribute_to_input_cost_ceiling(self):
         payload = catalog()
@@ -198,7 +201,47 @@ class InspectionTests(unittest.TestCase):
         self.assertIsNone(report["matching_rows"][1]["model_type"])
         self.assertIsNone(report["matching_rows"][1]["is_stopped"])
         self.assertFalse(report["availability_verified"])
+        self.assertFalse(report["selection_verified"])
         self.assertNotIn(SENSITIVE, json.dumps(report))
+
+    def test_unknown_or_duplicate_ids_never_resolve_active_selection(self):
+        payload = catalog()
+        payload["models"].append(catalog(id=209, is_stopped=None, is_deprecated=True)["models"][0])
+        payload["meta"]["total"] = 2
+        self.assertFalse(inspection.model_summary(payload)["selection_verified"])
+        payload["models"][1]["is_stopped"] = False
+        payload["models"][1]["id"] = 108
+        self.assertFalse(inspection.model_summary(payload)["selection_verified"])
+
+    def test_declared_max_tokens_bound_supplies_missing_output_cap(self):
+        payload = catalog(params_info={"max_tokens": {"type": "number", "min": 1,
+            "max": Decimal("32768.0"), "default": 2000, "description": SENSITIVE},
+            "enable_thinking": {"type": "boolean", "default": True}})
+        report = inspection.model_summary(payload)
+        self.assertEqual(report["max_output_tokens"], 32768)
+        self.assertEqual(report["max_output_tokens_source"], "params_info.max_tokens.max")
+        self.assertIsNone(report["max_output_tokens_catalog"])
+        self.assertEqual(report["generation_parameters"]["max_tokens"]["minimum"], 1)
+        self.assertTrue(report["adapter_documentation"]["response_format_json_object_supported"])
+        self.assertFalse(report["adapter_documentation"]["live_inference_verified"])
+        self.assertNotIn("response_format", report["documented_generation_parameters"])
+        self.assertNotIn(SENSITIVE, json.dumps(report))
+
+    def test_undeclared_or_inconsistent_output_bound_stays_unknown(self):
+        report = inspection.model_summary(catalog(params_info={"max_tokens": {"type": "number"}}))
+        self.assertIsNone(report["max_output_tokens"])
+        self.assertEqual(report["max_output_tokens_source"], "not_declared")
+        bad = catalog(params_info={"max_tokens": {"type": "number", "min": 4096, "max": 2048}})
+        self.assertIsNone(inspection.model_summary(bad)["max_output_tokens"])
+
+    def test_declared_catalog_and_parameter_caps_use_stricter_bound(self):
+        payload = catalog(params_info={"max_tokens": {"type": "number", "max": 32768}})
+        payload["models"][0]["parameter_values"]["max_output_tokens"] = 8000
+        report = inspection.model_summary(payload)
+        self.assertEqual(report["max_output_tokens"], 8000)
+        self.assertEqual(report["max_output_tokens_source"], "minimum_of_declared_catalog_and_max_tokens_limits")
+        payload["models"][0]["parameter_values"]["max_output_tokens"] = 0
+        self.assertIsNone(inspection.model_summary(payload)["max_output_tokens"])
 
 
 if __name__ == "__main__":

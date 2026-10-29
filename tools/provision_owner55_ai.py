@@ -1,0 +1,232 @@
+"""Create one isolated Timeweb AI key, block it, and privately stage it.
+
+This administrative operation never activates paid inference or touches existing
+AI keys. Root review and an explicit workflow gate are required before calling
+main. A creation timeout is not retried. An indeterminate SSH delivery retains
+the new key at zero provider limits for inspected recovery.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+import json
+import os
+from pathlib import Path
+import re
+import urllib.error
+import urllib.request
+
+from inspect_owner55_ai import (BASE, FINANCES, KEYS, MODELS, MODEL, DEDICATED_PREFIX,
+    MAX_BYTES, MASKED, NoRedirect, complete_collection, model_summary, uuid_text, decimal_text)
+from owner_ai_private_transport import transport_secret, PrivateTransportError, require_owner_wsl
+
+PROVISION_GATE = 'create-disabled-owner55-key-after-review'
+PREFLIGHT_CONTRACT = {'status': {'ready'}, 'server_id': int, 'existing_key_absent': bool,
+    'budget_sources_verified': bool, 'configuration_changed': bool}
+
+
+class ProvisionError(RuntimeError):
+    def __init__(self, code, *, key_id=None, retained=False):
+        super().__init__(code)
+        self.code, self.key_id, self.retained = code, key_id, retained
+
+
+def need(condition, code):
+    if not condition:
+        raise ProvisionError(code)
+
+
+def permitted_write(method, path):
+    if method == 'POST' and path == KEYS:
+        return True
+    suffix = path.removeprefix(KEYS + '/')
+    if method == 'DELETE':
+        return path.startswith(KEYS + '/') and uuid_text(suffix) is not None
+    if method == 'POST' and suffix.endswith('/entity-limits'):
+        return path.startswith(KEYS + '/') and uuid_text(suffix.removesuffix('/entity-limits')) is not None
+    return False
+
+
+class CloudAPI:
+    def __init__(self, token):
+        self._token = token
+        self._opener = urllib.request.build_opener(NoRedirect())
+
+    def request(self, method, path, body=None):
+        from inspect_owner55_ai import permitted_path
+        need((method == 'GET' and permitted_path(path)) or permitted_write(method, path), 'endpoint_not_allowlisted')
+        request = urllib.request.Request(BASE + path, method=method,
+            data=None if body is None else json.dumps(body, allow_nan=False).encode(),
+            headers={'Authorization': 'Bearer ' + self._token, 'Accept': 'application/json',
+                     'Content-Type': 'application/json'})
+        try:
+            with self._opener.open(request, timeout=30) as response:
+                expected = {'GET': 200, 'POST': 201, 'DELETE': 204}[method]
+                need(response.status == expected, 'unexpected_http_status')
+                raw = response.read(MAX_BYTES + 1)
+                need(len(raw) <= MAX_BYTES, 'response_too_large')
+            value = json.loads(raw, parse_float=Decimal) if raw else {}
+            need(isinstance(value, dict), 'invalid_response_shape')
+            return value
+        except urllib.error.HTTPError as error:
+            raise ProvisionError('cloud_http_' + str(error.code)) from None
+        except (urllib.error.URLError, OSError):
+            # No automatic retry, especially for non-idempotent key creation.
+            raise ProvisionError('cloud_outcome_unknown') from None
+        except (ValueError, TypeError):
+            raise ProvisionError('cloud_response_invalid') from None
+
+
+def keys(api):
+    rows, complete = complete_collection(api.request('GET', KEYS), 'ai_keys')
+    need(complete and all(isinstance(row, dict) for row in rows), 'key_inventory_incomplete')
+    normalized = []
+    identities = set()
+    for row in rows:
+        identity = uuid_text(row.get('id'))
+        need(identity is not None and identity not in identities
+             and isinstance(row.get('name'), str) and bool(row['name']), 'key_inventory_identity_invalid')
+        identities.add(identity)
+        normalized.append({**row, 'id': identity})
+    return normalized
+
+
+def pricing(api, now):
+    report = model_summary(api.request('GET', MODELS))
+    need(report.get('availability_verified') is True and report.get('pricing_verified') is True,
+         'current_model_prices_not_verified')
+    need(type(report.get('context_window')) is int and report['context_window'] >= 118096
+         and type(report.get('max_output_tokens')) is int and report['max_output_tokens'] >= 4000,
+         'model_context_does_not_fit_adapter_limits')
+    # params_info covers agent configuration, not every Gateway request field.
+    # Gateway AiGatewayChatCompletionRequest explicitly supports response_format;
+    # Alibaba documents JSON mode for Qwen3.5-Flash with thinking disabled.
+    need({'max_tokens', 'enable_thinking'}.issubset(
+         report.get('documented_generation_parameters', [])),
+         'adapter_generation_parameters_unverified')
+    return {'input_rub_per_million': report['maximum_input_rub_per_million'],
+            'output_rub_per_million': report['maximum_output_rub_per_million'],
+            'valid_until': (now + timedelta(days=1)).isoformat()}
+
+
+def validate_created_metadata(row, name, key_id):
+    need(isinstance(row, dict) and row.get('id') == key_id and row.get('name') == name
+         and row.get('entity_type') == 'aikey' and row.get('is_readonly') is False
+         and row.get('project_id') == 2941515 and row.get('fallback_models') == []
+         and 'expires_at' in row and row['expires_at'] is None
+         and 'entity_id' in row and row['entity_id'] is None,
+         'new_key_metadata_mismatch')
+
+
+def validate_limits(payload, key_id):
+    rows, complete = complete_collection(payload, 'ai_key_entity_limits')
+    need(complete and len(rows) == 2 and all(isinstance(row, dict) for row in rows), 'zero_limits_incomplete')
+    need({row.get('limit_type') for row in rows} == {'day', 'month'}, 'zero_limits_wrong_periods')
+    for row in rows:
+        amount = decimal_text(row.get('money_limit'))
+        need(uuid_text(row.get('id')) is not None and row.get('ai_key_id') == key_id
+             and row.get('entity_id') == key_id and row.get('entity_type') == 'aikey'
+             and 'model_id' in row and row['model_id'] is None
+             and amount is not None and Decimal(amount) == 0, 'zero_limits_not_enforced_for_all_models')
+
+
+def staged_contract(key_id):
+    return {'status': {'staged_disabled'}, 'server_id': int, 'key_id': {key_id}, 'model': {MODEL},
+        'daily_cap_rub': {'0'}, 'monthly_cap_rub': {'0'}, 'existing_key_replaced': bool,
+        'service_restarted': bool, 'inference_called': bool}
+
+
+def require_ready(receipt):
+    need(receipt == {'status': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
+                    'budget_sources_verified': True, 'configuration_changed': False}, 'remote_preflight_failed')
+
+
+def provision(api, private_transfer, operation, source_sha256, name, *, now=None):
+    need(re.fullmatch(re.escape(DEDICATED_PREFIX) + r'[A-Za-z0-9_-]{1,64}', name), 'invalid_new_key_name')
+    now = datetime.now(timezone.utc) if now is None else now
+    finances = api.request('GET', FINANCES).get('finances')
+    need(isinstance(finances, dict) and finances.get('currency') == 'RUB', 'account_currency_not_rub')
+    verified_pricing = pricing(api, now)
+    before = keys(api)
+    need(not any(isinstance(row.get('name'), str) and row['name'].startswith(DEDICATED_PREFIX) for row in before),
+         'existing_dedicated_key_requires_inspection')
+    require_ready(private_transfer(operation, {'action': 'preflight', 'source_sha256': source_sha256},
+                                   None, PREFLIGHT_CONTRACT))
+    # Repeat the inventory immediately before creation. Workflow concurrency
+    # must serialize this installer; no pre-existing key is ever regenerated.
+    need(keys(api) == before, 'key_inventory_changed_before_creation')
+    try:
+        created = api.request('POST', KEYS, {'name': name, 'project_id': 2941515,
+            'description': 'Analyst AI owner55; zero limits until reviewed activation',
+            'expire': None, 'fallback_models': []})
+    except BaseException:
+        # A failed or unreadable response cannot establish whether creation
+        # committed. Do not retry or claim that no new billable key exists.
+        raise ProvisionError('key_creation_requires_inspected_recovery', retained=None) from None
+    metadata = created.get('ai_key')
+    key_id = uuid_text(metadata.get('id')) if isinstance(metadata, dict) else None
+    if key_id is None or key_id in {row['id'] for row in before}:
+        raise ProvisionError('new_key_identity_unknown', retained=None)
+    remote_started = False
+    try:
+        validate_created_metadata(metadata, name, key_id)
+        secret = created.get('key')
+        need(isinstance(secret, str) and secret != MASKED
+             and re.fullmatch(r'sk-[A-Za-z0-9._-]{29,4093}', secret), 'new_gateway_key_masked_or_invalid')
+        path = KEYS + '/' + key_id + '/entity-limits'
+        for period in ('day', 'month'):
+            api.request('POST', path, {'entity_type': 'aikey', 'limit_type': period, 'money_limit': 0})
+        validate_limits(api.request('GET', path), key_id)
+        after = [row for row in keys(api) if row.get('id') == key_id]
+        need(len(after) == 1, 'new_key_not_visible_after_creation')
+        validate_created_metadata(after[0], name, key_id)
+        remote_started = True
+        receipt = private_transfer(operation, {'action': 'stage_disabled', 'key_id': key_id,
+            'model': MODEL, 'pricing': verified_pricing, 'source_sha256': source_sha256},
+            secret, staged_contract(key_id))
+        need(receipt == {'status': 'staged_disabled', 'server_id': 9417611, 'key_id': key_id,
+                        'model': MODEL, 'daily_cap_rub': '0', 'monthly_cap_rub': '0',
+                        'existing_key_replaced': False, 'service_restarted': False, 'inference_called': False},
+             'remote_staging_receipt_mismatch')
+        validate_limits(api.request('GET', path), key_id)
+        return {**receipt, 'provider_daily_limit_rub': '0', 'provider_30_day_limit_rub': '0',
+                'provider_fallback_disabled': True, 'runtime_activation_performed': False,
+                'account_currency_rub_confirmed': True}
+    except BaseException as error:
+        if isinstance(error, PrivateTransportError):
+            remote_started = error.operation_started
+        if not remote_started:
+            # The secret has never reached any consumer: deleting exactly the
+            # newly returned ID cannot rotate or break another application's key.
+            try:
+                api.request('DELETE', KEYS + '/' + key_id)
+                need(not any(row.get('id') == key_id for row in keys(api)), 'unused_new_key_deletion_unverified')
+            except BaseException:
+                raise ProvisionError('new_unused_key_cleanup_failed', key_id=key_id, retained=True) from None
+            raise ProvisionError('new_unused_key_removed_after_failure', key_id=key_id) from None
+        raise ProvisionError('private_delivery_requires_inspected_recovery', key_id=key_id, retained=True) from None
+
+
+def main():
+    require_owner_wsl()
+    need(os.environ.get('OWNER_AI_PROVISION_REVIEW') == PROVISION_GATE, 'reviewed_provisioning_gate_required')
+    token = os.environ.get('TIMEWEB_CLOUD_TOKEN', '').strip()
+    need(token and len(token) <= 8192 and not any(c.isspace() for c in token), 'protected_cloud_credential_required')
+    run_id = os.environ.get('GITHUB_RUN_ID', '')
+    need(re.fullmatch('[0-9]{8,20}', run_id), 'invalid_run_identity')
+    source_sha256 = json.loads(os.environ['OWNER_AI_EXPECTED_BUDGET_SOURCES'])
+    receipt = provision(CloudAPI(token), transport_secret,
+        Path('deploy/stage_owner55_ai.py').read_text(), source_sha256, DEDICATED_PREFIX + run_id)
+    print(json.dumps(receipt), flush=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except ProvisionError as error:
+        print(json.dumps({'status': 'not_activated', 'reason': error.code,
+                          'new_key_id': error.key_id, 'new_key_retained': error.retained}), flush=True)
+        raise SystemExit(1) from None
+    except BaseException:
+        print(json.dumps({'status': 'not_activated', 'reason': 'unexpected_administrative_failure'}), flush=True)
+        raise SystemExit(1) from None
