@@ -2,11 +2,11 @@
 from contextlib import closing
 
 try:
-    from .credit_evidence import MAXIMUM_CREDIT_LEVEL
+    from .credit_evidence import MAXIMUM_CREDIT_LEVEL, BROKER_RATINGS_EMPTY
     from . import app as backend, research_store, volume_market as market
     from .volume_contract import digest
 except ImportError:
-    from credit_evidence import MAXIMUM_CREDIT_LEVEL
+    from credit_evidence import MAXIMUM_CREDIT_LEVEL, BROKER_RATINGS_EMPTY
     import app as backend
     import research_store
     import volume_market as market
@@ -25,6 +25,8 @@ def _summary(value: dict | None) -> dict:
 
 
 def critical(value: dict | None, previous: dict | None = None) -> bool:
+    if BROKER_RATINGS_EMPTY in _summary(value)["warnings"]:
+        return True  # Missing current coverage is not a numerical downgrade.
     before = {_identity(row): row for row in _summary(previous)["items"]}
     for row in _summary(value)["items"]:
         level = row.get("level_within_agency")
@@ -74,7 +76,8 @@ def record_changes_in(db, user_id: int, snapshot: dict, previous: dict | None) -
         new_sources = (after or {}).get("sources", [])
         old_sources = (before or {}).get("sources", [])
         ids = {r["id"] for r in new_sources}
-        stale = not after or ids == {r["id"] for r in old_sources} and not _summary(after)["items"]
+        stale = (not after or BROKER_RATINGS_EMPTY in _summary(after)["warnings"]
+                 or ids == {r["id"] for r in old_sources} and not _summary(after)["items"])
         event = state.event(db, user_id, "risk_rating_data_stale" if stale else "risk_rating_changed", snapshot["snapshot_id"],
             {"title": "Основание кредитного риска требует обновления" if stale else "Изменилось подтверждённое основание кредитного риска",
              "instrument_uids": [uid], "source_ids": sorted(ids | {r["id"] for r in old_sources}),

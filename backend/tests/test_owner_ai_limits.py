@@ -53,8 +53,9 @@ def test_global_ceiling_is_shared_between_users_and_routes(ledger):
 
 
 def test_lower_operator_daily_cap_is_preserved(ledger):
+    daily_cap = micro_rub('20')
     with pytest.raises(BudgetDenied, match='ai_user_budget_exhausted'):
-        reserve(ledger, 'too-much', '21', user_cap=micro_rub('20'))
+        reserve(ledger, 'too-much', '21', user_cap=daily_cap)
 
 
 @pytest.mark.parametrize('month_caps', [{}, {
@@ -69,10 +70,11 @@ def test_monthly_cap_applies_when_missing_or_oversized_in_a_31_day_month(ledger,
 
 
 def test_lower_monthly_cap_is_preserved(ledger):
-    reserve(ledger, 'first', '100', user_month_cap=micro_rub('150'))
+    monthly_cap = micro_rub('150')
+    reserve(ledger, 'first', '100', user_month_cap=monthly_cap)
     settle(ledger, 'first', '100')
     with pytest.raises(BudgetDenied, match='ai_user_monthly_budget_exhausted'):
-        reserve(ledger, 'second', '51', day=2, user_month_cap=micro_rub('150'))
+        reserve(ledger, 'second', '51', day=2, user_month_cap=monthly_cap)
 
 
 def test_uncertain_charge_is_not_erased_by_month_rollover(ledger):

@@ -1,6 +1,6 @@
 """Password enrollment, persistence, replay and concurrent session boundaries."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+from contextlib import closing, contextmanager
 import hashlib
 from pathlib import Path
 import sqlite3
@@ -145,6 +145,80 @@ class OwnerPasswordTests(unittest.TestCase):
         self.store.login(PASSWORD)
         with closing(self.connect()) as db:
             self.assertIsNone(db.execute("SELECT * FROM owner_password_attempts").fetchone())
+
+    def lock_anonymous_login(self):
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.new_store().login, "incorrect")
+
+    def test_anonymous_failures_cannot_block_valid_owner_session_enrollment(self):
+        auth = self.existing_owner()
+        self.lock_anonymous_login()
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.new_store().setup, PASSWORD)
+        self.assertTrue(self.store.setup(PASSWORD, authorization=auth)["access_token"])
+
+    def test_anonymous_failures_cannot_block_valid_bootstrap_enrollment(self):
+        self.lock_anonymous_login()
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.new_store().setup, PASSWORD, bootstrap="wrong")
+        self.assertTrue(self.store.setup(PASSWORD, bootstrap=BOOTSTRAP)["access_token"])
+
+    def test_protected_login_recovers_from_anonymous_lock_but_still_checks_password(self):
+        session = self.enroll()
+        self.lock_anonymous_login()
+        auth = "Bearer " + session["access_token"]
+        self.assert_error("owner_auth_throttled", self.store.login, PASSWORD, authorization="Bearer unknown")
+        self.assert_error("owner_credentials_invalid", self.store.login, "incorrect", authorization=auth)
+        self.assertTrue(self.new_store().login(PASSWORD, authorization=auth)["access_token"])
+
+    def test_protected_login_has_its_own_persistent_guess_limit(self):
+        session = self.enroll()
+        auth = "Bearer " + session["access_token"]
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.new_store().login, "incorrect", authorization=auth)
+        self.assert_error("owner_auth_throttled", self.new_store().login, PASSWORD, authorization=auth)
+
+    def test_expired_session_cannot_bypass_anonymous_login_lock(self):
+        session = self.enroll()
+        with closing(self.connect()) as db:
+            db.execute("UPDATE sessions SET expires_at=?", (self.now - 1,))
+            db.commit()
+        self.lock_anonymous_login()
+        self.assert_error("owner_auth_throttled", self.store.login, PASSWORD,
+                          authorization="Bearer " + session["access_token"])
+
+    def test_anonymous_failures_cannot_lock_password_change_for_owner_session(self):
+        session = self.enroll()
+        self.lock_anonymous_login()
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.store.change, PASSWORD, "new owner password", authorization="Bearer unknown")
+        result = self.store.change(PASSWORD, "new owner password",
+                                    authorization="Bearer " + session["access_token"])
+        self.assertTrue(result["access_token"])
+
+    def test_password_change_throttles_wrong_password_on_the_valid_session(self):
+        session = self.enroll()
+        auth = "Bearer " + session["access_token"]
+        for attempt in range(MAX_FAILURES):
+            code = "owner_auth_throttled" if attempt == MAX_FAILURES - 1 else "owner_credentials_invalid"
+            self.assert_error(code, self.new_store().change, "incorrect", "new owner password", authorization=auth)
+        self.assert_error("owner_auth_throttled", self.new_store().change, PASSWORD, "new owner password", authorization=auth)
+
+    def test_session_expiry_is_checked_after_acquiring_database_lock(self):
+        auth = self.existing_owner()
+        original = self.store._transaction
+        @contextmanager
+        def delayed_transaction():
+            with original() as db:
+                self.now += 600
+                yield db
+        with patch.object(self.store, "_transaction", delayed_transaction):
+            self.assert_error("owner_credentials_invalid", self.store.setup, PASSWORD, authorization=auth)
 
     def test_weak_or_oversized_password_is_not_accepted(self):
         for password in ("1234", "         ", "a" * 129, "a\n" * 10, "а" * 65):

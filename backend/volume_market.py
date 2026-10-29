@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 try:
     from . import app as backend, portfolio_details as details, research_store
-    from .credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, EvidenceError
+    from .credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, BROKER_RATINGS_EMPTY, EvidenceError
     from .investment_links import instrument_link
     from .volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
@@ -21,7 +21,7 @@ except ImportError:
     import app as backend
     import portfolio_details as details
     import research_store
-    from credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, EvidenceError
+    from credit_evidence import Rating, Source, credit_assessment, broker_bond_ratings, BROKER_RATINGS_EMPTY, EvidenceError
     from investment_links import instrument_link
     from volume_contract import (HTTP_ERRORS, SCHEMA_VERSION, date_range, decimal, digest,
         error_code, money, now_iso, require_id, safe_section, section, source,
@@ -279,21 +279,29 @@ def rating_section(uid: str, meta: dict) -> dict:
         assessment = credit_assessment(ratings, issuer_id=issuer, instrument_id=uid,
                                        at=at, bond=instrument_kind(meta) == 'bond')
         assessment['warnings'] = sorted(set(assessment['warnings'] + broker_warnings))
-    except (ValueError, TypeError, KeyError, EvidenceError):
+    except (ValueError, TypeError, KeyError):
         return section({'items': [], 'history': [], 'warnings': ['Проверенные рейтинги недоступны.']},
                        state='unavailable', reason='rating_evidence_unavailable')
+    reason = None
+    if assessment['warnings']:
+        reason = 'rating_evidence_incomplete_or_conflicting'
+    elif not assessment['has_required_rating']:
+        reason = 'verified_rating_required'
+    refs = [reviewed_source(row['source'],
+            provider='T-Invest / ' + row['agency'] if row.get('evidence_basis') == 't_invest_bond_rating' else row['agency'],
+            method='broker_reported_credit_rating' if row.get('evidence_basis') == 't_invest_bond_rating' else 'credit_rating',
+            subject=row['subject_id']) for row in history]
+    if BROKER_RATINGS_EMPTY in broker_warnings:
+        # Keep the dated negative observation as evidence for the warning too.
+        refs.append(source('BondBy', uid, meta['_source']['observed_at'],
+                           url=DOCS + 'instruments-service-bond-by', ttl=86400))
     return section({'items': assessment['ratings'], 'history': history, 'warnings': assessment['warnings'],
                     'issuer_id': issuer, 'has_required_rating': assessment['has_required_rating'],
                     'minimum_grade': assessment['minimum_grade'],
                     'within_rating_floor': assessment['within_rating_floor'] and not broker_warnings,
                     'scales_are_not_averaged': True},
                    state='available' if assessment['has_required_rating'] and not assessment['warnings'] else 'partial',
-                   reason=('rating_evidence_incomplete_or_conflicting' if assessment['warnings']
-                           else None if assessment['has_required_rating'] else 'verified_rating_required'),
-                   as_of=at.isoformat(), sources=[reviewed_source(row['source'],
-                       provider='T-Invest / ' + row['agency'] if row.get('evidence_basis') == 't_invest_bond_rating' else row['agency'],
-                       method='broker_reported_credit_rating' if row.get('evidence_basis') == 't_invest_bond_rating' else 'credit_rating',
-                       subject=row['subject_id']) for row in history])
+                   reason=reason, as_of=at.isoformat(), sources=refs)
 
 
 FUNDAMENTAL_LABELS = {'revenueTtm': ('Выручка за 12 месяцев', 'currency'),

@@ -91,6 +91,7 @@ MAXIMUM_CREDIT_LEVEL = LEVELS.index(MINIMUM_CREDIT_GRADE)
 BROKER_RATING_URL = 'https://developer.tbank.ru/invest/api/instruments-service-bond-by'
 BROKER_RATING_MAX_AGE = timedelta(days=366)
 BROKER_RATING_OBSERVATION_TTL = timedelta(hours=24)
+BROKER_RATINGS_EMPTY = 'broker_reports_no_current_ratings'
 AGENCY_ALIASES = {
     'acra': 'ACRA', 'акра': 'ACRA',
     'аналитическое кредитное рейтинговое агентство': 'ACRA',
@@ -254,13 +255,18 @@ def broker_bond_ratings(meta: dict, *, instrument_id: str, observed_at: str,
         return [], ['broker_rating_observation_invalid']
     if not observed <= at < observed + BROKER_RATING_OBSERVATION_TTL:
         return [], ['broker_rating_observation_stale_or_future']
+    if not meta['ratings']:
+        # An explicit empty current observation is adverse missing evidence,
+        # unlike a legacy response which does not contain the field at all.
+        # Retain older records for history, but never let them approve a check.
+        return [], [BROKER_RATINGS_EMPTY]
     ratings, errors = [], []
     if len(meta['ratings']) > 100:
         return [], ['broker_rating_response_too_large']
     for row in meta['ratings']:
         try:
             ratings.append(_broker_bond_rating(row, instrument_id, observed, at))
-        except (EvidenceError, TypeError, ValueError, OverflowError):
+        except (TypeError, ValueError, OverflowError):
             errors.append('broker_rating_unrecognized_ambiguous_or_stale')
     return ratings, sorted(set(errors))
 

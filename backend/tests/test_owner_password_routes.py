@@ -153,6 +153,18 @@ class OwnerPasswordRouteTests(unittest.TestCase):
         with closing(self.connect()) as db:
             self.assertIsNone(db.execute("SELECT 1 FROM sessions WHERE token_hash=?", (token_hash(session["access_token"]),)).fetchone())
 
+    def test_registered_owner_bearer_protects_login_from_anonymous_lockout(self):
+        session = self.setup_password().json()
+        for _ in range(5):
+            self.client.post("/auth/owner/login", json={"password": "incorrect"})
+        response = self.client.post("/auth/owner/login", json={"password": PASSWORD})
+        self.assertEqual(response.status_code, 429)
+        auth = {"Authorization": "Bearer " + session["access_token"]}
+        response = self.client.post("/auth/owner/login", json={"password": "incorrect"}, headers=auth)
+        self.assertEqual(response.status_code, 401)
+        response = self.client.post("/auth/owner/login", json={"password": PASSWORD}, headers=auth)
+        self.assertEqual(response.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -61,7 +61,6 @@ jobs:
           retention-days: 7
 
   verify-client:
-    if: contains(github.event.head_commit.message, '[client-check]')
     needs: verify
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 190

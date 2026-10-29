@@ -17,7 +17,7 @@ MIN_PASSWORD_LENGTH = 10
 MAX_PASSWORD_BYTES = 128
 MAX_FAILURES = 5
 LOCK_SECONDS = 15 * 60
-PASSWORD_SCHEME = "scrypt-n32768-r8-p3-v1"
+SCRYPT_SCHEME = "scrypt-n32768-r8-p3-v1"
 
 
 class OwnerAuthError(Exception):
@@ -64,6 +64,9 @@ def initialize(connect: Callable) -> None:
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1),
                 failures INTEGER NOT NULL, window_start INTEGER NOT NULL,
                 locked_until INTEGER NOT NULL)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS owner_password_proof_attempts (
+                bucket TEXT PRIMARY KEY, failures INTEGER NOT NULL,
+                window_start INTEGER NOT NULL, locked_until INTEGER NOT NULL)""")
             db.execute("""CREATE TABLE IF NOT EXISTS owner_password_sessions (
                 token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
                 created_at INTEGER NOT NULL)""")
@@ -99,14 +102,11 @@ class OwnerPasswordStore:
 
     @contextmanager
     def _transaction(self):
-        with closing(self.connect()) as db:
-            try:
-                db.execute("BEGIN IMMEDIATE")
-                yield db
-                db.commit()
-            except BaseException:
-                db.rollback()
-                raise
+        # SQLite commits normal exit, rolls back errors (including failed
+        # commits), and closing releases the connection on every path.
+        with closing(self.connect()) as db, db:
+            db.execute("BEGIN IMMEDIATE")
+            yield db
 
     def configured(self) -> bool:
         with closing(self.connect()) as db:
@@ -127,19 +127,27 @@ class OwnerPasswordStore:
         return value.strip() or "Android"
 
     @staticmethod
-    def _check_throttle(db, now: int) -> None:
-        row = db.execute("SELECT locked_until FROM owner_password_attempts WHERE singleton=1").fetchone()
-        if row and int(row[0]) > now:
-            raise OwnerAuthError("owner_auth_throttled", 429, int(row[0]) - now)
+    def _attempts(db, bucket: str):
+        if bucket == "login":
+            return db.execute("SELECT failures,window_start,locked_until FROM owner_password_attempts WHERE singleton=1").fetchone()
+        return db.execute("SELECT failures,window_start,locked_until FROM owner_password_proof_attempts WHERE bucket=?", (bucket,)).fetchone()
 
     @staticmethod
-    def _failed(db, now: int) -> None:
-        row = db.execute("SELECT failures,window_start FROM owner_password_attempts WHERE singleton=1").fetchone()
+    def _check_throttle(db, now: int, bucket: str = "login") -> None:
+        row = OwnerPasswordStore._attempts(db, bucket)
+        if row and int(row[2]) > now:
+            raise OwnerAuthError("owner_auth_throttled", 429, int(row[2]) - now)
+
+    @staticmethod
+    def _failed(db, now: int, bucket: str = "login") -> None:
+        row = OwnerPasswordStore._attempts(db, bucket)
         failures = int(row[0]) + 1 if row and now - int(row[1]) < LOCK_SECONDS else 1
         started = int(row[1]) if row and now - int(row[1]) < LOCK_SECONDS else now
         locked = now + LOCK_SECONDS if failures >= MAX_FAILURES else 0
-        db.execute("INSERT OR REPLACE INTO owner_password_attempts VALUES (1,?,?,?)",
-                   (failures, started, locked))
+        if bucket == "login":
+            db.execute("INSERT OR REPLACE INTO owner_password_attempts VALUES (1,?,?,?)", (failures, started, locked))
+        else:
+            db.execute("INSERT OR REPLACE INTO owner_password_proof_attempts VALUES (?,?,?,?)", (bucket, failures, started, locked))
         # An authentication denial must survive rollback of its HTTP request.
         # No other mutations precede this function in any authentication flow.
         db.commit()
@@ -203,6 +211,7 @@ class OwnerPasswordStore:
         db.execute("INSERT INTO workspace_session_devices VALUES (?,?,?,?,?)",
                    (token_hash, device_id, device_name, now, now))
         db.execute("DELETE FROM owner_password_attempts")
+        db.execute("DELETE FROM owner_password_proof_attempts")
         return {"access_token": session, "expires_in": self.session_ttl, "device_id": device_id,
                 "user": {"telegram_id": str(user["telegram_id"] or user["telegram_sub"]),
                          "name": user["name"], "username": user["username"], "picture": user["picture"]}}
@@ -210,35 +219,40 @@ class OwnerPasswordStore:
     def setup(self, password: str, *, authorization: str | None = None,
               bootstrap: str | None = None, device_name: str | None = None) -> dict:
         value, device = password_bytes(password, new=True), self._device_name(device_name)
-        now = int(self.clock())
         with self._transaction() as db:
-            self._check_throttle(db, now)
+            now = int(self.clock())
             if db.execute("SELECT 1 FROM owner_password_credentials").fetchone():
                 raise OwnerAuthError("owner_password_already_configured", 409)
             user = self._session_owner(db, authorization, now)
             if user is None:
                 if not self._bootstrap_valid(bootstrap):
-                    self._failed(db, now)
+                    self._check_throttle(db, now, "anonymous-setup")
+                    self._failed(db, now, "anonymous-setup")
                 user = self._bootstrap_owner(db, now)
             salt = secrets.token_bytes(16)
             db.execute("INSERT INTO owner_password_credentials VALUES (1,?,?,?,?,?,?)",
-                       (int(user["id"]), salt, _derive(value, salt), PASSWORD_SCHEME, now, now))
+                       (int(user["id"]), salt, _derive(value, salt), SCRYPT_SCHEME, now, now))
             self._clear_sessions(db, int(user["id"]))
             return self._grant(db, user, device, now)
 
     @staticmethod
     def _matches(row, value: bytes) -> bool:
-        return bool(row and row["scheme"] == PASSWORD_SCHEME
+        return bool(row and row["scheme"] == SCRYPT_SCHEME
                     and hmac.compare_digest(_derive(value, row["salt"]), row["password_hash"]))
 
-    def login(self, password: str, *, device_name: str | None = None) -> dict:
+    def login(self, password: str, *, device_name: str | None = None,
+              authorization: str | None = None) -> dict:
         value, device = password_bytes(password), self._device_name(device_name)
-        now = int(self.clock())
         with self._transaction() as db:
-            self._check_throttle(db, now)
+            now = int(self.clock())
+            known_owner = self._session_owner(db, authorization, now)
+            bucket = "login"
+            if known_owner is not None:
+                bucket = "login-session:" + _hash_token(authorization[7:].strip())
+            self._check_throttle(db, now, bucket)
             row = db.execute("SELECT * FROM owner_password_credentials WHERE singleton=1").fetchone()
             if not self._matches(row, value):
-                self._failed(db, now)
+                self._failed(db, now, bucket)
             user = self._owner(db)
             if int(row["user_id"]) != int(user["id"]):
                 raise OwnerAuthError("owner_installation_not_ready", 503)
@@ -247,13 +261,20 @@ class OwnerPasswordStore:
     def change(self, current_password: str, new_password: str, *,
                authorization: str | None, device_name: str | None = None) -> dict:
         old_value, new_value = password_bytes(current_password), password_bytes(new_password, new=True)
-        device, now = self._device_name(device_name), int(self.clock())
+        device = self._device_name(device_name)
         with self._transaction() as db:
-            self._check_throttle(db, now)
+            now = int(self.clock())
             user = self._session_owner(db, authorization, now)
+            if user is None:
+                self._check_throttle(db, now, "anonymous-change")
+                self._failed(db, now, "anonymous-change")
+            # Only possession of a currently valid, owner-bound session selects
+            # this bucket. Random Authorization headers cannot lock its owner.
+            bucket = "change:" + _hash_token(authorization[7:].strip())
+            self._check_throttle(db, now, bucket)
             row = db.execute("SELECT * FROM owner_password_credentials WHERE singleton=1").fetchone()
-            if user is None or not self._matches(row, old_value):
-                self._failed(db, now)
+            if not self._matches(row, old_value):
+                self._failed(db, now, bucket)
             if int(row["user_id"]) != int(user["id"]):
                 raise OwnerAuthError("owner_installation_not_ready", 503)
             salt = secrets.token_bytes(16)

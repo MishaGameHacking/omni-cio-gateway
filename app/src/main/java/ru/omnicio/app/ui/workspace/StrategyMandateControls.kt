@@ -81,12 +81,7 @@ internal fun validPortfolioMandate(value: JSONObject): Boolean {
     if (numbers.any { it < BigDecimal.ZERO || it > BigDecimal(100) }) return false
     val bonds = numbers[1]; val shares = numbers[2]
     if ((bonds + shares).compareTo(BigDecimal(100)) != 0) return false
-    when (value.optString("asset_mode")) {
-        "bonds" -> if (bonds.compareTo(BigDecimal(100)) != 0 || shares.signum() != 0) return false
-        "shares" -> if (shares.compareTo(BigDecimal(100)) != 0 || bonds.signum() != 0) return false
-        "mixed" -> if (bonds.signum() <= 0 || shares.signum() <= 0) return false
-        else -> return false
-    }
+    if (!mandateAssetWeightsMatch(value.optString("asset_mode"), bonds, shares)) return false
     val rating = value.opt("minimum_rating_level") as? Int ?: return false
     val cooldown = value.opt("rebalance_cooldown_days") as? Int ?: return false
     val turnoverWindow = value.opt("turnover_window_days") as? Int ?: return false
@@ -94,6 +89,13 @@ internal fun validPortfolioMandate(value: JSONObject): Boolean {
     if (value.opt("reinvest_coupons") !is Boolean || value.opt("reinvest_dividends") !is Boolean) return false
     val sessions = value.optJSONArray("allowed_sessions") ?: return false
     return sessions.length() == 1 && sessions.optString(0) == "main"
+}
+
+private fun mandateAssetWeightsMatch(mode: String, bonds: BigDecimal, shares: BigDecimal): Boolean = when (mode) {
+    "bonds" -> bonds.compareTo(BigDecimal(100)) == 0 && shares.signum() == 0
+    "shares" -> shares.compareTo(BigDecimal(100)) == 0 && bonds.signum() == 0
+    "mixed" -> bonds.signum() > 0 && shares.signum() > 0
+    else -> false
 }
 
 @Composable

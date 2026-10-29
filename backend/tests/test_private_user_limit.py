@@ -157,20 +157,58 @@ class PrivateInstallationContractTests(unittest.TestCase):
             for token in forbidden:
                 self.assertNotIn(token, lowered, f"{token} unexpectedly present in {path}")
 
-    def test_android_explains_when_the_private_installation_is_full(self) -> None:
+    def test_android_password_entry_keeps_the_prebound_single_owner_boundary(self) -> None:
+        from backend.owner_access import DENIED, OwnerIdentity, bind_owner
+        from backend.owner_password import OwnerAuthError, OwnerPasswordStore, initialize
+        from backend.tests.test_owner_password import create_schema
+
         activity = (
-            self.root
-            / "app"
-            / "src"
-            / "main"
-            / "java"
-            / "ru"
-            / "omnicio"
-            / "app"
+            self.root / "app" / "src" / "main" / "java" / "ru" / "omnicio" / "app"
             / "MainActivity.kt"
         ).read_text(encoding="utf-8")
-        self.assertIn('"private_access_full"', activity)
-        self.assertIn("ограничен пятью аккаунтами", activity)
+        self.assertIn("OwnerAccessScreen(", activity)
+        self.assertIn("OwnerDeviceUnlock(", activity)
+        self.assertNotIn("TelegramLoginScreen(", activity)
+        self.assertNotIn("exchangeTelegramCode(", activity)
+
+        # The new entry screen must not turn this private installation into
+        # first-visitor signup: only the server-bound owner may be created.
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "owner-password.db"
+
+            def connect():
+                db = sqlite3.connect(database)
+                db.row_factory = sqlite3.Row
+                return db
+
+            create_schema(connect)
+            identity = OwnerIdentity("prebound-private-owner")
+            bind_owner(connect, identity)
+            initialize(connect)
+            bind_owner(connect, identity)
+            bootstrap = "synthetic-private-installation-bootstrap-0123456789"
+            store = OwnerPasswordStore(connect, session_ttl=600,
+                                       bootstrap_secret=lambda: bootstrap)
+            password = "synthetic owner password"
+            with self.assertRaises(OwnerAuthError) as denied:
+                store.setup(password)
+            self.assertEqual(denied.exception.status, 401)
+            with closing(connect()) as db:
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM users").fetchone()[0], 0)
+
+            session = store.setup(password, bootstrap=bootstrap)
+            self.assertTrue(session["access_token"])
+            self.assertEqual(store.login(password)["user"]["telegram_id"], identity.subject)
+            with closing(connect()) as db:
+                self.assertEqual(
+                    [row[0] for row in db.execute("SELECT telegram_sub FROM users")],
+                    [identity.subject],
+                )
+                with self.assertRaisesRegex(sqlite3.IntegrityError, DENIED):
+                    db.execute(
+                        "INSERT INTO users(telegram_sub,created_at,updated_at) VALUES (?,1,1)",
+                        ("unbound-second-owner",),
+                    )
 
     def test_owner_rules_record_closed_free_installation(self) -> None:
         rules = (self.root / "AGENTS.md").read_text(encoding="utf-8")
@@ -187,3 +225,4 @@ class PrivateInstallationContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

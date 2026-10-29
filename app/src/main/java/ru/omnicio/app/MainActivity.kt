@@ -44,6 +44,8 @@ import ru.omnicio.app.data.backend.AuthSessionStore
 import ru.omnicio.app.data.backend.BackendConfig
 import ru.omnicio.app.data.backend.BackendResult
 import ru.omnicio.app.data.backend.SessionTransitions
+import ru.omnicio.app.data.backend.OwnerSessionAccess
+import ru.omnicio.app.data.backend.restoreOwnerSessionAccess
 import ru.omnicio.app.data.market.optionalText
 import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
@@ -65,7 +67,9 @@ import ru.omnicio.app.ui.analysis.PulseScreen
 import ru.omnicio.app.ui.auth.OwnerAccessScreen
 import ru.omnicio.app.ui.auth.OwnerDeviceUnlock
 import ru.omnicio.app.ui.auth.rememberOwnerAccessLifecycle
+import ru.omnicio.app.ui.auth.OwnerAccessGate
 import ru.omnicio.app.data.backend.AnalystSession
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import ru.omnicio.app.ui.education.EducationScreen
 import ru.omnicio.app.ui.home.HomeScreen
@@ -103,15 +107,105 @@ private fun nextBackStack(current: AppScreen, destination: AppScreen, history: L
     }
 }
 
+private fun savedScreenName(saved: JSONObject): String = saved.optString("screen")
+    .takeIf { name -> AppScreen.entries.any { it.name == name } } ?: AppScreen.Home.name
+
+private fun savedNavigationNames(saved: JSONObject, key: String): ArrayList<String> {
+    val values = saved.optJSONArray(key) ?: return arrayListOf()
+    return ArrayList((0 until values.length()).map { values.optString(it) }
+        .filter { name -> AppScreen.entries.any { it.name == name } })
+}
+
+private fun endOwnerSession(context: android.content.Context, workspaceStore: EncryptedWorkspaceStore,
+    sessionStore: AuthSessionStore, userId: String?, clearSnapshots: Boolean = false) {
+    val appContext = context.applicationContext
+    SessionTransitions.submit {
+        userId?.let { workspaceStore.deactivateUser(it) }
+        sessionStore.clear()
+        if (clearSnapshots && userId != null) {
+            OfflinePortfolioStore(appContext).clearSnapshots(userId)
+            workspaceStore.remove(userId, "navigation")
+            workspaceStore.remove(userId, "navigation_detail")
+        }
+    }
+    ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
+}
+
 private sealed interface AuthUiState {
     data class Loading(val stage: String = "Проверяем сохранённый сеанс…") : AuthUiState
-    data class SignedOut(val errorMessage: String? = null) : AuthUiState
+    data class SignedOut(val errorMessage: String? = null, val validatedAccessToken: String? = null) : AuthUiState
     data object Locked : AuthUiState
     data class Migration(val accessToken: String) : AuthUiState
     data class SignedIn(
         val accessToken: String,
         val user: AnalystUser,
     ) : AuthUiState
+}
+
+private class OwnerAuthentication(
+    private val current: MutableState<AuthUiState>,
+    private val backend: AnalystBackendClient,
+    private val sessionStore: AuthSessionStore,
+    private val context: android.content.Context,
+    private val scope: CoroutineScope,
+    val gate: OwnerAccessGate,
+) {
+    val state: AuthUiState get() = current.value
+
+    suspend fun checkSavedAccess() {
+        val ticket = gate.begin() ?: return
+        val token = withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
+        if (gate.complete(ticket)) current.value = if (token == null) AuthUiState.SignedOut() else AuthUiState.Locked
+    }
+
+    fun unlock() = restore(passwordRequested = false)
+
+    // Keep a valid pre-password session available for enrollment, without
+    // granting portfolio access when the owner chose password authentication.
+    fun usePassword() = restore(passwordRequested = true)
+
+    private fun restore(passwordRequested: Boolean) {
+        val ticket = gate.begin() ?: return
+        current.value = AuthUiState.Loading()
+        scope.launch {
+            val restored = restoreAnalystSession(backend, sessionStore, context, passwordRequested)
+            if (gate.complete(ticket)) current.value = restored
+        }
+    }
+
+    fun sessionReady(session: AnalystSession, requestTicket: Long) {
+        if (!gate.complete(requestTicket)) return
+        val persistenceTicket = gate.begin() ?: return
+        current.value = AuthUiState.Loading("Сохраняем личный доступ…")
+        scope.launch {
+            val saved = persistOwnerSession(sessionStore, context, session)
+            if (gate.complete(persistenceTicket)) current.value = saved
+        }
+    }
+
+    fun signedOut(message: String? = null) {
+        gate.begin() // Invalidate any older in-flight response before closing access.
+        current.value = AuthUiState.SignedOut(message)
+    }
+}
+
+@Composable
+private fun rememberOwnerAuthentication(backend: AnalystBackendClient, sessionStore: AuthSessionStore): OwnerAuthentication {
+    val context = LocalContext.current.applicationContext
+    val state = remember { mutableStateOf<AuthUiState>(AuthUiState.Loading()) }
+    val scope = rememberCoroutineScope()
+    val lifecycle = rememberOwnerAccessLifecycle { state.value = AuthUiState.Locked }
+    val authentication = remember(backend, sessionStore, context, scope, lifecycle.gate) {
+        OwnerAuthentication(state, backend, sessionStore, context, scope, lifecycle.gate)
+    }
+    var initialAccessChecked by remember { mutableStateOf(false) }
+    LaunchedEffect(lifecycle.foreground) {
+        if (lifecycle.foreground && !initialAccessChecked) {
+            initialAccessChecked = true
+            authentication.checkSavedAccess()
+        }
+    }
+    return authentication
 }
 
 class MainActivity : ComponentActivity() {
@@ -172,11 +266,8 @@ private fun AnalystAiApp(
     val legacyTInvestStore = remember(context) { TInvestTokenStore(context) }
     val backend = remember { AnalystBackendClient() }
 
-    var authState by remember { mutableStateOf<AuthUiState>(AuthUiState.Loading()) }
-    val authScope = rememberCoroutineScope()
-    val accessLifecycle = rememberOwnerAccessLifecycle { authState = AuthUiState.Locked }
-    val accessGate = accessLifecycle.gate
-    var initialAccessChecked by remember { mutableStateOf(false) }
+    val authentication = rememberOwnerAuthentication(backend, sessionStore)
+    val authState = authentication.state
     var screenName by rememberSaveable { mutableStateOf(AppScreen.Home.name) }
     var backStack by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     var backProgress by remember { mutableFloatStateOf(0f) }
@@ -205,37 +296,6 @@ private fun AnalystAiApp(
         mutableStateOf(initialScreenshotsBlocked)
     }
 
-    LaunchedEffect(accessLifecycle.foreground) {
-        if (!accessLifecycle.foreground || initialAccessChecked) return@LaunchedEffect
-        initialAccessChecked = true
-        val ticket = accessGate.begin() ?: return@LaunchedEffect
-        val stored = withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
-        if (accessGate.complete(ticket))
-            authState = if (stored == null) AuthUiState.SignedOut() else AuthUiState.Locked
-    }
-    val unlock: () -> Unit = {
-        val ticket = accessGate.begin()
-        if (ticket != null) {
-            authState = AuthUiState.Loading()
-            authScope.launch {
-                val restored = restoreAnalystSession(backend, sessionStore, context)
-                if (accessGate.complete(ticket)) authState = restored
-            }
-        }
-    }
-    val ownerSessionReady: (AnalystSession, Long) -> Unit = { session, requestTicket ->
-        if (accessGate.complete(requestTicket)) {
-            val persistenceTicket = accessGate.begin()
-            if (persistenceTicket != null) {
-                authState = AuthUiState.Loading("Сохраняем личный доступ…")
-                authScope.launch {
-                    val saved = persistOwnerSession(sessionStore, context, session)
-                    if (accessGate.complete(persistenceTicket)) authState = saved
-                }
-            }
-        }
-    }
-
     val signedIn = authState as? AuthUiState.SignedIn
     val appForeground = workspaceForeground()
     LaunchedEffect(signedIn?.accessToken, appForeground) {
@@ -253,10 +313,9 @@ private fun AnalystAiApp(
     var recentNames by rememberSaveable { mutableStateOf(arrayListOf<String>()) }
     val reauthenticate: () -> Unit = {
         if (authState is AuthUiState.SignedIn) {
-            authState = AuthUiState.SignedOut("Войдите с паролем Analyst AI. После входа вы вернётесь к своему разделу.")
+            authentication.signedOut("Войдите с паролем Analyst AI. После входа вы вернётесь к своему разделу.")
             tApiConfigured = false; brokerConnection = BrokerConnectionState.Checking
-            SessionTransitions.submit { signedIn?.user?.telegramId?.let { workspaceStore.deactivateUser(it) }; sessionStore.clear() }
-            ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
+            endOwnerSession(context, workspaceStore, sessionStore, signedIn?.user?.telegramId)
         }
     }
     LaunchedEffect(signedIn?.user?.telegramId) {
@@ -268,9 +327,9 @@ private fun AnalystAiApp(
             backStack = arrayListOf()
             recentNames = arrayListOf()
         } else if (knownUser != id) {
-            screenName = saved.optString("screen").takeIf { name -> AppScreen.entries.any { it.name == name } } ?: AppScreen.Home.name
-            backStack = ArrayList(saved?.optJSONArray("back")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
-            recentNames = ArrayList(saved?.optJSONArray("recent")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { name -> AppScreen.entries.any { it.name == name } } }.orEmpty())
+            screenName = savedScreenName(saved)
+            backStack = savedNavigationNames(saved, "back")
+            recentNames = savedNavigationNames(saved, "recent")
         }
         knownUser = id; navigationRestored = true
     }
@@ -328,8 +387,9 @@ private fun AnalystAiApp(
             }
             CompositionLocalProvider(LocalBrokerConnection provides brokerConnection, LocalWorkspaceBack provides goBack) {
                 AnalystAppContent(
-                    authState = authState, onSessionReady = ownerSessionReady, onAccessStart = accessGate::begin, onUnlock = unlock,
-                    onUsePassword = { authState = AuthUiState.SignedOut() },
+                    authState = authState, onSessionReady = authentication::sessionReady,
+                    onAccessStart = authentication.gate::begin, onUnlock = authentication::unlock,
+                    onUsePassword = authentication::usePassword,
                     notificationId = notificationId, onNotificationConsumed = onNotificationConsumed,
                     screen = screen, portfolioState = visiblePortfolio, portfolioRefreshing = livePortfolio.refreshing,
                     onPortfolioRefresh = livePortfolio.refresh, portfolioError = livePortfolio.error,
@@ -342,20 +402,9 @@ private fun AnalystAiApp(
                     },
                     onScreenshotsBlockedChange = { blocked -> screenshotsBlocked = blocked; onScreenshotsBlockedChange(blocked) },
                     onLogout = {
-                        val userId = signedIn?.user?.telegramId
-                        val appContext = context.applicationContext
-                        SessionTransitions.submit {
-                            if (userId != null) workspaceStore.deactivateUser(userId)
-                            sessionStore.clear()
-                            if (userId != null) {
-                                OfflinePortfolioStore(appContext).clearSnapshots(userId)
-                                workspaceStore.remove(userId, "navigation")
-                                workspaceStore.remove(userId, "navigation_detail")
-                            }
-                        }
-                        ru.omnicio.app.data.notifications.WorkspaceNotificationService.cancel(context)
+                        endOwnerSession(context, workspaceStore, sessionStore, signedIn?.user?.telegramId, clearSnapshots = true)
                         backStack = arrayListOf(); recentNames = arrayListOf(); knownUser = null
-                        screenName = AppScreen.Home.name; tApiConfigured = false; authState = AuthUiState.SignedOut()
+                        screenName = AppScreen.Home.name; tApiConfigured = false; authentication.signedOut()
                     },
                 )
             }
@@ -392,6 +441,7 @@ private fun AnalystAppContent(
         is AuthUiState.Loading -> OwnerAccessScreen(loading = true,
             loadingLabel = current.stage, onSessionReady = onSessionReady, onAccessStart = onAccessStart)
         is AuthUiState.SignedOut -> OwnerAccessScreen(errorMessage = current.errorMessage,
+            loginAccessToken = current.validatedAccessToken,
             onSessionReady = onSessionReady, onAccessStart = onAccessStart)
         is AuthUiState.Locked -> OwnerDeviceUnlock(onUnlock, onUsePassword)
         is AuthUiState.Migration -> OwnerAccessScreen(migrationToken = current.accessToken,
@@ -690,29 +740,16 @@ private suspend fun restoreAnalystSession(
     backend: AnalystBackendClient,
     sessionStore: AuthSessionStore,
     context: android.content.Context,
+    passwordRequested: Boolean,
 ): AuthUiState = SessionTransitions.run {
-    val storedToken =
-        withContext(Dispatchers.IO) { sessionStore.loadAccessToken() }
-            ?: return@run AuthUiState.SignedOut()
-    when (val result = backend.fetchMe(storedToken)) {
-        is BackendResult.Success -> {
-            withContext(Dispatchers.IO) {
-                EncryptedWorkspaceStore(context).activateUser(result.value.telegramId)
-            }
-            when (val method = backend.ownerAccessStatus()) {
-                is BackendResult.Success -> if (method.value.configured) AuthUiState.SignedIn(storedToken, result.value)
-                    else AuthUiState.Migration(storedToken)
-                is BackendResult.Failure -> AuthUiState.SignedOut(method.message)
-            }
-        }
-        is BackendResult.Failure -> {
-            if (result.retryable) {
-                val cachedUser = withContext(Dispatchers.IO) { sessionStore.loadCachedUser() }
-                if (cachedUser != null) AuthUiState.SignedIn(storedToken, cachedUser)
-                else AuthUiState.SignedOut(errorMessage = result.message)
-            } else {
-                withContext(Dispatchers.IO) { sessionStore.clear() }
-                AuthUiState.SignedOut()
+    withContext(Dispatchers.IO) {
+        when (val access = restoreOwnerSessionAccess(sessionStore.loadAccessToken(), passwordRequested,
+            backend::fetchMe, backend::ownerAccessStatus, sessionStore::clear)) {
+            is OwnerSessionAccess.Password -> AuthUiState.SignedOut(access.errorMessage, access.validatedAccessToken)
+            is OwnerSessionAccess.Migration -> AuthUiState.Migration(access.accessToken)
+            is OwnerSessionAccess.Restored -> {
+                EncryptedWorkspaceStore(context).activateUser(access.user.telegramId)
+                AuthUiState.SignedIn(access.accessToken, access.user)
             }
         }
     }

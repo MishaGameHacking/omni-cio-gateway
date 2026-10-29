@@ -29,8 +29,8 @@ class AnalystBackendClient(
         })
     }
 
-    fun loginOwner(password: String): BackendResult<AnalystSession> = ownerSessionRequest(
-        "/auth/owner/login", password)
+    fun loginOwner(password: String, accessToken: String? = null): BackendResult<AnalystSession> = ownerSessionRequest(
+        "/auth/owner/login", password, accessToken)
 
     fun setupOwnerPassword(password: String, accessToken: String?, bootstrap: String): BackendResult<AnalystSession> =
         ownerSessionRequest("/auth/owner/setup", password, accessToken, bootstrap.takeIf(String::isNotBlank))
@@ -212,36 +212,7 @@ class AnalystBackendClient(
                 connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             }
 
-            val detail = if (status in 200..299) null else runCatching {
-                JSONObject(responseBody).optString("detail")
-            }.getOrNull()
-
-            when {
-                status in 200..299 -> BackendResult.Success(responseBody)
-                path.startsWith("/auth/owner/") -> ownerAccessFailure(status)
-                status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
-                status == HttpURLConnection.HTTP_UNAUTHORIZED ||
-                    status == HttpURLConnection.HTTP_FORBIDDEN -> {
-                    BackendResult.Failure(
-                        "Сеанс Analyst AI истёк или недействителен. Войдите с паролем заново.",
-                        retryable = false,
-                    )
-                }
-                path.startsWith("/tinvest/") -> tinvestFailure(detail, status)
-                status == 429 || status >= 500 -> {
-                    BackendResult.Failure(
-                        "Сервис временно недоступен. Попробуйте ещё раз.",
-                        retryable = true,
-                    )
-                }
-                else -> {
-                    BackendResult.Failure(
-                        detail?.takeIf { it.isNotBlank() }
-                            ?: "Сервер отклонил запрос.",
-                        retryable = false,
-                    )
-                }
-            }
+            responseResult(path, status, responseBody)
         } catch (_: Exception) {
             BackendResult.Failure(
                 "Не удалось связаться с сервером Analyst AI.",
@@ -249,6 +220,30 @@ class AnalystBackendClient(
             )
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private fun responseResult(path: String, status: Int, responseBody: String): BackendResult<String> {
+        val detail = if (status in 200..299) null else runCatching {
+            JSONObject(responseBody).optString("detail")
+        }.getOrNull()
+        return when {
+            status in 200..299 -> BackendResult.Success(responseBody)
+            path.startsWith("/auth/owner/") -> ownerAccessFailure(status)
+            status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
+            status == HttpURLConnection.HTTP_UNAUTHORIZED ||
+                status == HttpURLConnection.HTTP_FORBIDDEN -> BackendResult.Failure(
+                    "Сеанс Analyst AI истёк или недействителен. Войдите с паролем заново.",
+                    retryable = false,
+                    statusCode = status,
+                )
+            path.startsWith("/tinvest/") -> tinvestFailure(detail, status)
+            status == 429 || status >= 500 -> BackendResult.Failure(
+                "Сервис временно недоступен. Попробуйте ещё раз.", retryable = true,
+            )
+            else -> BackendResult.Failure(
+                detail?.takeIf { it.isNotBlank() } ?: "Сервер отклонил запрос.", retryable = false,
+            )
         }
     }
 

@@ -36,7 +36,7 @@ async def _payload(request: Request, allowed: set[str]) -> dict:
         body.extend(chunk)
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeError, RecursionError) as exc:
+    except (ValueError, RecursionError) as exc:
         raise OwnerAuthError("owner_auth_payload_invalid", 422) from exc
     if not isinstance(data, dict) or not set(data).issubset(allowed):
         raise OwnerAuthError("owner_auth_payload_invalid", 422)
@@ -49,72 +49,88 @@ async def _payload(request: Request, allowed: set[str]) -> dict:
     return data
 
 
-def install(app: FastAPI, legacy, identity) -> None:
-    if getattr(app.state, "owner_password_installed", False):
-        return
-    store = OwnerPasswordStore(legacy.connect, session_ttl=legacy.SESSION_TTL,
-                               bootstrap_secret=lambda: os.getenv("ANALYST_OWNER_BOOTSTRAP_SECRET", ""))
-    original_lifespan = app.router.lifespan_context
-
+def _lifespan(original_lifespan, connect, identity):
     @asynccontextmanager
     async def lifespan(instance):
         async with original_lifespan(instance) as state:
-            initialize(legacy.connect)
-            bind_owner(legacy.connect, identity)
+            initialize(connect)
+            bind_owner(connect, identity)
             yield state
+    return lifespan
 
-    @app.middleware("http")
-    async def auth_boundary(request: Request, call_next):
+
+class OwnerAuthBoundary:
+    def __init__(self, app, store, legacy):
+        self.app, self.store, self.legacy = app, store, legacy
+
+    async def _legacy_disabled(self, path: str) -> bool:
+        if not (path.startswith("/auth/telegram/") or path in LEGACY_EXACT_PATHS):
+            return False
+        return (not self.legacy.TELEGRAM_CLIENT_ID or not self.legacy.TELEGRAM_CLIENT_SECRET
+                or await run_in_threadpool(self.store.configured))
+
+    def _origin_denied(self, request: Request, owner_route: bool) -> bool:
+        if not owner_route or request.method == "GET":
+            return False
+        origin = request.headers.get("Origin")
+        return origin is not None and origin != self.legacy.BACKEND_PUBLIC_URL
+
+    async def __call__(self, request: Request, call_next):
         path = request.url.path
         owner_route = path.startswith("/auth/owner/")
-        legacy_route = path.startswith("/auth/telegram/") or path in LEGACY_EXACT_PATHS
-        if getattr(app.state, "single_owner_ready", False):
-            if legacy_route and (await run_in_threadpool(store.configured)
-                                 or not legacy.TELEGRAM_CLIENT_ID or not legacy.TELEGRAM_CLIENT_SECRET):
+        if getattr(self.app.state, "single_owner_ready", False):
+            if await self._legacy_disabled(path):
                 return _error(OwnerAuthError("owner_password_login_required", 401))
-            if owner_route and request.method != "GET":
-                origin = request.headers.get("Origin")
-                if origin is not None and origin != legacy.BACKEND_PUBLIC_URL:
-                    return _error(OwnerAuthError("owner_credentials_invalid", 401))
+            if self._origin_denied(request, owner_route):
+                return _error(OwnerAuthError("owner_credentials_invalid", 401))
         response = await call_next(request)
         if owner_route:
             response.headers["Cache-Control"] = NO_STORE
             response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
+
+
+class OwnerAuthEndpoints:
+    def __init__(self, store):
+        self.store = store
+
+    async def status(self):
+        return await run_in_threadpool(self.store.status)
+
+    async def _invoke(self, request: Request, operation, fields: set[str], **credentials):
+        try:
+            payload = await _payload(request, fields)
+            return await run_in_threadpool(operation, **payload, **credentials)
+        except OwnerAuthError as error:
+            return _error(error)
+
+    async def setup(self, request: Request):
+        return await self._invoke(request, self.store.setup, {"password", "device_name"},
+                                  authorization=request.headers.get("Authorization"),
+                                  bootstrap=request.headers.get("X-Owner-Bootstrap"))
+
+    async def login(self, request: Request):
+        return await self._invoke(request, self.store.login, {"password", "device_name"},
+                                  authorization=request.headers.get("Authorization"))
+
+    async def change(self, request: Request):
+        return await self._invoke(request, self.store.change, {"current_password", "new_password", "device_name"},
+                                  authorization=request.headers.get("Authorization"))
+
+
+def install(app: FastAPI, legacy, identity) -> None:
+    if getattr(app.state, "owner_password_installed", False):
+        return
+    store = OwnerPasswordStore(legacy.connect, session_ttl=legacy.SESSION_TTL,
+                               bootstrap_secret=lambda: os.getenv("ANALYST_OWNER_BOOTSTRAP_SECRET", ""))
+    app.router.lifespan_context = _lifespan(app.router.lifespan_context, legacy.connect, identity)
+    app.middleware("http")(OwnerAuthBoundary(app, store, legacy))
+    endpoints = OwnerAuthEndpoints(store)
     router = APIRouter(prefix="/auth/owner", tags=["Owner password"])
-
-    @router.get("/status")
-    async def status():
-        return await run_in_threadpool(store.status)
-
-    @router.post("/setup")
-    async def setup(request: Request):
-        try:
-            payload = await _payload(request, {"password", "device_name"})
-            return await run_in_threadpool(store.setup, **payload,
-                                           authorization=request.headers.get("Authorization"),
-                                           bootstrap=request.headers.get("X-Owner-Bootstrap"))
-        except OwnerAuthError as error:
-            return _error(error)
-
-    @router.post("/login")
-    async def login(request: Request):
-        try:
-            payload = await _payload(request, {"password", "device_name"})
-            return await run_in_threadpool(store.login, **payload)
-        except OwnerAuthError as error:
-            return _error(error)
-
-    @router.post("/password")
-    async def change(request: Request):
-        try:
-            payload = await _payload(request, {"current_password", "new_password", "device_name"})
-            return await run_in_threadpool(store.change, **payload,
-                                           authorization=request.headers.get("Authorization"))
-        except OwnerAuthError as error:
-            return _error(error)
-
-    app.router.lifespan_context = lifespan
+    router.add_api_route("/status", endpoints.status, methods=["GET"])
+    router.add_api_route("/setup", endpoints.setup, methods=["POST"])
+    router.add_api_route("/login", endpoints.login, methods=["POST"])
+    router.add_api_route("/password", endpoints.change, methods=["POST"])
     app.include_router(router)
     app.state.owner_password_installed = True

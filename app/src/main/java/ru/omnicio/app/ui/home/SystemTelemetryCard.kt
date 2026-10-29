@@ -66,22 +66,7 @@ internal fun SystemTelemetryCard(ai: JSONObject?, now: Instant, openDetails: () 
         if (job == null) {
             Text("Пока нет сохранённых заданий", color = colors.onSurfaceVariant)
         } else {
-            Text(telemetryStage(job.text("stage", "")), style = MaterialTheme.typography.titleMedium)
-            Text(when {
-                stale -> "Последнее полученное состояние · " + localMoment(job.text("updated_at", ""))
-                active -> "Сервер выполняет проверку"
-                job.text("state") == "completed" -> "Задание завершено"
-                job.text("state") == "queued" -> "Ожидает очереди"
-                job.text("state") == "failed" -> "Проверка не завершена"
-                job.text("state") == "cancel_requested" -> "Ожидает остановки"
-                else -> "Состояние: " + jobStateTitle(job.text("state", ""))
-            }, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-            if (progress != null) {
-                Text(if (progress.total == null) "Обработано: ${progress.completed} · общий объём уточняется"
-                    else "Обработано: ${progress.completed} из ${progress.total}", style = MaterialTheme.typography.bodyMedium)
-                progress.fraction?.let { SpectrumProgressBar(it, enabled = active) }
-            }
-            if (active && progress?.fraction == null) SpectrumLoadingIndicator(description = "Работа идёт; общий объём ещё не известен")
+            TelemetryJobStatus(job, progress, stale, active)
         }
         if (checkCounts.isNotEmpty()) {
             Text("Наблюдения в последних проверках", style = MaterialTheme.typography.labelLarge)
@@ -106,6 +91,26 @@ internal fun SystemTelemetryCard(ai: JSONObject?, now: Instant, openDetails: () 
     }
     ai?.optJSONObject("budget")?.let { budget -> SystemBudgetCard(budget) }
     }
+}
+
+@Composable
+private fun TelemetryJobStatus(job: JSONObject, progress: ObservedProgress?, stale: Boolean, active: Boolean) {
+    Text(telemetryStage(job.text("stage", "")), style = MaterialTheme.typography.titleMedium)
+    Text(when {
+        stale -> "Последнее полученное состояние · " + localMoment(job.text("updated_at", ""))
+        active -> "Сервер выполняет проверку"
+        job.text("state") == "completed" -> "Задание завершено"
+        job.text("state") == "queued" -> "Ожидает очереди"
+        job.text("state") == "failed" -> "Проверка не завершена"
+        job.text("state") == "cancel_requested" -> "Ожидает остановки"
+        else -> "Состояние: " + jobStateTitle(job.text("state", ""))
+    }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (progress != null) {
+        Text(if (progress.total == null) "Обработано: ${progress.completed} · общий объём уточняется"
+            else "Обработано: ${progress.completed} из ${progress.total}", style = MaterialTheme.typography.bodyMedium)
+        progress.fraction?.let { SpectrumProgressBar(it, enabled = active) }
+    }
+    if (active && progress?.fraction == null) SpectrumLoadingIndicator(description = "Работа идёт; общий объём ещё не известен")
 }
 
 @Composable
