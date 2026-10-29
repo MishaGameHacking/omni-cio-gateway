@@ -45,7 +45,7 @@ def request(method, url, token, body=None):
 def prices(data):
     rows = [row for row in data.get('models', []) if row.get('model_name') == MODEL]
     if len(rows) != 1 or rows[0].get('is_stopped') or rows[0].get('is_deprecated'):
-        raise ValueError('selected_model_unavailable')
+        raise ValueError('selected_model_unavailable:' + json.dumps({'count':len(data.get('models', [])), 'keys':list(data), 'candidates':[{k:r.get(k) for k in ('id','model_name','is_stopped','is_deprecated')} for r in data.get('models', []) if r.get('id') == 99 or 'qwen' in str(r.get('model_name',''))]}))
     row = rows[0]
     values = row.get('parameter_values') or {}
     inp, out = Decimal(str(values['cost_in'])) * 1000000, Decimal(str(values['cost_out'])) * 1000000

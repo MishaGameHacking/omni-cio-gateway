@@ -53,3 +53,5 @@ jobs:
           name: ai54-stage-${{ github.run_id }}
           path: ai54-${{ github.run_id }}/plan-reports/
           retention-days: 7
+
+# Verify catalogue differences before creating any key.
