@@ -22,6 +22,15 @@ PROVIDER_LIMITS = {'day':'100', 'month':'2900'}
 
 RUNTIME_INSPECTION = '''
 import hmac,json,os
+from pathlib import Path
+FIELDS=['TIMEWEB_AI_TOKEN','ANALYST_OWNER_AI_KEY_ID','TIMEWEB_AI_BASE_URL','AI_TRANSPORT',
+ 'AI_ALLOWED_PROCESSING_REGIONS','AI_EXTERNAL_PROCESSING_APPROVED','AI_USER_DAILY_RUB',
+ 'AI_PROJECT_DAILY_RUB','AI_USER_MONTHLY_RUB','AI_PROJECT_MONTHLY_RUB',
+ 'ANALYST_OWNER_AI_DAY_LIMIT_ID','ANALYST_OWNER_AI_MONTH_LIMIT_ID']
+for tier in ('FAST','STANDARD','PREMIUM'):
+    FIELDS.append('AI_MODEL_'+tier)
+    FIELDS.extend('AI_'+tier+'_'+suffix for suffix in ('TRANSPORT','PRICING_MODEL','PROCESSING_REGION',
+      'TOKEN_PARAMETER','INPUT_TOKEN_ALLOWANCE','INPUT_RUB_PER_MILLION','OUTPUT_RUB_PER_MILLION','PRICING_VALID_UNTIL'))
 def run(envelope):
     if os.getuid()!=0: raise RuntimeError('root_required')
     payload=envelope['payload']
@@ -33,12 +42,26 @@ def run(envelope):
       'key_identity_matches':settings.get('ANALYST_OWNER_AI_KEY_ID')==payload['key_id'],
       'configuration_state':'other','service_active':False,'environment_file_verified':False,
       'process_configuration_loaded':False,'health_verified':False,'auth_boundary_verified':False,
-      'gateway_metadata_verified':False,'last_failed_check':'none','configuration_changed':False}
+      'gateway_metadata_verified':False,'last_failed_check':'none','configuration_changed':False,
+      'missing_fields_mask':0,'different_fields_mask':0,'field_masks_verified':False}
     if all(settings.get(k)==v for k,v in STAGING['DISABLED'].items()):
         result['configuration_state']='staged_disabled'
     if all(settings.get(k)==v for k,v in ACTIVATION['ENABLED'].items()):
         result['configuration_state']='active'
     selected={k:v for k,v in settings.items() if k.startswith(('AI_','TIMEWEB_AI_','ANALYST_OWNER_AI_'))}
+    try:
+        pid=ACTIVATION['systemctl']('show','analyst-ai-owner.service','--property=MainPID','--value')
+        if not pid.isdigit() or int(pid)<=1: raise RuntimeError('invalid_pid')
+        with Path('/proc/'+pid+'/environ').open('rb') as stream:
+            raw=stream.read(512*1024+1)
+        if len(raw)>512*1024: raise RuntimeError('environment_size')
+        actual=dict(entry.split(b'=',1) for entry in raw.split(b'\\0') if entry)
+        for index,key in enumerate(FIELDS):
+            if key.encode() not in actual: result['missing_fields_mask']|=1<<index
+            elif key in settings and actual[key.encode()]!=settings[key].encode():
+                result['different_fields_mask']|=1<<index
+        result['field_masks_verified']=True
+    except BaseException: pass
     checks=[('service_active',lambda:ACTIVATION['systemctl']('is-active','analyst-ai-owner.service')=='active'),
       ('environment_file_verified',lambda:ACTIVATION['verify_environment_file']()),
       ('process_configuration_loaded',lambda:ACTIVATION['verify_running_configuration'](selected)),
@@ -68,9 +91,9 @@ def inspect_runtime(transfer, sources, key_id, secret):
         '{"STAGING":support,"ACTIVATION":active,"ENVELOPE":ENVELOPE,"__name__":"__main__"})\n')
     fields=['key_present','key_matches_supplied','key_identity_matches','service_active',
         'environment_file_verified','process_configuration_loaded','health_verified',
-        'auth_boundary_verified','gateway_metadata_verified','configuration_changed']
+        'auth_boundary_verified','gateway_metadata_verified','configuration_changed','field_masks_verified']
     contract={name:bool for name in fields}
-    contract.update(status={'runtime_inspected'},server_id=int,
+    contract.update(status={'runtime_inspected'},server_id=int,missing_fields_mask=int,different_fields_mask=int,
         configuration_state={'other','staged_disabled','active'},
         last_failed_check={'none','service_active','environment_file_verified','process_configuration_loaded',
                            'health_verified','auth_boundary_verified','gateway_metadata_verified'})
