@@ -41,7 +41,9 @@ jobs:
               if(!Number.isSafeInteger(data.meta?.total)||data.meta.total!==rows.length) fail('collection_incomplete');
               const ids=new Set();
               for(const row of rows) {
-                if(!row||!Number.isSafeInteger(row.id)||row.id<=0||typeof row.name!=='string'||ids.has(row.id))
+                if(!row||!Number.isSafeInteger(row.id)||row.id<=0||typeof row.name!=='string'||
+                   row.name.length===0||row.name.length>1024||
+                   row.name==='hidden-by-api-key-policy'||ids.has(row.id))
                   fail('key_identity_invalid');
                 ids.add(row.id);
               }
@@ -56,7 +58,8 @@ jobs:
                   attached_to_owner_server:serverIds.includes(9417611)};
               });
               core.info(JSON.stringify({status:'inspected',failed_operation_run:'40920081275',
-                collection_complete:true,matching_key_count:keys.length,keys,
+                collection_complete:true,identity_metadata_visible:true,
+                matching_key_count:keys.length,keys,
                 read_only:true,ssh_connection_attempted:false,cleanup_performed:false}));
               return;
             } catch(error) {
