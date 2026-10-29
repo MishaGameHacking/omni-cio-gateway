@@ -14,7 +14,7 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const ref='7e9ce3c33e65c592377ff5b53107eada58ecb570';
+            const ref='28ceef6b3ae24735321be73aeb6bd6eab624166d';
             const {data}=await github.rest.checks.listForRef({...context.repo,ref});
             const sonar=data.check_runs.filter(c=>c.name==='SonarCloud Code Analysis'&&c.head_sha===ref);
             if(sonar.length!==1) throw new Error('Ambiguous Sonar check');
