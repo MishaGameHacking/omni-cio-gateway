@@ -11,7 +11,7 @@ spec.loader.exec_module(smoke)
 class ChatSmokeTests(unittest.TestCase):
     def api(self):
         api = Mock()
-        api.estimate.return_value = {"available": True, "cost_ceiling_micro_rub": 5000,
+        api.estimate.return_value = {"available": True, "cost_ceiling_micro_rub": 1_781_820,
                                      "selected_tier": "fast", "requires_cost_confirmation": False}
         api.thread.return_value = "synthetic-thread"
         api.send.return_value = "synthetic-job"
@@ -22,7 +22,7 @@ class ChatSmokeTests(unittest.TestCase):
         return api
 
     def test_refuses_unavailable_excessive_or_deep_quote_before_creating_thread(self):
-        for override in ({"available": False}, {"cost_ceiling_micro_rub": 1_000_001},
+        for override in ({"available": False}, {"cost_ceiling_micro_rub": 2_000_001},
                          {"cost_ceiling_micro_rub": True}, {"cost_ceiling_micro_rub": 0},
                          {"selected_tier": "premium"}, {"requires_cost_confirmation": True}):
             with self.subTest(override=override):

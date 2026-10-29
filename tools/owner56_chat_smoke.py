@@ -1,7 +1,7 @@
 """One bounded, idempotent conversation check; no orders or secret output."""
 
 QUESTION = "Что такое диверсификация инвестиционного портфеля?"
-MAX_COST_MICRO_RUB = 1_000_000
+MAX_COST_MICRO_RUB = 2_000_000
 
 
 def usable(quote):

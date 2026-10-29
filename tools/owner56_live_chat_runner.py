@@ -74,4 +74,4 @@ print(json.dumps(core['verify'](Api(),REQUEST_ID)))
 
 
 if __name__ == '__main__':
-    print(json.dumps(run()), flush=True)
+    print(json.dumps({'server_id': 9417611, **run()}), flush=True)
