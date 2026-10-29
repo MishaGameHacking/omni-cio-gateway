@@ -1,0 +1,120 @@
+name: Read exact candidate55 laptop progress
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner55-progress.yml]
+permissions: {}
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 4
+    steps:
+      - name: Inspect only candidate55 checkout and bounded build metadata
+        shell: py -3 {0}
+        run: |
+          """Read-only snapshot. No process arguments, secrets, config or raw logs."""
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import stat
+          import time
+
+          if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
+              raise RuntimeError("owner_laptop_required")
+          run_id = "40902153093"
+          attempt = "1"
+          expected = "2dd37077cab54864a5e2e102968dff2470a6d852"
+          names = [prefix + run_id + "-" + attempt for prefix in ("backend-ci-", "server-version-client-")]
+          logs = {"linux-backend.log", "python-source-audit.log", "backend-ci-regressions.log",
+                  "sonar-helper-tests.log", "gradle.log", "shell-build-gradle.log"}
+
+          def safe(path, directory=False):
+              try:
+                  info = path.lstat()
+              except OSError:
+                  return False
+              wanted = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+              return wanted and not (getattr(info, "st_file_attributes", 0) & 0x400)
+
+          def metadata(path):
+              if not safe(path):
+                  return {"present": False}
+              value = path.stat()
+              return {"present": True, "bytes": value.st_size,
+                      "age_seconds": max(0, int(time.time() - value.st_mtime))}
+
+          def checkout(path):
+              result = {"present": safe(path, True)}
+              git = path / ".git"
+              if not result["present"] or not safe(git, True):
+                  return result
+              result["git"] = {name: metadata(git / name) for name in ("HEAD", "index", "index.lock", "FETCH_HEAD", "shallow")}
+              head = git / "HEAD"
+              if safe(head) and head.stat().st_size <= 256:
+                  value = head.read_text(encoding="ascii", errors="replace").strip()
+                  result["detached_head_matches"] = value == expected
+                  result["head_is_symbolic"] = value.startswith("ref: ")
+              packs = git / "objects" / "pack"
+              if safe(git / "objects", True) and safe(packs, True):
+                  items = [item for item in packs.iterdir() if safe(item)][:100]
+                  result["pack_files"] = len(items)
+                  result["pack_bytes"] = sum(item.stat().st_size for item in items)
+                  result["newest_pack_age_seconds"] = min((metadata(item)["age_seconds"] for item in items), default=None)
+              result["source_markers"] = {name: safe(path / name) for name in ("AGENTS.md", "backend/owner_password.py", "app/build.gradle.kts")}
+              return result
+
+          def progress(path):
+              result = {"present": safe(path, True)}
+              if not result["present"]:
+                  return result
+              result["logs"] = {name: metadata(path / name) for name in sorted(logs)}
+              result["reports"] = []
+              for report in sorted(path.glob("*.json"))[:20]:
+                  if not safe(report) or report.stat().st_size > 1024 * 1024:
+                      continue
+                  if report.name not in {"result.json", "windows-backend-report.json", "shell-build-steps.json"}:
+                      continue
+                  try:
+                      data = json.loads(report.read_text(encoding="utf-8"))
+                  except (OSError, ValueError, RecursionError):
+                      result["reports"].append({"name": report.name, "complete_json": False})
+                      continue
+                  if not isinstance(data, dict):
+                      continue
+                  steps = data.get("steps", [])
+                  steps = [row for row in steps if isinstance(row, dict)] if isinstance(steps, list) else []
+                  status = data.get("status")
+                  result["reports"].append({"name": report.name, "complete_json": True,
+                      "status": status if isinstance(status, str) and status in {"passed", "failed", "running"} else None,
+                      "steps": len(steps), "finished": sum(row.get("finished_at") is not None for row in steps),
+                      "failed": sum(type(row.get("exit_code")) is int and row["exit_code"] != 0 for row in steps)})
+              log = path / "gradle.log"
+              if safe(log):
+                  with log.open("rb") as stream:
+                      stream.seek(max(0, log.stat().st_size - 256 * 1024))
+                      tail = stream.read(256 * 1024).decode("utf-8", errors="replace")
+                  tasks = re.findall(r"^> Task (:[A-Za-z0-9:_-]+)(?: (UP-TO-DATE|FROM-CACHE|FAILED|NO-SOURCE|SKIPPED))?\s*$", tail, re.MULTILINE)
+                  result["recent_gradle_tasks"] = tasks[-12:]
+                  result["build_status"] = re.findall(r"^BUILD (SUCCESSFUL|FAILED) in [0-9hms .]+$", tail, re.MULTILINE)[-1:]
+              return result
+
+          roots = [root for root in Path("C:/").glob("actions-runner*")
+                   if re.fullmatch(r"actions-runner(?:-\d+)?", root.name) and safe(root, True)][:16]
+          for root in sorted(roots):
+              work = root / "_work"
+              if not safe(work, True):
+                  continue
+              source = work / "omni-cio-gateway" / "omni-cio-gateway"
+              temp = work / "_temp"
+              if not safe(temp, True):
+                  continue
+              for name in names:
+                  source_safe = safe(work / "omni-cio-gateway", True) and safe(source, True)
+                  try:
+                      snapshot = {"runner": root.name, "run": name,
+                          "checkout": checkout(source / name) if source_safe else {"present": False},
+                          "progress": progress(temp / name)}
+                  except OSError:
+                      snapshot = {"runner": root.name, "run": name, "snapshot_changed_during_read": True}
+                  print(json.dumps(snapshot, ensure_ascii=True), flush=True)
