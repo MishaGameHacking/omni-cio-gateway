@@ -12,7 +12,7 @@ class ActivationTests(unittest.TestCase):
             calls.append((method,path,body))
             if path.endswith('/models'): return {'models':[{'id':99,'model_name':m.MODEL,'is_stopped':stopped,'parameter_values':{'cost_in':'0.000014','cost_out':'0.000052'}}]}
             if method=='GET' and path.endswith('/ai-keys'): return {'ai_keys':[]}
-            if method=='POST' and path.endswith('/ai-keys'): return {'ai_key':{'id':123},'key':'synthetic-not-a-real-key'}
+            if method=='POST' and path.endswith('/ai-keys'): return {'ai_key':{'id':123},'key':'sk-synthetic-not-a-real-key'}
             if method=='GET': return {'ai_key_entity_limits':[{'limit_type':p,'money_limit':a,'model_id':None} for p,a in [('day','200' if bad_limit else '2'),('month','30')]]}
             return {}
         return calls,api
@@ -31,6 +31,17 @@ class ActivationTests(unittest.TestCase):
         self.assertTrue(all(c[0]=='GET' for c in calls))
     def test_key_cannot_inject_environment_lines(self):
         with self.assertRaises(ValueError):m.validate_key('synthetic\nAI_PROJECT_DAILY_RUB=100')
+    def test_withheld_key_is_revoked_before_any_gateway_request(self):
+        calls,api=self.fake()
+        def withheld(method,path,body=None):
+            result=api(method,path,body)
+            if method=='POST' and path.endswith('/ai-keys'):
+                result['key']='hidden-by-provider-policy'
+            return result
+        with self.assertRaises(ValueError):m.setup(withheld)
+        self.assertEqual(calls[-1][:2],('DELETE','/api/v1/cloud-ai/ai-keys/123'))
+        self.assertFalse(any(path.endswith('/entity-limits') for _,path,_ in calls))
+
     def test_price_increase_aborts(self):
         with self.assertRaises(ValueError):m.prices({'models':[{'model_name':m.MODEL,'parameter_values':{'cost_in':1,'cost_out':1}}]})
 

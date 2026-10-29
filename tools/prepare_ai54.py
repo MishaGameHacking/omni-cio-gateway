@@ -69,7 +69,7 @@ def prices(data):
 
 
 def validate_key(value):
-    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_./+:-]{16,512}', value):
+    if not isinstance(value, str) or not value.startswith('sk-') or not re.fullmatch(r'[A-Za-z0-9_./+:-]{16,512}', value):
         raise ValueError('invalid_inference_key')
     return value
 

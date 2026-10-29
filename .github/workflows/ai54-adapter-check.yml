@@ -1,0 +1,28 @@
+name: Verify bounded AI adapter without credentials
+on:
+  push:
+    branches: [codex/strategy53-delivery-tools-2026-10-29]
+    paths: [.github/workflows/ai54-adapter-check.yml, tools/prepare_ai54.py, tools/tests/test_prepare_ai54.py]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: ai54-adapter-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/prepare_ai54.py
+            tools/tests/test_prepare_ai54.py
+          sparse-checkout-cone-mode: false
+      - name: Verify synthetic limits and withheld-key handling only
+        shell: cmd
+        working-directory: ai54-adapter-${{ github.run_id }}
+        run: |
+          py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
+          if errorlevel 1 exit /b 1
+          py -3 tools/tests/test_prepare_ai54.py -v
+          if errorlevel 1 exit /b 1
