@@ -1,4 +1,4 @@
-name: Publish strategy53 preview after laptop build and visual review
+name: Publish analytics54 preview after laptop build and visual review
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,13 +9,13 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
-  EXPECTED_TEST_RUN: '40836262680'
-  EXPECTED_RUNTIME_DEPLOY_RUN: '40834604423'
-  EXPECTED_RUNTIME_SOURCE_SHA: 4a154b14771fc882b30727620926604ab198d28c
-  EXPECTED_RUNTIME_TEST_RUN: '40833239415'
-  EXPECTED_CLIENT_ARTIFACT_SHA256: f1c6519f963d7c0d2c9633eb29fe801fa8b430ffe39b8861aa7ccaf6c6d55302
-  EXPECTED_APK_SHA256: 26078a02e1b563af4c8584a391f14fbad27c483af332ec511da1dfb2f2069351
+  EXPECTED_SOURCE_SHA: 9bf6dbaea3625a6479691e71365b621d965358c6
+  EXPECTED_TEST_RUN: '40865636453'
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40864145525'
+  EXPECTED_RUNTIME_SOURCE_SHA: a88ea60c71c4d19942ccf1892ceba50213e6e528
+  EXPECTED_RUNTIME_TEST_RUN: '40863135938'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: fcb5b009de257a0fa3c94db2b2f529a2b5c938c27b69f12d81c570a79fe90cf8
+  EXPECTED_APK_SHA256: fae5dcfd6658bfc221aba7f3f4630f53f6deebefebb634dbebc04b9db1c47499
 jobs:
   deliver:
     permissions:
@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 6fe51b138314b5c815e67a9e0f2ec402d85b3493
+          ref: 49e457d56330faa85853ed890c2a0ed1ef1b84ae
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -36,7 +36,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
+          ref: 9bf6dbaea3625a6479691e71365b621d965358c6
           path: .source-quality
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
@@ -46,22 +46,24 @@ jobs:
         with:
           script: |
             const ref=process.env.EXPECTED_SOURCE_SHA;
-            async function backendTree(commit_sha) {
+            async function sourceTree(commit_sha, root) {
               const {data:commit}=await github.rest.git.getCommit({...context.repo,commit_sha});
               const {data:tree}=await github.rest.git.getTree({...context.repo,tree_sha:commit.tree.sha});
-              const entry=tree.tree.find(item=>item.path==='backend'&&item.type==='tree');
+              const entry=tree.tree.find(item=>item.path===root&&item.type==='tree');
               if(!entry) throw new Error('Backend source inventory missing');
               return entry.sha;
             }
-            if(await backendTree(ref)!==await backendTree(process.env.EXPECTED_RUNTIME_SOURCE_SHA))
+            if(await sourceTree(ref,'backend')!==await sourceTree(process.env.EXPECTED_RUNTIME_SOURCE_SHA,'backend'))
               throw new Error('Client requires backend changes that were not deployed');
+            if(await sourceTree(ref,'app')!==await sourceTree('9bf6dbaea3625a6479691e71365b621d965358c6','app'))
+              throw new Error('Client UI differs from the visually reviewed source');
             const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/workspace-strategies-2026-10-28'});
             if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
             for(const [run_id,sha,path] of [
                 [Number(process.env.EXPECTED_TEST_RUN),ref,'.github/workflows/workspace-redesign.yml'],
-                [40836351461,'e39b668f7e5bb9bd94509f877b15dd2331d6363a','.github/workflows/workspace-redesign-visual.yml'],
-                [40827968294,'6fe51b138314b5c815e67a9e0f2ec402d85b3493','.github/workflows/workspace-shell-tools-check.yml'],
-                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'6266034f8331fab658e16a15ffcc6c00f9664be3','.github/workflows/workspace-deploy.yml']]) {
+                [40865765892,'2aa6739b693ed18b4a2439a2ddb88b393c98b81e','.github/workflows/workspace-redesign-visual.yml'],
+                [40854028293,'49e457d56330faa85853ed890c2a0ed1ef1b84ae','.github/workflows/workspace-shell-tools-check.yml'],
+                [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'62ea944be919579f3ae3170da66d9acbe9120036','.github/workflows/workspace-deploy.yml']]) {
               const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
               if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
                 throw new Error('Required exact verification is not successful');
