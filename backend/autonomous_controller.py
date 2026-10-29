@@ -373,6 +373,24 @@ def _strategy_candidate(user, item, account, active):
     return assess_candidate(user, item, account, active, snapshot)
 
 
+def _legacy_ask(book, uid):
+    if book.get("instrumentUid") != uid:
+        raise HTTPException(502, "purchase_market_identity_mismatch")
+    # Unary GetOrderBookResponse has no isConsistent field; it belongs to
+    # streamed OrderBook. Do not invent a positive flag or ignore a bad one.
+    if "isConsistent" in book and book["isConsistent"] is not True:
+        raise HTTPException(409, "order_book_not_consistent")
+    if not purchases.policy.fresh(book.get("orderbookTs"), datetime.now(timezone.utc), 60):
+        raise HTTPException(409, "order_book_stale_or_undated")
+    asks = book.get("asks")
+    if not isinstance(asks, list) or not asks or not isinstance(asks[0], dict):
+        raise HTTPException(409, "order_book_invalid")
+    price, quantity = decimal(asks[0].get("price")), decimal(asks[0].get("quantity"))
+    if price is None or price <= 0 or quantity is None or quantity < 1 or quantity % 1:
+        raise HTTPException(409, "order_book_invalid")
+    return price
+
+
 def _legacy_candidate(user, item, account, version):
     uid = item["uid"]
     base = {"instrument_uid": uid, "ticker": item.get("ticker") or "", "name": item.get("name") or uid,
@@ -386,20 +404,7 @@ def _legacy_candidate(user, item, account, version):
     try:
         with details.BrokerReader(user) as reader:
             book = market.broker_read(reader, "order_book", {"instrumentId": uid, "depth": 1})
-        if book.get("instrumentUid") != uid:
-            raise HTTPException(502, "purchase_market_identity_mismatch")
-        # Unary GetOrderBookResponse has no isConsistent field; it belongs to
-        # streamed OrderBook. Do not invent a positive flag or ignore a bad one.
-        if "isConsistent" in book and book["isConsistent"] is not True:
-            raise HTTPException(409, "order_book_not_consistent")
-        if not purchases.policy.fresh(book.get("orderbookTs"), datetime.now(timezone.utc), 60):
-            raise HTTPException(409, "order_book_stale_or_undated")
-        asks = book.get("asks")
-        if not isinstance(asks, list) or not asks or not isinstance(asks[0], dict):
-            raise HTTPException(409, "order_book_invalid")
-        price, quantity = decimal(asks[0].get("price")), decimal(asks[0].get("quantity"))
-        if price is None or price <= 0 or quantity is None or quantity < 1 or quantity % 1:
-            raise HTTPException(409, "order_book_invalid")
+        price = _legacy_ask(book, uid)
         assert_enabled(int(user["id"]))
         result = purchases._check_purchase(purchases.PurchaseCheck(
             account_id=account, instrument_uid=uid, lots=1, limit_price=text_number(price), strategy_version=version), user,

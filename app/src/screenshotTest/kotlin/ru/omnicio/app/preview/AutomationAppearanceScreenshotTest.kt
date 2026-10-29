@@ -2,6 +2,9 @@ package ru.omnicio.app.preview
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import ru.omnicio.app.ui.StrategyNavigationRail
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -185,10 +188,10 @@ private fun appearanceResource(state: String): WorkspaceResource {
 @Composable
 fun StrategyProfilesAppearance() {
     val catalogue = JSONObject().put("items", JSONArray().apply {
-        listOf("capital" to "Защита капитала", "coupon" to "Купонный доход", "balanced" to "Сбалансированный портфель",
-            "growth" to "Долгосрочный рост", "equity" to "Акции и дивиденды").forEach { (id, title) ->
+        listOf("capital" to "Бережный старт", "coupon" to "Регулярный доход", "balanced" to "Сбалансированный портфель",
+            "growth" to "Долгосрочный рост", "equity" to "Долевое участие").forEach { (id, title) ->
             put(JSONObject().put("id", id).put("title", title).put("description", "Синтетический пример профиля")
-                .put("config", JSONObject().put("mandate", JSONObject().put("bond_target_percent", "60").put("share_target_percent", "40"))))
+                .put("config", strategy53Fixture()))
         }
     })
     AnalystTheme {
@@ -201,20 +204,58 @@ fun StrategyProfilesAppearance() {
     }
 }
 
+private fun strategy53Fixture(): JSONObject = JSONObject()
+    .put("horizon_months", 120)
+    .put("mandate", JSONObject().put("account_id", "synthetic").put("loss_capacity_percent", "10"))
+    .put("construction", JSONObject().put("version", 1).put("age", 35).put("reserve_percent", 20)
+        .put("income_stability", "stable").put("loss_capacity_confirmed", true).put("reinvest", true)
+        .put("key_rate_mode", "at_least_key_rate").put("enabled_classes", JSONArray(listOf("bond", "share", "etf"))))
+
 @PreviewTest
-@Preview(name = "strategy-fields-compact", widthDp = 390, heightDp = 844, locale = "ru")
-@Preview(name = "strategy-fields-large-text", widthDp = 320, heightDp = 1100, fontScale = 2f, locale = "ru")
+@Preview(name = "strategy53-settings-light", widthDp = 390, heightDp = 1200, locale = "ru")
+@Preview(name = "strategy53-settings-graphite", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "strategy53-settings-large-text", widthDp = 320, heightDp = 1200, fontScale = 1.5f, locale = "ru")
 @Composable
-fun StrategyFieldsAppearance() {
+fun StrategySettings53Appearance() {
     AnalystTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
                 Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
-                WorkspaceChoices("Цель", listOf("Сохранение капитала", "Регулярные выплаты", "Рост капитала"), 1) {}
-                StrategyNumberChoice("Горизонт", "120", "мес.", true, "1", "600", emptyList(), emptyList()) {}
-                StrategyNumberChoice("Резерв", "10000.25", "RUB", true, "0", "999999999999999.99", emptyList(), emptyList()) {}
-                StrategyNumberChoice("Допустимый убыток", "", "%", true, "0", "100", emptyList(), emptyList()) {}
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
             }
         }
     }
+}
+
+@PreviewTest
+@Preview(name = "strategy53-plan-light", widthDp = 390, heightDp = 1050, locale = "ru")
+@Preview(name = "strategy53-plan-graphite", widthDp = 390, heightDp = 1050, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun StrategyPlan53Appearance() {
+    val data = JSONObject().put("actions", JSONArray().put(JSONObject().put("name", "Синтетический актив").put("ticker", "TEST")
+        .put("action", "buy").put("suggested_lots", 2).put("quantity", "20")
+        .put("total_cost", JSONObject().put("amount", "2000").put("currency", "RUB"))
+        .put("as_of", "2026-10-29T10:00:00Z").put("expires_at", "2026-10-29T10:01:00Z")
+        .put("explanation", "Синтетический пример. Просроченная цена отключает переход к покупке.")))
+    CompositionLocalProvider(LocalWorkspacePreviewResources provides mapOf("/automation/strategy-plan" to WorkspaceResource(data, false, null) {})) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) { StrategyActionPlanPanel() }
+        } }
+    }
+}
+
+@PreviewTest
+@Preview(name = "strategy53-desktop-rail-light", widthDp = 1000, heightDp = 900, locale = "ru")
+@Preview(name = "strategy53-desktop-rail-graphite", widthDp = 1000, heightDp = 900, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun StrategyDesktop53Appearance() {
+    AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+        Row(Modifier.fillMaxSize()) {
+            StrategyNavigationRail(AnalystTab.Actions, WorkspaceRoute.Strategies, {}, {}, initiallyExpanded = true)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(24.dp)) {
+                Text("Моя стратегия", style = MaterialTheme.typography.headlineMedium)
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
+            }
+        }
+    } }
 }

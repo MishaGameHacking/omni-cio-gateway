@@ -72,14 +72,7 @@ internal fun StrategyActionPlanPanel() {
                 Text("Налоги зависят от счёта и вашей ситуации. Итоговые условия показывает брокер перед покупкой или продажей.", style = MaterialTheme.typography.bodySmall)
             }
         }
-        val pending = resource.data?.records("pending").orEmpty()
-        if (pending.isNotEmpty()) DetailFold("Ожидают проверки · ${pending.size}") {
-            pending.take(8).forEach { row ->
-                Text(row.text("name"), style = MaterialTheme.typography.titleMedium)
-                Text(if (!row.optBoolean("evidence_current")) "Котировка или данные портфеля требуют обновления."
-                    else "Не выполнены все условия стратегии. Актив не включён в план.", style = MaterialTheme.typography.bodySmall)
-            }
-        }
+        StrategyPendingRows(resource.data?.records("pending").orEmpty())
         message?.let { Text(it) }
         WorkspaceRequestState(job)
         refresh.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -96,4 +89,15 @@ internal fun StrategyActionPlanPanel() {
         SpectrumPrimaryButton("Открыть карточку", { browser.openUri(url); browserFallback = null })
         SpectrumSecondaryButton("Отмена", { browserFallback = null })
     } }
+}
+
+@Composable
+private fun StrategyPendingRows(pending: List<JSONObject>) {
+    if (pending.isNotEmpty()) DetailFold("Ожидают проверки · ${pending.size}") {
+        pending.take(8).forEach { row ->
+            Text(row.text("name"), style = MaterialTheme.typography.titleMedium)
+            Text(if (!row.optBoolean("evidence_current")) "Котировка или данные портфеля требуют обновления."
+                else "Не выполнены все условия стратегии. Актив не включён в план.", style = MaterialTheme.typography.bodySmall)
+        }
+    }
 }

@@ -29,7 +29,7 @@ DENIAL_STYLE = """
     --surface: #FFFFFF;
     --text: #17243A;
     --muted: #526176;
-    --primary: #2463EB;
+    --primary: #205DD7;
     --on-primary: #FFFFFF;
     --primary-container: #E4EDFF;
     --on-primary-container: #153C89;
@@ -70,7 +70,7 @@ DENIAL_STYLE = """
   small { color:var(--muted); }
   ::selection { color:var(--on-primary-container); background:var(--primary-container); }
 """
-DENIAL_STYLE_SHA256 = 'QJrto+DG6MZ5v6DI6lgF3mCemy6srNW1drUIig21BcU='
+DENIAL_STYLE_SHA256 = 'KFfEwJdvJW9TiMKhzLcfGByBqnXDSk8igVuTlylV+u4='
 
 
 def _denial(request: Request):

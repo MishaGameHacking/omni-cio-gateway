@@ -161,11 +161,12 @@ def test_recent_real_trades_consume_budget_and_prevent_repeated_rebalance():
     snapshot = {"operations": {"complete": True, "start": (now - timedelta(days=31)).isoformat(),
         "end": now.isoformat(), "items": [row, dict(row)]}}
     assert activity_budget(value, snapshot, "a", "other", Decimal(1000), now) == 100
+    capital = Decimal(1000)
     with pytest.raises(ValueError, match="strategy_rebalance_cooldown"):
-        activity_budget(value, snapshot, "a", "held", Decimal(1000), now)
+        activity_budget(value, snapshot, "a", "held", capital, now)
     snapshot["operations"]["complete"] = False
     with pytest.raises(ValueError, match="strategy_operation_window_incomplete"):
-        activity_budget(value, snapshot, "a", "other", Decimal(1000), now)
+        activity_budget(value, snapshot, "a", "other", capital, now)
 
 
 def test_income_switch_disables_additions_before_quote_calls(monkeypatch):

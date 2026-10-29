@@ -148,8 +148,8 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         if (inspection) null else context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
     val workspace = LocalWorkspacePreferences.current
-    var mode by remember(context) { mutableStateOf(if (inspection) ThemeMode.LIGHT else storedApplicationTheme(context)) }
-    val system = if (inspection) SystemThemeObservation.Known(false) else rememberSystemThemeObservation()
+    var mode by remember(context) { mutableStateOf(if (inspection) ThemeMode.SYSTEM else storedApplicationTheme(context)) }
+    val system = if (inspection) SystemThemeObservation.Known(androidx.compose.foundation.isSystemInDarkTheme()) else rememberSystemThemeObservation()
     val dark = displayedThemeDark(mode, system, null, androidx.compose.foundation.isSystemInDarkTheme())
     SideEffect {
         (activity as? ComponentActivity)?.enableEdgeToEdge(

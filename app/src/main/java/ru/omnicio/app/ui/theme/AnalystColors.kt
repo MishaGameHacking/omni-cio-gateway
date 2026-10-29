@@ -40,7 +40,7 @@ data class AnalystColorSet(
 )
 
 private val WorkspaceColors = lightColorScheme(
-    primary = Color(0xFF2463EB),
+    primary = Color(0xFF205DD7),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFE4EDFF),
     onPrimaryContainer = Color(0xFF153C89),
@@ -59,7 +59,7 @@ private val WorkspaceColors = lightColorScheme(
     onSurface = Color(0xFF17243A),
     surfaceVariant = Color(0xFFEDF1F7),
     onSurfaceVariant = Color(0xFF526176),
-    surfaceTint = Color(0xFF2463EB),
+    surfaceTint = Color(0xFF205DD7),
     inverseSurface = Color(0xFF17243A),
     inverseOnSurface = Color(0xFFF5F7FB),
     error = Color(0xFFB42343),
@@ -114,7 +114,7 @@ private val WorkspaceSemantic = AnalystSemanticColors(
 
 private val GraphiteColors = darkColorScheme(
     primary = Color(0xFF9DB9FF), onPrimary = Color(0xFF102C63),
-    inversePrimary = Color(0xFF2463EB),
+    inversePrimary = Color(0xFF205DD7),
     primaryFixed = WorkspaceColors.primaryFixed,
     primaryFixedDim = WorkspaceColors.primaryFixedDim,
     onPrimaryFixed = WorkspaceColors.onPrimaryFixed,

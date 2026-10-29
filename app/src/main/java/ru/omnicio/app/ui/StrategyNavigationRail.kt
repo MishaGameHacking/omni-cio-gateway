@@ -24,8 +24,8 @@ import ru.omnicio.app.ui.workspace.WorkspaceRoute
 /** Persistent desktop rail. Explicit expansion also works with touch/keyboard. */
 @Composable
 internal fun StrategyNavigationRail(selected: AnalystTab, workspace: WorkspaceRoute?,
-    navigateTab: (AnalystTab) -> Unit, navigateWorkspace: (WorkspaceRoute) -> Unit) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    navigateTab: (AnalystTab) -> Unit, navigateWorkspace: (WorkspaceRoute) -> Unit, initiallyExpanded: Boolean = false) {
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     val motion = LocalFlatMotion.current != SpatialMotion.Off
     val width by animateDpAsState(if (expanded) 252.dp else 72.dp,
         tween(if (motion) 220 else 0), label = "navigation-rail-width")

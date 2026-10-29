@@ -118,7 +118,7 @@ def _login_page(state: str, nonce: str) -> HTMLResponse:
     --surface: #FFFFFF;
     --text: #17243A;
     --muted: #526176;
-    --primary: #2463EB;
+    --primary: #205DD7;
     --on-primary: #FFFFFF;
     --primary-container: #E4EDFF;
     --on-primary-container: #153C89;

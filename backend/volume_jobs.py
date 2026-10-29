@@ -248,6 +248,21 @@ def _refresh_strategy_plan(user, payload):
     autonomous_controller.observe_and_discover(user, snapshot, datetime.now(timezone.utc), force=True)
 
 
+def _perform_refresh(job, user, payload, checkpoint, collect):
+    if job["request_id"].startswith("auto.full."):
+        try:
+            from .background_dispatch import automatic_collection_gate
+        except ImportError:
+            from background_dispatch import automatic_collection_gate
+        waiting = automatic_collection_gate(user, payload, checkpoint)
+        if waiting is not None:
+            return waiting
+    result = collect(user, _strategy_history_payload(user, payload), checkpoint, progress)
+    if payload.get("strategy_plan") is True:
+        _refresh_strategy_plan(user, payload)
+    return result
+
+
 def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
     try:
         from .volume_workspace import collect
@@ -264,18 +279,7 @@ def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
             from event_monitor import collect_events
         return collect_events(user, payload, checkpoint, progress)
     if job["kind"] == "refresh":
-        if job["request_id"].startswith("auto.full."):
-            try:
-                from .background_dispatch import automatic_collection_gate
-            except ImportError:
-                from background_dispatch import automatic_collection_gate
-            waiting = automatic_collection_gate(user, payload, checkpoint)
-            if waiting is not None:
-                return waiting
-        result = collect(user, _strategy_history_payload(user, payload), checkpoint, progress)
-        if payload.get("strategy_plan") is True:
-            _refresh_strategy_plan(user, payload)
-        return result
+        return _perform_refresh(job, user, payload, checkpoint, collect)
     if job["kind"] == "chat":
         return run_message(user, job, payload)
     if job["kind"] == "analysis":

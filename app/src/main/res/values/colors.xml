@@ -4,7 +4,7 @@
     <color name="analyst_on_background">#17243A</color>
     <color name="analyst_surface">#FFFFFF</color>
     <color name="analyst_on_surface">#17243A</color>
-    <color name="analyst_primary">#2463EB</color>
+    <color name="analyst_primary">#205DD7</color>
     <color name="analyst_on_primary">#FFFFFF</color>
     <color name="analyst_primary_container">#E4EDFF</color>
     <color name="analyst_on_primary_container">#153C89</color>
@@ -31,4 +31,5 @@
 
     <color name="analyst_launcher_background">@color/analyst_surface</color>
 </resources>
+
 

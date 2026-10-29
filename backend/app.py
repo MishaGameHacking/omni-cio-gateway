@@ -291,7 +291,7 @@ def mobile_login_result(
     --surface: #FFFFFF;
     --text: #17243A;
     --muted: #526176;
-    --primary: #2463EB;
+    --primary: #205DD7;
     --on-primary: #FFFFFF;
     --primary-container: #E4EDFF;
     --on-primary-container: #153C89;
