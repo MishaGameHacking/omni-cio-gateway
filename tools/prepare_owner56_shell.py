@@ -10,6 +10,9 @@ import zipfile
 
 CERT = "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1"
 REQUIRED_PREVIEWS = {
+    "OwnerRail56_owner56-rail-collapsed", "OwnerRail56_owner56-rail-collapsed-large-text",
+    "Rail53_rail53-graphite", "OwnerResearch56_owner56-research",
+    "OwnerResearch56_owner56-research-large-text", "Analytics54Value_analytics54-value",
     "OwnerCooldown56_owner56-cooldown", "OwnerCooldown56_owner56-cooldown-large-text",
     "LoginAppearance_login-dark", "LoginAppearance_login-narrow-large-text",
     "LoginErrorAppearance_login-error-dark", "OwnerSetup55_owner55-setup",

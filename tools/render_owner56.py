@@ -1,4 +1,4 @@
-"""Render owner55 production composables on the owner laptop; not native acceptance."""
+"""Render candidate56 production composables on the owner laptop; not native acceptance."""
 from __future__ import annotations
 import json
 import os
@@ -10,6 +10,12 @@ import sys
 import time
 
 REQUIRED_PREVIEWS = (
+    ("OwnerRail56", "owner56-rail-collapsed"),
+    ("OwnerRail56", "owner56-rail-collapsed-large-text"),
+    ("Rail53", "rail53-graphite"),
+    ("OwnerResearch56", "owner56-research"),
+    ("OwnerResearch56", "owner56-research-large-text"),
+    ("Analytics54Value", "analytics54-value"),
     ("OwnerCooldown56", "owner56-cooldown"),
     ("OwnerCooldown56", "owner56-cooldown-large-text"),
     ("LoginAppearance", "login-dark"),
@@ -32,14 +38,14 @@ def require_source_previews(source):
     missing = [function + "_" + preview for function, preview in REQUIRED_PREVIEWS
                if cases.count((function, preview)) != 1]
     if missing:
-        raise ValueError("owner55_source_previews_incomplete:" + ",".join(missing))
+        raise ValueError("owner56_source_previews_incomplete:" + ",".join(missing))
 
 def require_preview_inventory(paths):
     names = [path.name for path in paths]
     missing = [prefix for prefix in REQUIRED_PREVIEW_PREFIXES
                if sum(name.startswith(prefix + "_") and name.endswith(".png") for name in names) != 1]
     if missing:
-        raise ValueError("owner55_preview_inventory_incomplete:" + ",".join(missing))
+        raise ValueError("owner56_preview_inventory_incomplete:" + ",".join(missing))
 
 def snapshot_reference(reference):
     original = {}

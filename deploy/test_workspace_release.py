@@ -247,13 +247,11 @@ class ServiceRollbackTests(unittest.TestCase):
 
 class OwnerPasswordReleaseTests(unittest.TestCase):
     def test_release_is_bound_to_deployed_baseline_and_reviewed_modules(self):
-        self.assertEqual(release.BASE, '9bf6dbaea3625a6479691e71365b621d965358c6')
+        self.assertEqual(release.BASE, 'b69169abb4e750985ba79bf4c08f8f0f1a2ef596')
         self.assertEqual(release.MODULES, {
-            'ai_broker_access.py', 'ai_budget.py', 'ai_guarded_client.py', 'app.py',
-            'credit_evidence.py', 'owner_app.py', 'owner_password.py', 'owner_password_routes.py',
-            'portfolio_mandate.py', 'purchase_policy.py', 'strategy_construction.py',
-            'strategy_profiles.py', 'volume_credit.py', 'volume_market.py',
-            'volume_purchases.py', 'volume_workspace.py',
+            'investment_chat_policy.py', 'osint_api.py', 'osint_read.py',
+            'osint_retention.py', 'osint_store.py', 'osint_worker.py',
+            'volume_chat.py', 'volume_explanations.py',
         })
 
     def status(self, **changes):
