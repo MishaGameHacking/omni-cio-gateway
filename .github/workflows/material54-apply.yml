@@ -1,0 +1,61 @@
+name: Apply owner-requested material-only notifications
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/material54-apply.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: a88ea60c71c4d19942ccf1892ceba50213e6e528
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40864145525'
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 6000a1ecc80027338552baccc9e8c5c149bab2c6
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Bind laptop preference tests and completed runtime deployment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            for(const [run_id,sha,path] of [
+              [40862431054,'6000a1ecc80027338552baccc9e8c5c149bab2c6','.github/workflows/material54-check.yml'],
+              [Number(process.env.EXPECTED_RUNTIME_DEPLOY_RUN),'62ea944be919579f3ae3170da66d9acbe9120036','.github/workflows/workspace-deploy.yml']]) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||run.path!==path||run.run_attempt!==1)
+                throw new Error('Required verification does not match');
+            }
+      - name: Prepare exact tested administrative preference operation
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          target=Path('deploy/plan-20261027')
+          target.mkdir(parents=True,exist_ok=True)
+          (target/'operation.py').write_bytes(Path('deploy/material_notifications54.py').read_bytes())
+          (target/'payload.json').write_text(json.dumps({'source_commit':os.environ['EXPECTED_SOURCE_SHA'],'deployment_run':os.environ['EXPECTED_RUNTIME_DEPLOY_RUN']}))
+          PY
+      - name: Change only scheduled briefs while preserving material events and quiet hours
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/owner_plan_transport_20261027.py
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: material54-preferences-${{ github.run_id }}
+          path: plan-reports/
+          retention-days: 7
+          if-no-files-found: warn
