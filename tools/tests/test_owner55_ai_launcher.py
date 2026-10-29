@@ -4,7 +4,10 @@ import importlib.util
 import json
 from pathlib import Path
 import tempfile
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
 
 def load(name, filename):
@@ -92,6 +95,43 @@ class LauncherContracts(unittest.TestCase):
         outcome['failure_code'] = 'arbitrary_provider_reply'
         with self.assertRaisesRegex(RuntimeError, 'guest_outcome_invalid'):
             guest.validate_outcome(json.dumps(outcome).encode(), TOKEN)
+
+    def test_readonly_transport_diagnostics_preserve_only_fixed_codes_and_booleans(self):
+        outcome = {'status': 'not_activated', 'reason': 'private_preflight_requires_inspection',
+            'failure_code': 'private_delivery_failed', 'transport_code': 'private_ssh_client_missing',
+            'transport_operation_started': False, 'temporary_ssh_key_removed': True,
+            'new_key_id': None, 'new_key_retained': False}
+        self.assertEqual(guest.validate_outcome(json.dumps(outcome).encode(), TOKEN), outcome)
+        for change in ({'transport_code': 'provider_raw_error'}, {'transport_operation_started': 'false'}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(RuntimeError, 'guest_outcome_invalid'):
+                    guest.validate_outcome(json.dumps({**outcome, **change}).encode(), TOKEN)
+
+    def test_preflight_completion_preserves_readiness_and_forbids_mutation(self):
+        ready = {'status': 'ready', 'reason': 'ready', 'server_id': 9417611,
+            'existing_key_absent': True, 'budget_sources_verified': True,
+            'configuration_changed': False, 'read_only_preflight': True,
+            'ai_key_created': False, 'ai_limits_changed': False, 'inference_called': False}
+        blocked = {**ready, 'status': 'not_ready', 'reason': 'existing_inference_key_must_not_be_replaced',
+                   'existing_key_absent': False}
+        for outcome in (ready, blocked):
+            report = {'status': 'completed', 'action': 'preflight_only', 'exit_code': 0,
+                'outcome': outcome, 'local_cleanup_succeeded': True, 'automatic_retry_permitted': False}
+            with self.subTest(status=outcome['status']):
+                self.assertEqual(guest.validate_report(json.dumps(report).encode(), TOKEN), report)
+                for field in ('configuration_changed', 'ai_key_created', 'ai_limits_changed', 'inference_called'):
+                    changed = {**outcome, field: True}
+                    with self.assertRaisesRegex(RuntimeError, 'guest_success_receipt_incomplete'):
+                        guest.validate_outcome(json.dumps(changed).encode(), TOKEN)
+        for change in ({'reason': 'arbitrary_provider_reply'}, {'existing_key_absent': False},
+                       {'budget_sources_verified': False}, {'status': 'not_ready'}):
+            with self.subTest(change=change):
+                with self.assertRaisesRegex(RuntimeError, 'guest_success_receipt_incomplete'):
+                    guest.validate_outcome(json.dumps({**ready, **change}).encode(), TOKEN)
+        wrong_action = {'status': 'completed', 'action': 'provision_disabled', 'exit_code': 0,
+            'outcome': ready, 'local_cleanup_succeeded': True, 'automatic_retry_permitted': False}
+        with self.assertRaisesRegex(RuntimeError, 'guest_success_receipt_incomplete'):
+            guest.validate_report(json.dumps(wrong_action).encode(), TOKEN)
 
     def test_activation_receipt_requires_caps_no_trade_and_unchanged_public_feed(self):
         outcome = {'status': 'activated', 'server_id': 9417611,

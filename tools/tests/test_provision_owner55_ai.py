@@ -76,7 +76,7 @@ class ProvisionTests(unittest.TestCase):
     def transfer(self, operation, payload, secret, contract):
         self.deliveries.append((payload['action'], secret))
         if payload['action'] == 'preflight':
-            return {'status': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
+            return {'status': 'ready', 'reason': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
                     'budget_sources_verified': True, 'configuration_changed': False}
         if self.stage_error:
             raise self.stage_error
@@ -121,6 +121,43 @@ class ProvisionTests(unittest.TestCase):
         self.api.rows = [{'id': KEY_ID, 'name': NAME}]
         with self.assertRaisesRegex(provision.ProvisionError, 'existing_dedicated_key_requires_inspection'):
             self.invoke()
+        self.assertEqual(self.writes(), [])
+
+    def test_preflight_transport_failure_never_creates_ai_key_and_preserves_safe_metadata(self):
+        failure = provision.PrivateTransportError('private_remote_operation_failed',
+                    operation_started=True, temporary_key_removed=False)
+        transfer = mock.Mock(side_effect=failure)
+        with self.assertRaisesRegex(provision.ProvisionError, '^private_preflight_requires_inspection$') as raised:
+            provision.provision(self.api, transfer, 'reviewed-op', {}, NAME, now=NOW)
+        result = raised.exception
+        self.assertEqual(result.transport_code, 'private_remote_operation_failed')
+        self.assertTrue(result.transport_operation_started)
+        self.assertFalse(result.temporary_ssh_key_removed)
+        self.assertIsNone(result.key_id)
+        self.assertFalse(result.retained)
+        self.assertEqual(self.writes(), [])
+
+    def test_preflight_diagnostics_do_not_copy_unknown_exception_text(self):
+        failure = provision.PrivateTransportError(SECRET, operation_started=False)
+        result = provision.preflight_transport_error(failure)
+        self.assertEqual(result.transport_code, 'private_preflight_failed')
+        self.assertNotIn(SECRET, repr(result.__dict__))
+
+    def test_readonly_preflight_cannot_create_or_change_ai_key(self):
+        receipt = provision.inspect_preflight(self.api, self.transfer, 'reviewed-op', {}, now=NOW)
+        self.assertEqual(receipt['status'], 'ready')
+        self.assertTrue(receipt['read_only_preflight'])
+        self.assertFalse(receipt['ai_key_created'])
+        self.assertFalse(receipt['ai_limits_changed'])
+        self.assertEqual(self.writes(), [])
+
+    def test_readonly_preflight_preserves_fixed_remote_blocker_without_writes(self):
+        transfer = mock.Mock(return_value={'status': 'not_ready', 'reason': 'incomplete_budget_source_proof',
+            'server_id': 9417611, 'existing_key_absent': False, 'budget_sources_verified': False,
+            'configuration_changed': False})
+        receipt = provision.inspect_preflight(self.api, transfer, 'reviewed-op', {}, now=NOW)
+        self.assertEqual(receipt['status'], 'not_ready')
+        self.assertEqual(receipt['reason'], 'incomplete_budget_source_proof')
         self.assertEqual(self.writes(), [])
 
     def test_masked_creation_removes_only_just_created_unused_key(self):
@@ -179,6 +216,15 @@ class ProvisionTests(unittest.TestCase):
 
 
 class StagingFormatTests(unittest.TestCase):
+    def test_remote_preflight_does_not_return_unknown_exception_text(self):
+        with mock.patch.object(stage.os, 'getuid', return_value=0, create=True), \
+             mock.patch.object(stage, 'LOCK') as lock:
+            lock.open.side_effect = RuntimeError(SECRET)
+            receipt = stage.preflight({'payload': {'action': 'preflight'}, 'secret': None})
+        self.assertEqual(receipt['reason'], 'preflight_not_verified')
+        self.assertFalse(receipt['configuration_changed'])
+        self.assertNotIn(SECRET, str(receipt))
+
     def test_concurrent_configuration_edit_is_not_overwritten(self):
         with tempfile.TemporaryDirectory() as directory:
             configuration = Path(directory) / 'backend.env'

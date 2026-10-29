@@ -25,6 +25,14 @@ SOURCE_NAMES = {'ai_budget.py', 'ai_guarded_client.py', 'ai_broker_access.py'}
 DISABLED = {'AI_USER_DAILY_RUB': '0', 'AI_PROJECT_DAILY_RUB': '0',
             'AI_USER_MONTHLY_RUB': '0', 'AI_PROJECT_MONTHLY_RUB': '0',
             'AI_EXTERNAL_PROCESSING_APPROVED': 'false'}
+PREFLIGHT_REASONS = {'ready', 'root_transport_required', 'preflight_secret_not_allowed',
+    'incomplete_budget_source_proof', 'invalid_source_proof', 'budget_source_not_the_reviewed_version',
+    'unsafe_configuration_or_source_file', 'unsafe_environment_permissions', 'unsafe_configuration_file',
+    'configuration_changed_while_reading', 'configuration_too_large', 'unsupported_environment_syntax',
+    'duplicate_environment_variable', 'unsupported_environment_value',
+    'existing_inference_key_must_not_be_replaced', 'custom_route_catalog_requires_separate_review',
+    'required_file_missing', 'required_file_access_denied', 'deployment_lock_busy',
+    'configuration_encoding_invalid', 'configuration_format_invalid', 'preflight_not_verified'}
 
 
 def need(condition, code):
@@ -175,8 +183,42 @@ def atomic_configuration(raw, expected):
             temporary.unlink()
 
 
+def preflight(envelope):
+    receipt = {'status': 'not_ready', 'reason': 'preflight_not_verified', 'server_id': 9417611,
+               'existing_key_absent': False, 'budget_sources_verified': False, 'configuration_changed': False}
+    try:
+        import fcntl
+        need(os.getuid() == 0, 'root_transport_required')
+        need(envelope.get('secret') is None, 'preflight_secret_not_allowed')
+        with LOCK.open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            verify_sources(envelope['payload'].get('source_sha256'))
+            receipt['budget_sources_verified'] = True
+            original = configuration_snapshot()[0]
+            no_existing_key(parse_environment(original))
+            receipt['existing_key_absent'] = True
+        receipt.update(status='ready', reason='ready')
+    except BaseException as error:
+        candidate = error.args[0] if error.args else None
+        if isinstance(error, RuntimeError) and isinstance(candidate, str) and candidate in PREFLIGHT_REASONS:
+            receipt['reason'] = candidate
+        elif isinstance(error, FileNotFoundError):
+            receipt['reason'] = 'required_file_missing'
+        elif isinstance(error, PermissionError):
+            receipt['reason'] = 'required_file_access_denied'
+        elif isinstance(error, BlockingIOError):
+            receipt['reason'] = 'deployment_lock_busy'
+        elif isinstance(error, UnicodeError):
+            receipt['reason'] = 'configuration_encoding_invalid'
+        elif isinstance(error, ValueError):
+            receipt['reason'] = 'configuration_format_invalid'
+    return receipt
+
+
 def run(envelope):
     import fcntl
+    if isinstance(envelope.get('payload'), dict) and envelope['payload'].get('action') == 'preflight':
+        return preflight(envelope)
     need(os.getuid() == 0, 'root_transport_required')
     payload = envelope['payload']
     need(isinstance(payload, dict) and payload.get('action') in {'preflight', 'stage_disabled'}, 'invalid_stage_action')
@@ -186,9 +228,6 @@ def run(envelope):
         original_snapshot = configuration_snapshot()
         original = original_snapshot[0]
         no_existing_key(parse_environment(original))
-        if payload['action'] == 'preflight':
-            return {'status': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
-                    'budget_sources_verified': True, 'configuration_changed': False}
         changes = settings_for(payload, envelope.get('secret'))
         desired = replacement_environment(original, changes)
         atomic_configuration(desired, original_snapshot)

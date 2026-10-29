@@ -18,18 +18,43 @@ import urllib.request
 
 from inspect_owner55_ai import (BASE, FINANCES, KEYS, MODELS, MODEL, DEDICATED_PREFIX,
     MAX_BYTES, MASKED, NoRedirect, complete_collection, model_summary, uuid_text, decimal_text)
-from owner_ai_private_transport import transport_secret, PrivateTransportError, require_owner_wsl
+from owner_ai_private_transport import (transport_secret, PrivateTransportError, require_owner_wsl,
+                                       SAFE_TRANSPORT_FAILURE_CODES)
 
 PROVISION_GATE = 'create-disabled-owner55-key-after-review'
-PREFLIGHT_CONTRACT = {'status': {'ready'}, 'server_id': int, 'existing_key_absent': bool,
+PREFLIGHT_ONLY_GATE = 'inspect-owner55-configuration-after-review'
+PREFLIGHT_REASONS = {'ready', 'root_transport_required', 'preflight_secret_not_allowed',
+    'incomplete_budget_source_proof', 'invalid_source_proof', 'budget_source_not_the_reviewed_version',
+    'unsafe_configuration_or_source_file', 'unsafe_environment_permissions', 'unsafe_configuration_file',
+    'configuration_changed_while_reading', 'configuration_too_large', 'unsupported_environment_syntax',
+    'duplicate_environment_variable', 'unsupported_environment_value',
+    'existing_inference_key_must_not_be_replaced', 'custom_route_catalog_requires_separate_review',
+    'required_file_missing', 'required_file_access_denied', 'deployment_lock_busy',
+    'configuration_encoding_invalid', 'configuration_format_invalid', 'preflight_not_verified'}
+PREFLIGHT_CONTRACT = {'status': {'ready', 'not_ready'}, 'reason': PREFLIGHT_REASONS,
+    'server_id': int, 'existing_key_absent': bool,
     'budget_sources_verified': bool, 'configuration_changed': bool}
 
 
 class ProvisionError(RuntimeError):
-    def __init__(self, code, *, key_id=None, retained=False, failure_code=None):
+    def __init__(self, code, *, key_id=None, retained=False, failure_code=None,
+                 transport_code=None, transport_operation_started=None, temporary_ssh_key_removed=None):
         super().__init__(code)
         self.code, self.key_id, self.retained = code, key_id, retained
         self.failure_code = failure_code
+        self.transport_code = transport_code
+        self.transport_operation_started = transport_operation_started
+        self.temporary_ssh_key_removed = temporary_ssh_key_removed
+
+
+def preflight_transport_error(error):
+    candidate = error.code
+    code = candidate if isinstance(candidate, str) and candidate in SAFE_TRANSPORT_FAILURE_CODES else 'private_preflight_failed'
+    started = error.operation_started if type(error.operation_started) is bool else None
+    removed = error.temporary_key_removed if type(error.temporary_key_removed) is bool else None
+    return ProvisionError('private_preflight_requires_inspection', failure_code='private_delivery_failed',
+                          transport_code=code, transport_operation_started=started,
+                          temporary_ssh_key_removed=removed)
 
 
 def safe_failure_code(error):
@@ -153,8 +178,35 @@ def staged_contract(key_id):
 
 
 def require_ready(receipt):
-    need(receipt == {'status': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
+    need(receipt == {'status': 'ready', 'reason': 'ready', 'server_id': 9417611, 'existing_key_absent': True,
                     'budget_sources_verified': True, 'configuration_changed': False}, 'remote_preflight_failed')
+
+
+def inspect_preflight(api, private_transfer, operation, source_sha256, *, now=None):
+    finances = api.request('GET', FINANCES).get('finances')
+    need(isinstance(finances, dict) and finances.get('currency') == 'RUB', 'account_currency_not_rub')
+    pricing(api, datetime.now(timezone.utc) if now is None else now)
+    inventory = keys(api)
+    need(not any(row['name'].startswith(DEDICATED_PREFIX) for row in inventory),
+         'existing_dedicated_key_requires_inspection')
+    try:
+        receipt = private_transfer(operation, {'action': 'preflight', 'source_sha256': source_sha256},
+                                   None, PREFLIGHT_CONTRACT)
+    except PrivateTransportError as error:
+        raise preflight_transport_error(error) from None
+    # The private transport enforces the finite reason/type contract. Recheck
+    # meaning here so an inconsistent receipt cannot imply successful readiness.
+    need(set(receipt) == set(PREFLIGHT_CONTRACT) and receipt.get('server_id') == 9417611
+         and receipt.get('status') in {'ready', 'not_ready'} and receipt.get('reason') in PREFLIGHT_REASONS
+         and receipt.get('configuration_changed') is False
+         and type(receipt.get('existing_key_absent')) is bool
+         and type(receipt.get('budget_sources_verified')) is bool, 'remote_preflight_failed')
+    if receipt['status'] == 'ready':
+        require_ready(receipt)
+    else:
+        need(receipt['reason'] != 'ready', 'remote_preflight_failed')
+    return {**receipt, 'read_only_preflight': True, 'ai_key_created': False,
+            'ai_limits_changed': False, 'inference_called': False}
 
 
 def provision(api, private_transfer, operation, source_sha256, name, *, now=None):
@@ -166,8 +218,14 @@ def provision(api, private_transfer, operation, source_sha256, name, *, now=None
     before = keys(api)
     need(not any(isinstance(row.get('name'), str) and row['name'].startswith(DEDICATED_PREFIX) for row in before),
          'existing_dedicated_key_requires_inspection')
-    require_ready(private_transfer(operation, {'action': 'preflight', 'source_sha256': source_sha256},
-                                   None, PREFLIGHT_CONTRACT))
+    try:
+        receipt = private_transfer(operation, {'action': 'preflight', 'source_sha256': source_sha256},
+                                   None, PREFLIGHT_CONTRACT)
+    except PrivateTransportError as error:
+        # This is before POST /ai-keys. Preserve only fixed diagnostic codes and
+        # cleanup booleans, never provider/SSH text, credentials or raw receipts.
+        raise preflight_transport_error(error) from None
+    require_ready(receipt)
     # Repeat the inventory immediately before creation. Workflow concurrency
     # must serialize this installer; no pre-existing key is ever regenerated.
     need(keys(api) == before, 'key_inventory_changed_before_creation')
@@ -229,12 +287,19 @@ def provision(api, private_transfer, operation, source_sha256, name, *, now=None
 
 def main():
     require_owner_wsl()
-    need(os.environ.get('OWNER_AI_PROVISION_REVIEW') == PROVISION_GATE, 'reviewed_provisioning_gate_required')
+    preflight_only = os.environ.get('OWNER_AI_ACTION') == 'preflight_only'
+    gate = PREFLIGHT_ONLY_GATE if preflight_only else PROVISION_GATE
+    need(os.environ.get('OWNER_AI_PROVISION_REVIEW') == gate, 'reviewed_provisioning_gate_required')
     token = os.environ.get('TIMEWEB_CLOUD_TOKEN', '').strip()
     need(token and len(token) <= 8192 and not any(c.isspace() for c in token), 'protected_cloud_credential_required')
     run_id = os.environ.get('GITHUB_RUN_ID', '')
     need(re.fullmatch('[0-9]{8,20}', run_id), 'invalid_run_identity')
     source_sha256 = json.loads(os.environ['OWNER_AI_EXPECTED_BUDGET_SOURCES'])
+    if preflight_only:
+        receipt = inspect_preflight(CloudAPI(token), transport_secret,
+            Path('deploy/stage_owner55_ai.py').read_text(), source_sha256)
+        print(json.dumps(receipt), flush=True)
+        return
     receipt = provision(CloudAPI(token), transport_secret,
         Path('deploy/stage_owner55_ai.py').read_text(), source_sha256, DEDICATED_PREFIX + run_id)
     print(json.dumps(receipt), flush=True)
@@ -246,7 +311,9 @@ if __name__ == '__main__':
     except ProvisionError as error:
         print(json.dumps({'status': 'not_activated', 'reason': error.code,
                           'new_key_id': error.key_id, 'new_key_retained': error.retained,
-                          'failure_code': error.failure_code}), flush=True)
+                          'failure_code': error.failure_code, 'transport_code': error.transport_code,
+                          'transport_operation_started': error.transport_operation_started,
+                          'temporary_ssh_key_removed': error.temporary_ssh_key_removed}), flush=True)
         raise SystemExit(1) from None
     except BaseException:
         print(json.dumps({'status': 'not_activated', 'reason': 'unexpected_administrative_failure'}), flush=True)

@@ -5,12 +5,14 @@ operation; this module neither creates AI keys nor enables a provider or trading
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from functools import wraps
 import json
 import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -21,12 +23,28 @@ MAX_RECEIPT = 16 * 1024
 MAX_ENVELOPE = 512 * 1024
 PRIVATE_ROOT = Path('/home/analyst-ci/.local/state/analyst-owner-ai')
 WSL_HOST_MARKER = 'LAPTOP-NPSGA016:Ubuntu-24.04'
+SAFE_TRANSPORT_FAILURE_CODES = frozenset({
+    'owner_wsl_runtime_required', 'owner_private_temporary_directory_required',
+    'private_operation_size_invalid', 'private_payload_invalid', 'private_credential_invalid',
+    'private_credential_embedded_in_code', 'private_envelope_size_invalid',
+    'private_transport_preflight_failed', 'private_transport_dependency_failed',
+    'private_server_metadata_failed', 'private_server_identity_invalid',
+    'private_ssh_client_missing', 'private_ssh_keygen_missing', 'private_ssh_key_generation_failed',
+    'private_ssh_key_create_failed', 'private_ssh_key_attach_failed', 'private_ssh_setup_failed',
+    'private_ssh_key_permissions_invalid', 'private_temporary_key_identity_invalid',
+    'private_ssh_unavailable', 'private_remote_operation_failed', 'private_operation_timeout',
+    'private_transport_failed', 'private_temporary_key_cleanup_failed', 'private_local_workspace_failed',
+    'private_receipt_duplicate_key', 'private_receipt_size_invalid', 'private_receipt_contains_credential',
+    'private_receipt_invalid_json', 'private_receipt_fields_invalid', 'private_receipt_contract_invalid',
+    'private_receipt_value_invalid', 'private_receipt_server_invalid',
+})
 
 
 class PrivateTransportError(RuntimeError):
     def __init__(self, code, *, operation_started=False, temporary_key_removed=True,
                  validated_receipt=None):
         super().__init__(code)
+        self.code = code
         self.operation_started = operation_started
         self.temporary_key_removed = temporary_key_removed
         self.validated_receipt = validated_receipt
@@ -35,6 +53,22 @@ class PrivateTransportError(RuntimeError):
 def _need(condition, code):
     if not condition:
         raise PrivateTransportError(code)
+
+
+class _DiscardedOutput:
+    def write(self, text):
+        return len(text)
+    def flush(self):
+        pass
+
+
+def _private_output(function):
+    """Never relay upstream dependency diagnostics, including import failures."""
+    @wraps(function)
+    def protected(*args, **kwargs):
+        with redirect_stdout(_DiscardedOutput()), redirect_stderr(_DiscardedOutput()):
+            return function(*args, **kwargs)
+    return protected
 
 
 def _kernel_release():
@@ -129,6 +163,7 @@ def _private_workspace(outcome):
         raise PrivateTransportError('private_local_workspace_failed', **outcome()) from None
 
 
+@_private_output
 def transport_secret(operation, payload, secret, receipt_contract):
     """Return a sanitized receipt, or a fixed-code error with outcome metadata.
 
@@ -150,6 +185,8 @@ def transport_secret(operation, payload, secret, receipt_contract):
     except (ValueError, TypeError):
         raise PrivateTransportError('private_payload_invalid') from None
     _need(len(envelope) <= MAX_ENVELOPE, 'private_envelope_size_invalid')
+    _need(shutil.which('ssh') is not None, 'private_ssh_client_missing')
+    _need(shutil.which('ssh-keygen') is not None, 'private_ssh_keygen_missing')
     # This literal command never contains the token, payload or provider settings.
     bootstrap = ("import json,sys; raw=sys.stdin.buffer.read(524289); "
                  "assert len(raw)<=524288; e=json.loads(raw); "
@@ -157,6 +194,9 @@ def transport_secret(operation, payload, secret, receipt_contract):
                  "{'ENVELOPE':e,'__name__':'__main__'})")
     try:
         transport = _load_transport()
+    except Exception:
+        raise PrivateTransportError('private_transport_dependency_failed') from None
+    try:
         status, data = transport.api('GET', '/servers/' + str(SERVER_ID))
         server = data.get('server', {})
         _need(status == 200 and transport.SERVER_ID == SERVER_ID
@@ -165,8 +205,10 @@ def transport_secret(operation, payload, secret, receipt_contract):
               and server.get('availability_zone') == 'ams-1'
               and transport.p.cloud.public_ipv4(server) == transport.IP,
               'private_server_identity_invalid')
+    except PrivateTransportError:
+        raise
     except Exception:
-        raise PrivateTransportError('private_transport_preflight_failed') from None
+        raise PrivateTransportError('private_server_metadata_failed') from None
     access, p = transport.access, transport.p
     access.SERVER_ID = SERVER_ID
     operation_started, receipt, key_id = False, None, None
@@ -174,6 +216,7 @@ def transport_secret(operation, payload, secret, receipt_contract):
     with _private_workspace(lambda: {'operation_started': operation_started,
             'temporary_key_removed': cleanup_ok, 'validated_receipt': receipt}) as directory:
         folder = Path(directory)
+        stage_failure = 'private_ssh_key_generation_failed'
         try:
             folder.chmod(0o700)
             p.cloud.generate_key(folder / 'client')
@@ -186,6 +229,7 @@ def transport_secret(operation, payload, secret, receipt_contract):
             # Creation can succeed remotely even when its response is lost.
             # Without a verified ID there is no safe key to delete by guess.
             cleanup_ok = False
+            stage_failure = 'private_ssh_key_create_failed'
             created = access.request(transport.TOKEN, 'POST', '/ssh-keys', {
                 'name': 'analyst-private-admin-' + os.environ['GITHUB_RUN_ID'],
                 'body': public, 'is_default': False})
@@ -195,8 +239,10 @@ def transport_secret(operation, payload, secret, receipt_contract):
                   'private_temporary_key_identity_invalid')
             key_id = key['id']
             attached_attempted = True
+            stage_failure = 'private_ssh_key_attach_failed'
             access.request(transport.TOKEN, 'POST', '/servers/' + str(SERVER_ID) + '/ssh-keys',
                            {'ssh_key_ids': [key_id]})
+            stage_failure = 'private_ssh_setup_failed'
             command = p.ssh_command(folder, transport.IP, transport.HOST_KEY)
             command[1:1] = ['-o', 'ServerAliveInterval=20', '-o', 'ServerAliveCountMax=3']
             for attempt in range(12):
@@ -208,6 +254,7 @@ def transport_secret(operation, payload, secret, receipt_contract):
                         raise PrivateTransportError('private_ssh_unavailable') from None
                     time.sleep(5)
             operation_started = True
+            stage_failure = 'private_remote_operation_failed'
             result = subprocess.run([*command, 'python3 -c ' + shlex.quote(bootstrap)],
                                     input=envelope, stdout=subprocess.PIPE,
                                     stderr=subprocess.DEVNULL, timeout=240)
@@ -216,8 +263,10 @@ def transport_secret(operation, payload, secret, receipt_contract):
                                        (secret, transport.TOKEN))
         except PrivateTransportError as error:
             failure = str(error)
+        except subprocess.TimeoutExpired:
+            failure = 'private_operation_timeout' if operation_started else stage_failure
         except Exception:
-            failure = 'private_transport_failed'
+            failure = stage_failure
         finally:
             if key_id is not None:
                 detached = not attached_attempted

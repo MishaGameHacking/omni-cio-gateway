@@ -64,6 +64,8 @@ class PrivateTransferTests(unittest.TestCase):
     def setUp(self):
         guard = mock.patch.object(transport, 'require_owner_wsl')
         guard.start(); self.addCleanup(guard.stop)
+        executables = mock.patch.object(transport.shutil, 'which', side_effect=lambda name: '/usr/bin/' + name)
+        executables.start(); self.addCleanup(executables.stop)
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.folder = Path(temporary.name)
@@ -174,6 +176,43 @@ class PrivateTransferTests(unittest.TestCase):
         self.assertFalse(caught.exception.temporary_key_removed)
         self.backend.access.request.assert_called_once()
         self.assertEqual(list(self.folder.iterdir()), [])
+
+    def test_missing_ssh_tools_are_reported_before_any_cloud_access(self):
+        for missing, code in (('ssh', 'private_ssh_client_missing'), ('ssh-keygen', 'private_ssh_keygen_missing')):
+            with self.subTest(missing=missing):
+                with mock.patch.object(transport.shutil, 'which', side_effect=lambda name: None if name == missing else '/usr/bin/' + name):
+                    with mock.patch.object(transport, '_load_transport') as load:
+                        with self.assertRaisesRegex(transport.PrivateTransportError, code) as caught:
+                            self.invoke()
+                        load.assert_not_called()
+                        self.assertFalse(caught.exception.operation_started)
+
+    def test_dependency_prints_and_raw_creation_exception_are_never_replayed(self):
+        def fail(*args, **kwargs):
+            print(SECRET)
+            print(CLOUD_SECRET, file=__import__('sys').stderr)
+            raise RuntimeError(SECRET)
+        self.backend.access.request = fail
+        output = io.StringIO()
+        with redirect_stdout(output), redirect_stderr(output):
+            with self.assertRaisesRegex(transport.PrivateTransportError, 'private_ssh_key_create_failed') as caught:
+                self.invoke()
+        self.assertEqual(output.getvalue(), '')
+        self.assertFalse(caught.exception.operation_started)
+        self.assertFalse(caught.exception.temporary_key_removed)
+        self.assertIn(caught.exception.code, transport.SAFE_TRANSPORT_FAILURE_CODES)
+
+    def test_dependency_import_and_metadata_failures_have_distinct_fixed_codes(self):
+        for target, code in (('_load_transport', 'private_transport_dependency_failed'),
+                             ('metadata', 'private_server_metadata_failed')):
+            with self.subTest(target=target):
+                patch = (mock.patch.object(transport, '_load_transport', side_effect=RuntimeError(SECRET))
+                         if target == '_load_transport' else mock.patch.object(self.backend, 'api', side_effect=RuntimeError(SECRET)))
+                with patch:
+                    with self.assertRaisesRegex(transport.PrivateTransportError, code) as caught:
+                        self.invoke()
+                    self.assertFalse(caught.exception.operation_started)
+        self.assertEqual(self.calls, [])
 
     def test_local_cleanup_failure_preserves_committed_remote_outcome(self):
         original = tempfile.TemporaryDirectory

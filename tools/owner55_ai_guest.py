@@ -26,7 +26,9 @@ FILES = {'tools/launch_owner55_ai_wsl.py', 'tools/owner55_ai_guest.py', 'tools/i
 BOOLEAN_FIELDS = {'existing_key_replaced', 'service_restarted', 'inference_called',
     'provider_fallback_disabled', 'runtime_activation_performed', 'account_currency_rub_confirmed',
     'configuration_loaded', 'health_get_verified', 'auth_boundary_verified', 'inference_probe_called',
-    'brokerage_request_sent', 'automatic_price_renewal_installed', 'public_feed_unchanged'}
+    'brokerage_request_sent', 'automatic_price_renewal_installed', 'public_feed_unchanged',
+    'existing_key_absent', 'budget_sources_verified', 'configuration_changed',
+    'read_only_preflight', 'ai_key_created', 'ai_limits_changed'}
 CAP_FIELDS = {'daily_cap_rub', 'monthly_cap_rub', 'provider_daily_limit_rub', 'provider_30_day_limit_rub'}
 FAILURE_CODES = {'new_key_metadata_mismatch', 'new_gateway_key_masked_or_invalid',
     'zero_limits_incomplete', 'zero_limits_wrong_periods', 'zero_limits_not_enforced_for_all_models',
@@ -44,9 +46,11 @@ def validate_outcome(raw, secret):
          'guest_outcome_invalid')
     result = json.loads(raw)
     allowed = {'status', 'server_id', 'key_id', 'model', 'reason', 'new_key_id', 'new_key_retained',
-               'price_valid_until', 'provider_zero_limits_verified', 'failure_code'} | BOOLEAN_FIELDS | CAP_FIELDS
+               'price_valid_until', 'provider_zero_limits_verified', 'failure_code', 'transport_code',
+               'transport_operation_started', 'temporary_ssh_key_removed'} | BOOLEAN_FIELDS | CAP_FIELDS
     need(isinstance(result, dict) and set(result) <= allowed
-         and result.get('status') in {'staged_disabled', 'not_activated', 'activated', 'activation_unconfirmed'},
+         and result.get('status') in {'staged_disabled', 'not_activated', 'activated', 'activation_unconfirmed',
+                                     'ready', 'not_ready'},
          'guest_outcome_invalid')
     for name, value in result.items():
         need(not isinstance(value, str) or not secret or secret not in value, 'guest_outcome_invalid')
@@ -58,10 +62,16 @@ def validate_outcome(raw, secret):
             need(type(value) is int and value == 9417611, 'guest_outcome_invalid')
         elif name in {'key_id', 'new_key_id'}:
             need(value is None or (isinstance(value, str) and str(uuid.UUID(value)) == value), 'guest_outcome_invalid')
-        elif name in {'new_key_retained', 'provider_zero_limits_verified'}:
+        elif name in {'new_key_retained', 'provider_zero_limits_verified',
+                      'transport_operation_started', 'temporary_ssh_key_removed'}:
             need(value is None or type(value) is bool, 'guest_outcome_invalid')
         elif name == 'failure_code':
             need(value is None or isinstance(value, str) and value in FAILURE_CODES, 'guest_outcome_invalid')
+        elif name == 'transport_code':
+            from owner_ai_private_transport import SAFE_TRANSPORT_FAILURE_CODES
+            need(value is None or isinstance(value, str)
+                 and value in SAFE_TRANSPORT_FAILURE_CODES | {'private_preflight_failed'},
+                 'guest_outcome_invalid')
         elif name == 'reason':
             need(isinstance(value, str) and re.fullmatch('[a-z][a-z0-9_]{0,95}', value), 'guest_outcome_invalid')
         elif name == 'model':
@@ -69,7 +79,22 @@ def validate_outcome(raw, secret):
         elif name == 'price_valid_until':
             need(isinstance(value, str) and len(value) <= 40
                  and datetime.fromisoformat(value).tzinfo is not None, 'guest_outcome_invalid')
-    if result['status'] == 'staged_disabled':
+    if result['status'] in {'ready', 'not_ready'}:
+        from provision_owner55_ai import PREFLIGHT_REASONS
+        expected = {'status': result['status'], 'reason': result.get('reason'), 'server_id': 9417611,
+            'existing_key_absent': result.get('existing_key_absent'),
+            'budget_sources_verified': result.get('budget_sources_verified'),
+            'configuration_changed': False, 'read_only_preflight': True,
+            'ai_key_created': False, 'ai_limits_changed': False, 'inference_called': False}
+        need(result == expected and result.get('reason') in PREFLIGHT_REASONS
+             and type(result.get('existing_key_absent')) is bool
+             and type(result.get('budget_sources_verified')) is bool,
+             'guest_success_receipt_incomplete')
+        need((result['status'] == 'ready' and result['reason'] == 'ready'
+              and result['existing_key_absent'] and result['budget_sources_verified'])
+             or (result['status'] == 'not_ready' and result['reason'] != 'ready'),
+             'guest_success_receipt_incomplete')
+    elif result['status'] == 'staged_disabled':
         expected = {'status': 'staged_disabled', 'server_id': 9417611, 'key_id': result.get('key_id'),
             'model': 'dashscope/qwen3.5-flash', 'daily_cap_rub': '0', 'monthly_cap_rub': '0',
             'existing_key_replaced': False, 'service_restarted': False, 'inference_called': False,
@@ -98,7 +123,7 @@ def validate_report(raw, secret):
     need(isinstance(report, dict) and set(report) == {'status', 'action', 'exit_code', 'outcome',
          'local_cleanup_succeeded', 'automatic_retry_permitted'}, 'guest_report_invalid')
     need(report['status'] in {'completed', 'requires_inspection'}
-         and report['action'] in {'provision_disabled', 'activate'}
+         and report['action'] in {'provision_disabled', 'activate', 'preflight_only'}
          and type(report['exit_code']) is int and 0 <= report['exit_code'] <= 255
          and type(report['local_cleanup_succeeded']) is bool
          and report['automatic_retry_permitted'] is False and isinstance(report['outcome'], dict),
@@ -106,8 +131,10 @@ def validate_report(raw, secret):
     if report['outcome']:
         validate_outcome(json.dumps(report['outcome']).encode(), secret)
     if report['status'] == 'completed':
+        expected_status = {'activate': {'activated'}, 'provision_disabled': {'staged_disabled'},
+                           'preflight_only': {'ready', 'not_ready'}}[report['action']]
         need(report['exit_code'] == 0 and report['local_cleanup_succeeded']
-             and report['outcome'].get('status') == ('activated' if report['action'] == 'activate' else 'staged_disabled'),
+             and report['outcome'].get('status') in expected_status,
              'guest_success_receipt_incomplete')
     return report
 
@@ -145,7 +172,8 @@ def unpack_sources(raw, destination):
 
 def main():
     action = os.environ.get('OWNER_AI_ACTION')
-    controllers = {'provision_disabled': 'tools/provision_owner55_ai.py', 'activate': 'tools/activate_owner55_ai.py'}
+    controllers = {'provision_disabled': 'tools/provision_owner55_ai.py',
+                   'preflight_only': 'tools/provision_owner55_ai.py', 'activate': 'tools/activate_owner55_ai.py'}
     need(action in controllers, 'guest_operation_not_reviewed')
     private_root()
     token = os.environ.get('TIMEWEB_CLOUD_TOKEN', '')
@@ -199,6 +227,7 @@ if __name__ == '__main__':
         raise
     except BaseException:
         print(json.dumps({'status': 'requires_inspection',
-            'action': 'activate' if os.environ.get('OWNER_AI_ACTION') == 'activate' else 'provision_disabled', 'exit_code': 1,
+            'action': os.environ.get('OWNER_AI_ACTION') if os.environ.get('OWNER_AI_ACTION') in
+                {'activate', 'preflight_only'} else 'provision_disabled', 'exit_code': 1,
             'outcome': {}, 'local_cleanup_succeeded': False, 'automatic_retry_permitted': False}), flush=True)
         raise SystemExit(1) from None
