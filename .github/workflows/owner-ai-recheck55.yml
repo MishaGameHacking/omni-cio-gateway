@@ -55,3 +55,4 @@ jobs:
           if result.returncode != 0 or receipt.get("runtime_response_model_matches") is not True:
               raise SystemExit("Supplied key or exact runtime response contract is not verified")
 
+# Run after the read-only server inspection; a queued run was cancelled before any job started.
