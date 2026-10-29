@@ -1,4 +1,4 @@
-name: Deploy verified owner system 55 to existing Timeweb runtime
+name: Deploy verified owner system 56 to existing Timeweb runtime
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -12,16 +12,16 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
-  EXPECTED_TEST_RUN: '40914747142'
-  EXPECTED_ARTIFACT_SHA256: 38ac379b62e7c0378bc4f63965af15fc82a52261c63b8e8d88b3848b9b133c66
-  EXPECTED_BUNDLE_SHA256: 43d0b44ea375917fd83fb8544a1464f0df3107f135466c9c4cbf0d27a98d31b1
-  EXPECTED_TOOLS_SHA: 6f4305459c9fad51abac812d97b41bc6017f43e4
-  EXPECTED_TOOLS_RUN: '40902045113'
+  EXPECTED_SOURCE_SHA: a9574656fcac4507660c872ebcc22641154a3c8a
+  EXPECTED_TEST_RUN: '40966175873'
+  EXPECTED_ARTIFACT_SHA256: 8df19df929e002fa30228bdea48a8dbdcf5acd7ba68ed7858a3a0db7358e7cb8
+  EXPECTED_BUNDLE_SHA256: 649ea9fe5a8c1882731334f11f0eb67e393414c78e529c1be7895bbe0110d7dc
+  EXPECTED_TOOLS_SHA: 45ad46c7e0392b1c17131fcfd1b1dbf8418e0e1e
+  EXPECTED_TOOLS_RUN: '40964343667'
 jobs:
   quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -63,6 +63,19 @@ jobs:
               const {data:current}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
               if(old.sha!==current.sha) throw new Error('Tested installer changed: '+path);
             }
+            let verified=false;
+            for(let attempt=0;attempt<50;attempt++) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(process.env.EXPECTED_TEST_RUN)});
+              if(run.head_sha!==ref||run.path!=='.github/workflows/owner-system.yml'||run.run_attempt!==1)
+                throw new Error('Laptop source verification identity changed');
+              if(run.status==='completed') {
+                if(run.conclusion!=='success') throw new Error('Laptop source verification failed');
+                verified=true;
+                break;
+              }
+              await new Promise(resolve=>setTimeout(resolve,30000));
+            }
+            if(!verified) throw new Error('Exact laptop verification did not finish within bounded wait');
   deploy:
     needs: [quality]
     runs-on: ubuntu-24.04
