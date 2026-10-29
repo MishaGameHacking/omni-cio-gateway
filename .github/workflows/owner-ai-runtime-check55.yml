@@ -78,3 +78,27 @@ jobs:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
         run: python3 tools/adopt_supplied_owner55_ai.py
+      - name: Inspect current project key identity and limits without revealing credentials
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          from contextlib import redirect_stdout, redirect_stderr
+          sys.path.insert(0, 'tools')
+          from adopt_supplied_owner55_ai import API, inventory, DiscardedOutput
+          from owner_ai_admin_transport import require_admin_guard
+          receipt = {'status':'not_verified'}
+          try:
+              with redirect_stdout(DiscardedOutput()), redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  key_id, identities = inventory(API(os.environ['TIMEWEB_CLOUD_TOKEN']))
+                  receipt = {'status':'verified','key_id':key_id,
+                      'provider_daily_cap_rub':'100','monthly_limit_present':'month' in identities,
+                      'fallback_disabled':True,'read_only':True}
+          except BaseException:
+              pass
+          print('OWNER_AI_CURRENT_KEY='+json.dumps(receipt,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='verified' else 1)
+          PY
