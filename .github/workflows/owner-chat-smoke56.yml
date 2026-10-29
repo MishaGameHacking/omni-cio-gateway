@@ -13,8 +13,8 @@ env:
   EXPECTED_DEPLOY_RUN: '40969026216'
   EXPECTED_DEPLOY_SHA: 4269ebc55666bd57d20daba6b31b6e11b561be4f
   EXPECTED_RUNTIME_SOURCE: a9574656fcac4507660c872ebcc22641154a3c8a
-  EXPECTED_SMOKE_TOOLS_SHA: 4b88dcc71ccca360ad48b5f1dbf46a1c4d3f54e3
-  EXPECTED_SMOKE_TOOLS_RUN: '40968832921'
+  EXPECTED_SMOKE_TOOLS_SHA: ec2b214b3bee97a9bfc80ae28d53380a90c70440
+  EXPECTED_SMOKE_TOOLS_RUN: '40971280843'
   EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
   EXPECTED_AI_ADMIN_TOOLS_RUN: '40954726120'
   OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
@@ -105,7 +105,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: tools/owner56_live_chat_runner.py
           sparse-checkout-cone-mode: false
-      - name: Verify exactly one conversation with a one-ruble maximum and no orders
+      - name: Verify exactly one conversation with a two-ruble maximum and no orders
         working-directory: supplied-owner-ai55
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
@@ -126,7 +126,7 @@ jobs:
               'exec(compile('+repr(stage)+',"stage","exec"),support)',
               'exec(compile('+repr(remote)+',"owner-chat-smoke","exec"),{"STAGING":support,"ENVELOPE":ENVELOPE,"__name__":"__main__"})'])
           contract={k:bool for k in ['sent','completed','answer_present']}
-          contract.update(user_messages=int,assistant_messages=int,status={'blocked','incomplete','verified','unconfirmed'})
+          contract.update(server_id=int,user_messages=int,assistant_messages=int,status={'blocked','incomplete','verified','unconfirmed'})
           receipt={'status':'blocked'}
           try:
               with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
