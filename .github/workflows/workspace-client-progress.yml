@@ -1,4 +1,4 @@
-name: Read current laptop client-check progress
+name: Read exact analytics54 verification progress
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -7,24 +7,31 @@ permissions: {}
 jobs:
   observe:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 5
+    timeout-minutes: 4
     steps:
-      - name: Read bounded non-secret logs of the exact owned verification run
+      - name: Read bounded synthetic build logs
         shell: py -3 {0}
         run: |
-          import json, os, re
+          """Read-only diagnostics of this task's owner-laptop build logs."""
+          import os
           from pathlib import Path
+          import json
           if os.environ.get("COMPUTERNAME") != "LAPTOP-NPSGA016":
               raise RuntimeError("owner_laptop_required")
-          run = "40724497603"
-          for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
-              folder = Path("C:/") / runner / "_work/_temp" / ("server-version-client-" + run + "-1")
-              report = folder / "shell-build-steps.json"
-              if report.is_file():
-                  value = json.loads(report.read_text(encoding="utf-8"))
-                  print("CLIENT_STEPS=" + json.dumps([{key:step.get(key) for key in ("label","exit_code","seconds")} for step in value.get("steps",[])]))
-              for log in folder.glob("shell-build-steps-*-gradle.log"):
-                  with log.open("rb") as stream:
-                      stream.seek(max(0,log.stat().st_size-24000))
-                      text = stream.read(24000).decode("utf-8",errors="replace")
-                  print("GRADLE_PROGRESS=" + "\\n".join(line for line in text.splitlines() if re.search(r"Task |FAIL|ERROR|^e: |BUILD |Exception|What went wrong",line))[-10000:])
+          for root in Path("C:/").glob("actions-runner*"):
+              base=root/"_work"/"_temp"
+              for name in ("server-version-client-40865636453-1","redesign-visual-40865765892-1","backend-ci-40865636453-1"):
+                  path=base/name
+                  if not path.is_dir(): continue
+                  for steps in sorted(path.glob("*-steps.json")):
+                      if steps.stat().st_size > 1024*1024: continue
+                      report=json.loads(steps.read_text(encoding="utf-8"))
+                      print(json.dumps({"run":name,"steps":[{key:row.get(key) for key in ("label","started_at","finished_at","exit_code")} for row in report.get("steps",[])]}))
+                  for log in sorted(path.glob("*.log")):
+                      if not (log.name in {"gradle.log","render.log"} or "compose-preview-render" in log.name or log.name.endswith("-gradle.log")):
+                          continue
+                      if log.stat().st_size > 4*1024*1024: continue
+                      lines=log.read_text(encoding="utf-8",errors="replace").splitlines()
+                      filtered=[line[:700] for line in lines if any(word in line for word in ("> Task", "FAILED", "BUILD ", "e: ", "Exception", "Error", "Waiting", "Timeout", "WINDOWS_ANDROID_STEP", "daemon", "Daemon", "lock", "Downloading", "Configure project"))]
+                      print(json.dumps({"run":name,"log":log.name,"bytes":log.stat().st_size,"steps":filtered[-30:]},ensure_ascii=True))
+          
