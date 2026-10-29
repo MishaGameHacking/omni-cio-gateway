@@ -1,0 +1,107 @@
+name: Проверить вход и состояние чата без чтения сообщений
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-chat-diagnostics56.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40954726120'
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+  OWNER_SUPPLIED_AI_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
+  EXPECTED_SUPPLIED_PROBE_SHA: 5c12bd815c65f9e4aece011f4a99330fb538ceb3
+  EXPECTED_SUPPLIED_PROBE_RUN: '40953689640'
+  OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
+jobs:
+  connect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require tested administration, successful probe and deployed budget controls
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            for(const [id,sha,path] of [
+              [e.EXPECTED_AI_ADMIN_TOOLS_RUN,e.EXPECTED_AI_ADMIN_TOOLS_SHA,'.github/workflows/owner-ai-admin-tools55.yml'],
+              [e.EXPECTED_SUPPLIED_PROBE_RUN,e.EXPECTED_SUPPLIED_PROBE_SHA,'.github/workflows/owner-ai-recheck55.yml'],
+              ['40919271605','b8ecdce47e1ecaff06190e46b1fc912687132b6b','.github/workflows/workspace-deploy.yml']]) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(id)});
+              if(r.head_sha!==sha||r.conclusion!=='success'||r.status!=='completed'||r.path!==path||r.run_attempt!==1)
+                throw new Error('Exact successful evidence required');
+            }
+            for(const [name,digest] of Object.entries(JSON.parse(e.OWNER_AI_EXPECTED_BUDGET_SOURCES))) {
+              const {data:f}=await github.rest.repos.getContent({...context.repo,path:'backend/'+name,ref:'b69169abb4e750985ba79bf4c08f8f0f1a2ef596'});
+              if(require('node:crypto').createHash('sha256').update(Buffer.from(f.content,'base64')).digest('hex')!==digest)
+                throw new Error('Budget source identity changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+          sparse-checkout: |
+            tools/owner_ai_admin_transport.py
+            tools/admin_owner55_ai.py
+            tools/adopt_supplied_owner55_ai.py
+            tools/owner55_ai_guest.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/activate_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/owner_plan_transport_20261027.py
+            deploy/stage_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            tools/provision_owner55_bootstrap.py
+            deploy/provision_owner55_bootstrap.py
+            tools/sync_owner55_ai_key.py
+            deploy/sync_owner55_ai_key.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/prepare_owner_vm.py
+            deploy/access_owner_vm.py
+            tools/timeweb_ci_capacity.py
+            tools/timeweb_actions_probe.py
+            tools/timeweb_ci_catalog.py
+          sparse-checkout-cone-mode: false
+      - name: Read only fixed flags and counters from the owner database
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput,source_proof
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          remote="import json,os,sqlite3,time\nfrom pathlib import Path\nBOOLS=['database_opened','owner_present','password_configured','broker_connected','broker_version_valid',\n       'snapshot_present','global_ai_blocked','route_cooldown_active']\nCOUNTS=['chat_threads','user_messages','assistant_messages','jobs_queued','jobs_running','jobs_completed',\n        'jobs_failed','jobs_uncertain','money_unresolved','money_settled','login_wait_seconds','setup_wait_seconds']\nERRORS={'none','other','workspace_paid_outcome_unknown','ai_workspace_reconciliation_required',\n        'ai_broker_connection_required','ai_broker_binding_unavailable','ai_http_401','ai_http_403',\n        'ai_http_429','ai_usage_missing','ai_usage_invalid','ai_chat_response_invalid',\n        'ai_response_not_json','ai_transport_outcome_unknown','ai_pricing_stale','ai_route_unavailable'}\ndef run():\n    out={k:False for k in BOOLS};out.update({k:0 for k in COUNTS})\n    out.update(status='blocked',last_chat_error='none')\n    try:\n        if os.getuid()!=0: return out\n        STAGING['verify_sources'](ENVELOPE['payload']['source_sha256'])\n        settings=STAGING['parse_environment'](STAGING['configuration_snapshot']()[0])\n        path=Path(settings.get('DATABASE_PATH','/var/lib/analyst-ai/backend.db'))\n        if path!=Path('/var/lib/analyst-ai/backend.db') or path.resolve(strict=True)!=path or not path.is_file(): return out\n        db=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True,timeout=5)\n        try:\n            db.execute('PRAGMA query_only=ON')\n            out['database_opened']=True\n            rows=db.execute(\"SELECT u.id,CASE WHEN typeof(u.tinvest_token_encrypted)='blob' AND length(u.tinvest_token_encrypted)>0 THEN 1 ELSE 0 END FROM users u JOIN installation_owner o ON o.telegram_sub=u.telegram_sub WHERE o.singleton=1\").fetchall()\n            if len(rows)!=1:return out\n            owner,connected=rows[0]\n            out.update(owner_present=True,broker_connected=bool(connected))\n            def count(sql,params=()):\n                value=db.execute(sql,params).fetchone()[0]\n                if type(value) is not int or not 0<=value<=1000000000: raise ValueError('invalid_count')\n                return value\n            out['broker_version_valid']=bool(count(\"SELECT count(*) FROM broker_connection_versions WHERE user_id=? AND length(stamp)=64 AND stamp NOT GLOB '*[^0-9a-f]*'\",(owner,)))\n            out['password_configured']=bool(count('SELECT count(*) FROM owner_password_credentials WHERE singleton=1 AND user_id=?',(owner,)))\n            out['snapshot_present']=bool(count('SELECT count(*) FROM workspace_snapshots WHERE user_id=?',(owner,)))\n            out['chat_threads']=count('SELECT count(*) FROM workspace_chat_threads WHERE user_id=?',(owner,))\n            for role,key in [('user','user_messages'),('assistant','assistant_messages')]:\n                out[key]=count('SELECT count(*) FROM workspace_chat_messages WHERE user_id=? AND role=?',(owner,role))\n            for state in ('queued','running','completed','failed','uncertain'):\n                out['jobs_'+state]=count(\"SELECT count(*) FROM workspace_jobs WHERE user_id=? AND kind='chat' AND state=?\",(owner,state))\n            out['money_unresolved']=count(\"SELECT count(*) FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain')\",(owner,))\n            out['money_settled']=count(\"SELECT count(*) FROM ai_money_reservations WHERE user_id=? AND state='settled'\",(owner,))\n            out['global_ai_blocked']=bool(count('SELECT count(*) FROM ai_money_control'))\n            now=int(time.time())\n            out['route_cooldown_active']=bool(count('SELECT count(*) FROM ai_route_cooldown WHERE until_at>?',(now,)))\n            out['login_wait_seconds']=count('SELECT coalesce(max(max(locked_until-?,0)),0) FROM owner_password_attempts',(now,))\n            out['setup_wait_seconds']=count(\"SELECT coalesce(max(max(locked_until-?,0)),0) FROM owner_password_proof_attempts WHERE bucket='anonymous-setup'\",(now,))\n            row=db.execute(\"SELECT error_code FROM workspace_jobs WHERE user_id=? AND kind='chat' AND error_code IS NOT NULL ORDER BY updated_at DESC LIMIT 1\",(owner,)).fetchone()\n            if row:out['last_chat_error']=row[0] if row[0] in ERRORS else 'other'\n            out['status']='inspected'\n        finally:db.close()\n    except BaseException:pass\n    return out\nif __name__=='__main__':print(json.dumps(run()),flush=True)\n"
+          stage=Path('deploy/stage_owner55_ai.py').read_text()
+          operation=chr(10).join([
+              'support={"__name__":"read_only_stage"}',
+              'exec(compile('+repr(stage)+',"stage","exec"),support)',
+              'exec(compile('+repr(remote)+',"owner-diagnostics","exec"),{"STAGING":support,"ENVELOPE":ENVELOPE,"__name__":"__main__"})'])
+          contract={k:bool for k in ['database_opened','owner_present','password_configured','broker_connected','broker_version_valid','snapshot_present','global_ai_blocked','route_cooldown_active']}
+          contract.update({k:int for k in ['chat_threads','user_messages','assistant_messages','jobs_queued','jobs_running','jobs_completed','jobs_failed','jobs_uncertain','money_unresolved','money_settled','login_wait_seconds','setup_wait_seconds']})
+          contract.update(status={'blocked','inspected'},last_chat_error={'none','other','workspace_paid_outcome_unknown','ai_workspace_reconciliation_required','ai_broker_connection_required','ai_broker_binding_unavailable','ai_http_401','ai_http_403','ai_http_429','ai_usage_missing','ai_usage_invalid','ai_chat_response_invalid','ai_response_not_json','ai_transport_outcome_unknown','ai_pricing_stale','ai_route_unavailable'})
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{'source_sha256':source_proof(os.environ)},None,contract)
+          except BaseException:pass
+          print('OWNER_CHAT_DIAGNOSTICS='+json.dumps(receipt,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='inspected' else 1)
+          PY
+
