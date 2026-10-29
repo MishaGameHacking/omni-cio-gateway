@@ -212,7 +212,8 @@ class AnalystBackendClient(
                 connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             }
 
-            responseResult(path, status, responseBody)
+            responseResult(path, status, responseBody,
+                connection.getHeaderField("Retry-After"), connection.getHeaderField("Date"))
         } catch (_: Exception) {
             BackendResult.Failure(
                 "Не удалось связаться с сервером Analyst AI.",
@@ -223,13 +224,14 @@ class AnalystBackendClient(
         }
     }
 
-    private fun responseResult(path: String, status: Int, responseBody: String): BackendResult<String> {
+    private fun responseResult(path: String, status: Int, responseBody: String,
+        retryAfter: String?, serverDate: String?): BackendResult<String> {
         val detail = if (status in 200..299) null else runCatching {
             JSONObject(responseBody).optString("detail")
         }.getOrNull()
         return when {
             status in 200..299 -> BackendResult.Success(responseBody)
-            path.startsWith("/auth/owner/") -> ownerAccessFailure(status)
+            path.startsWith("/auth/owner/") -> ownerAccessFailure(status, retryAfter, serverDate)
             status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
             status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                 status == HttpURLConnection.HTTP_FORBIDDEN -> BackendResult.Failure(
@@ -246,18 +248,6 @@ class AnalystBackendClient(
             )
         }
     }
-
-    private fun ownerAccessFailure(status: Int): BackendResult.Failure = BackendResult.Failure(
-        message = when (status) {
-            401, 403 -> "Доступ не подтверждён. Проверьте пароль или ключ настройки."
-            409 -> "Пароль уже настроен. Войдите с сохранённым паролем."
-            422 -> "Пароль должен содержать не менее 10 символов и не более 128 байт."
-            429 -> "Слишком много попыток. Подождите перед следующим входом."
-            426 -> "Обновите Analyst AI, чтобы продолжить."
-            404 -> "Новый вход ещё не доступен на сервере. Требуется обновление серверной системы."
-            else -> "Не удалось проверить доступ на сервере. Повторите позже."
-        }, retryable = status == 429 || status >= 500 || status == 404, statusCode = status,
-    )
 
     private fun tinvestFailure(detail: String?, status: Int): BackendResult.Failure {
         val message = when (detail) {

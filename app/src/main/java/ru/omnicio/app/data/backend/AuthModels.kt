@@ -15,7 +15,12 @@ data class AnalystSession(
 
 sealed interface BackendResult<out T> {
     data class Success<T>(val value: T) : BackendResult<T>
-    data class Failure(val message: String, val retryable: Boolean, val statusCode: Int? = null) : BackendResult<Nothing>
+    data class Failure(
+        val message: String,
+        val retryable: Boolean,
+        val statusCode: Int? = null,
+        val retryAfterSeconds: Int? = null,
+    ) : BackendResult<Nothing>
 }
 
 

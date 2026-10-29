@@ -1,11 +1,14 @@
 package ru.omnicio.app.ui.auth
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalInspectionMode
@@ -16,26 +19,51 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import ru.omnicio.app.data.backend.*
 import ru.omnicio.app.ui.spectrum.*
 
 internal val LocalOwnerAccessPreviewStatus = staticCompositionLocalOf<OwnerAccessStatus?> { null }
+internal val LocalOwnerAccessPreviewCooldownSeconds = staticCompositionLocalOf { 0 }
+
+private fun ownerAccessCooldownSaver(clock: () -> Long) = listSaver<OwnerAccessCooldown, Long>(
+    save = { it.snapshot() },
+    restore = { OwnerAccessCooldown.restore(it, clock) },
+)
 
 /** Password fields and request copies are memory-only, never saved UI state. */
-private class OwnerAccessForm(previewStatus: OwnerAccessStatus?) {
+private class OwnerAccessForm(previewStatus: OwnerAccessStatus?, val cooldown: OwnerAccessCooldown) {
     var status by mutableStateOf(previewStatus)
     var statusBusy by mutableStateOf(false)
     var busy by mutableStateOf(false)
     var password by mutableStateOf("")
     var repeated by mutableStateOf("")
     var bootstrap by mutableStateOf("")
-    var failure by mutableStateOf<String?>(null)
+    var failure by mutableStateOf<BackendResult.Failure?>(null)
+    var retrySeconds by mutableIntStateOf(cooldown.remainingSeconds())
+    var retryRevision by mutableIntStateOf(0)
     var revision by mutableIntStateOf(0)
     val setup: Boolean get() = status?.configured == false
     val minimumLength: Int get() = status?.minimumPasswordLength ?: 10
     val blocked: Boolean get() = busy || statusBusy
+
+
+    fun recordFailure(result: BackendResult.Failure) {
+        failure = result
+        if (result.statusCode == 429 && cooldown.start(result.retryAfterSeconds)) {
+            retrySeconds = cooldown.remainingSeconds()
+            retryRevision++
+        }
+    }
+
+    fun refreshCooldown() {
+        retrySeconds = cooldown.remainingSeconds()
+        if (retrySeconds == 0 && failure?.statusCode == 429 && failure?.retryAfterSeconds != null) {
+            failure = null
+        }
+    }
 
     fun valid(migrationToken: String?): Boolean {
         if (!setup) return password.isNotEmpty()
@@ -68,7 +96,7 @@ private suspend fun refreshOwnerAccessStatus(backend: AnalystBackendClient, form
     try {
         when (val result = withContext(Dispatchers.IO) { backend.ownerAccessStatus() }) {
             is BackendResult.Success -> { form.status = result.value; form.failure = null }
-            is BackendResult.Failure -> form.failure = result.message
+            is BackendResult.Failure -> form.recordFailure(result)
         }
     } finally { form.statusBusy = false }
 }
@@ -88,7 +116,7 @@ private suspend fun submitOwnerAccess(
         when (result) {
             is BackendResult.Success -> onSessionReady(result.value, requestTicket)
             is BackendResult.Failure -> {
-                form.failure = result.message
+                form.recordFailure(result)
                 if (result.statusCode == 409) form.revision++
             }
         }
@@ -107,9 +135,21 @@ fun OwnerAccessScreen(
 ) {
     val inspection = LocalInspectionMode.current
     val previewStatus = if (inspection) LocalOwnerAccessPreviewStatus.current else null
+    val previewWait = if (inspection) LocalOwnerAccessPreviewCooldownSeconds.current else 0
+    val clock = remember(inspection) { { if (inspection) 0L else SystemClock.elapsedRealtime() } }
+    val cooldown = rememberSaveable(previewWait, saver = ownerAccessCooldownSaver(clock)) {
+        OwnerAccessCooldown(clock).apply { if (inspection) start(previewWait) }
+    }
     val backend = remember { AnalystBackendClient() }
     val scope = rememberCoroutineScope()
-    val form = remember(previewStatus) { OwnerAccessForm(previewStatus) }
+    val form = remember(previewStatus, cooldown) { OwnerAccessForm(previewStatus, cooldown) }
+    LaunchedEffect(form, form.retryRevision, inspection) {
+        form.refreshCooldown()
+        if (!inspection) while (form.retrySeconds > 0) {
+            delay(1_000L)
+            form.refreshCooldown()
+        }
+    }
     LaunchedEffect(form.revision, loading) {
         if (!loading && !inspection) refreshOwnerAccessStatus(backend, form)
     }
@@ -122,10 +162,12 @@ fun OwnerAccessScreen(
             } else {
                 OwnerPasswordFields(form, migrationToken)
                 OwnerAccessActions(form, errorMessage, migrationToken) {
-                    val ticket = onAccessStart()
-                    if (ticket != null) {
-                        val submission = form.takeSubmission(migrationToken, loginAccessToken)
-                        scope.launch { submitOwnerAccess(backend, form, submission, ticket, onSessionReady) }
+                    if (!form.blocked && form.cooldown.remainingSeconds() == 0) {
+                        val ticket = onAccessStart()
+                        if (ticket != null) {
+                            val submission = form.takeSubmission(migrationToken, loginAccessToken)
+                            scope.launch { submitOwnerAccess(backend, form, submission, ticket, onSessionReady) }
+                        }
                     }
                 }
             }
@@ -178,12 +220,18 @@ private fun OwnerPasswordFields(form: OwnerAccessForm, migrationToken: String?) 
 
 @Composable
 private fun OwnerAccessActions(form: OwnerAccessForm, errorMessage: String?, migrationToken: String?, submit: () -> Unit) {
-    val message = form.failure ?: errorMessage
+    val message = form.failure?.message ?: errorMessage
     if (message != null) Text(message, color = MaterialTheme.colorScheme.error)
+    if (form.retrySeconds > 0) Text(
+        "Следующая попытка через ${ownerWaitLabel(form.retrySeconds)}",
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier.testTag("owner-login-countdown"),
+    )
     if (form.blocked) SpectrumLoadingIndicator(description = "Проверяем доступ")
     SpectrumPrimaryButton(if (form.setup) "Сохранить пароль и войти" else "Войти", submit,
         Modifier.fillMaxWidth().testTag("owner-login-submit"),
-        enabled = form.valid(migrationToken) && !form.blocked && form.status != null)
+        enabled = form.valid(migrationToken) && !form.blocked && form.status != null && form.retrySeconds == 0)
     if (form.status == null && !form.blocked)
         SpectrumSecondaryButton("Повторить подключение", { form.revision++ }, Modifier.fillMaxWidth())
 }

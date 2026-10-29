@@ -26,6 +26,7 @@ import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
 import ru.omnicio.app.ui.auth.OwnerAccessScreen
 import ru.omnicio.app.ui.auth.LocalOwnerAccessPreviewStatus
+import ru.omnicio.app.ui.auth.LocalOwnerAccessPreviewCooldownSeconds
 import ru.omnicio.app.data.backend.OwnerAccessStatus
 import ru.omnicio.app.ui.home.SystemTelemetryCard
 import ru.omnicio.app.ui.home.HomeScreen
@@ -369,4 +370,14 @@ private fun system55Fixture(): JSONObject {
             .put("monthly_estimated_and_reserved_rub", "240.50").put("monthly_cap_rub", "2500")
             .put("budget_configuration_valid", true).put("paid_calls_paused", false))
     return JSONObject().put("sections", JSONObject().put("ai", JSONObject().put("data", ai)))
+}
+
+@PreviewTest
+@Preview(name = "owner56-cooldown", widthDp = 390, heightDp = 1150, locale = "ru")
+@Preview(name = "owner56-cooldown-large-text", widthDp = 320, heightDp = 1600, fontScale = 1.5f, locale = "ru")
+@Composable
+fun OwnerCooldown56() {
+    CompositionLocalProvider(LocalOwnerAccessPreviewCooldownSeconds provides 125) {
+        HostAppearance("login", "setup")
+    }
 }
