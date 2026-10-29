@@ -69,9 +69,9 @@ def _record(row, *, full=False):
 def documents(connect, *, limit=25, before_id=None, source_id=None, query=None, kind=None, now=None) -> dict:
     now = int(time.time()) if now is None else now
     conditions, params = ["p.expires_at>?"], [now]
+    if kind not in {None, "news", "report"}:
+        raise ValueError("osint_document_kind_invalid")
     if kind is not None:
-        if kind not in {"news", "report"}:
-            raise ValueError("osint_document_kind_invalid")
         conditions.append("p.kind=?")
         params.append(kind)
     if before_id is not None:

@@ -125,7 +125,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         recoveryRequired = recoveryRequired,
         operationBusy = send.busy || estimateAction.busy || jobId != null || restoringJob,
     )
-    ApplyPendingExplanation(question, composerAvailability.canEditDraft && jobId == null && !send.busy && !estimateAction.busy) { question = it; estimate = null }
+    ApplyPendingExplanation(question, composerAvailability.canEditDraft) { question = it; estimate = null }
     val busy = !composerAvailability.canSubmit
     LaunchedEffect(savedRequests.loading, savedRequests.error, savedRequests.items, savedRequests.revision, awaitingRequestId) {
         if (!savedRequests.loading && savedRequests.error == null && savedRequests.revision == JobCheckpointStore.revision.value && awaitingRequestId != null &&
@@ -141,9 +141,9 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     }
     val estimateNotice = assistantEstimateFeedback(estimate?.let(::routeQuote),
         estimateSignature == signature, estimate?.optString("reason"))
-    val emptyHistory = messages.data != null && messages.error == null && !messages.busy && messageItems.isEmpty()
+    val emptyHistory = assistantHistoryEmpty(messages, messageItems)
     AssistantFailureReveal(listState, send.error, estimateAction.error, estimateNotice, jobState, messageItems.size,
-        (if (hasEarlierMessages) 1 else 0) + (if (cursors.size > 1) 1 else 0),
+        assistantPageCount(hasEarlierMessages, cursors),
         emptyHistory, activeJob != null)
     val requestRecovered: (JSONObject) -> Unit = { point ->
                     send.acknowledgeRecovery(point.text("request_id", ""))
@@ -173,7 +173,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                     // Keep its title in the existing first item so status indexes stay stable.
                     if (compact) WorkspacePageHeading("Ассистент", subtitle)
                     AssistantContextCard(questionContext,
-                    assistantIconState(jobId, jobState, send.error != null || estimateAction.error != null || estimateNotice != null,
+                    assistantIconState(jobId, jobState, assistantHasFailure(send.error, estimateAction.error, estimateNotice),
                         busy, messageItems.lastOrNull()?.text("role")), busy, question, threads, create,
                     { question = eventImpactQuestion; estimate = null }, { threadId = it }, { editingContext = true }) }
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
@@ -200,6 +200,14 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     }
     if (editingContext) ChatContextEditor(questionContext) { editingContext = false }
 }
+
+private fun assistantHistoryEmpty(messages: WorkspaceResource, items: List<JSONObject>): Boolean =
+    messages.data != null && messages.error == null && !messages.busy && items.isEmpty()
+
+private fun assistantPageCount(hasEarlier: Boolean, cursors: List<String>): Int =
+    (if (hasEarlier) 1 else 0) + (if (cursors.size > 1) 1 else 0)
+
+private fun assistantHasFailure(vararg notices: String?): Boolean = notices.any { it != null }
 
 @Composable
 private fun AssistantFailureReveal(listState: LazyListState, sendError: String?, estimateError: String?,

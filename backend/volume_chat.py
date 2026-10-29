@@ -227,6 +227,14 @@ def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: d
                     "basis": "real_stored_samples_no_interpolation"}
 
 
+def _append_explanation(explanation, facts, refs_by_id):
+    if explanation is None:
+        return None
+    facts.extend(explanation["facts"])
+    refs_by_id.update({ref["id"]: ref for ref in explanation["sources"]})
+    return explanation["target"]
+
+
 @financial_context
 def fact_packet(user: Any, context: dict) -> dict:
     if context["mode"] == "instrument" and not context.get("instrument_uid"):
@@ -272,16 +280,13 @@ def fact_packet(user: Any, context: dict) -> dict:
         from . import volume_explanations as explanations
     except ImportError:
         import volume_explanations as explanations
-    explanation = explanations.prepare(user, snapshot, context, risk, active)
-    if explanation is not None:
-        facts.extend(explanation["facts"])
-        refs_by_id.update({ref["id"]: ref for ref in explanation["sources"]})
+    explanation = _append_explanation(explanations.prepare(user, snapshot, context, risk, active), facts, refs_by_id)
     requested_range = {"start": begin.isoformat(), "end": finish.isoformat(), "coverage_complete": complete,
                        "requested_end": requested_finish.isoformat(), "snapshot_bounds_end": True}
     used_refs = {identifier for fact in facts for identifier in fact["source_ids"]}
     return {"as_of": snapshot["as_of"], "snapshot_id": snapshot["snapshot_id"], "facts": facts, "allowed_highlights": highlights,
             "tools_used": ["materialized_portfolio", "verified_exposure_rules", "broker_linked_news"],
-            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id], "impact_context": impact_context, "explanation_context": explanation["target"] if explanation else None,
+            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id], "impact_context": impact_context, "explanation_context": explanation,
             "coverage": {"total_positions": len(all_positions), "scoped_positions": len(scoped_positions), "included_positions": len(selected), "selection_is_complete": len(selected) == len(scoped_positions),
                          "account_scope": "selected_owned_account" if account_id else "all_owned_accounts", "requested_range": requested_range,
                          "instrument_scope": context.get("instrument_uid") if context["mode"] == "instrument" else None,

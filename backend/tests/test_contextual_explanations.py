@@ -24,8 +24,9 @@ def test_risk_target_uses_current_owner_exposure_and_never_client_text(fixture):
     assert fact["value"]["share_percent"] == concentration["share_percent"]
     assert packet["explanation_context"]["fact_ids"] == [fact["id"]]
     assert "account_id" not in fact["value"]
+    invalid = target("risk", "issuer:made-up")
     with pytest.raises(HTTPException):
-        chat.fact_packet(fixture["user"], target("risk", "issuer:made-up"))
+        chat.fact_packet(fixture["user"], invalid)
 
 
 def test_notification_must_belong_to_current_owner(fixture):
@@ -35,8 +36,9 @@ def test_notification_must_belong_to_current_owner(fixture):
             VALUES('foreign',?,'critical','synthetic','synthetic',NULL,'foreign-event',1,'pending',1)""",
             (fixture["other"]["id"],))
         db.commit()
+    context = target("notification", "foreign")
     with pytest.raises(HTTPException) as error:
-        chat.fact_packet(fixture["user"], target("notification", "foreign"))
+        chat.fact_packet(fixture["user"], context)
     assert error.value.status_code == 404
 
 
@@ -61,18 +63,21 @@ def test_document_is_loaded_from_durable_corpus_with_bounded_excerpt_and_source(
 
 @pytest.mark.parametrize("identifier", ["-1", "0x20", "../1", "9" * 80])
 def test_invalid_document_id_is_rejected_before_source_lookup(fixture, identifier):
+    context = target("document", identifier)
     with pytest.raises(HTTPException) as error:
-        chat.fact_packet(fixture["user"], target("document", identifier))
+        chat.fact_packet(fixture["user"], context)
     assert error.value.status_code == 422
 
 
 def test_mixed_scope_and_unavailable_document_fail_explicitly(fixture):
+    mixed = {**target("document", "1"), "account_id": "owned-account-a"}
     with pytest.raises(HTTPException) as error:
-        chat.fact_packet(fixture["user"], {**target("document", "1"), "account_id": "owned-account-a"})
+        chat.fact_packet(fixture["user"], mixed)
     assert error.value.status_code == 422
     osint_store.initialize(chat.backend.connect)
+    missing = target("document", "123")
     with pytest.raises(HTTPException) as error:
-        chat.fact_packet(fixture["user"], target("document", "123"))
+        chat.fact_packet(fixture["user"], missing)
     assert error.value.status_code == 404
 
 
@@ -82,7 +87,8 @@ def test_corpus_type_filter_keeps_pagination_and_does_not_fetch_network(fixture)
     save(chat.backend.connect, item(published=now), now)
     save(chat.backend.connect, {**item(url="https://www.moex.com/report.pdf", published=now), "kind": "report"}, now)
     rows = osint_read.documents(chat.backend.connect, kind="report")["items"]
-    assert len(rows) == 1 and rows[0]["kind"] == "report"
+    assert len(rows) == 1
+    assert rows[0]["kind"] == "report"
     response = fixture["client"].get("/workspace/osint/documents?kind=report")
     assert response.status_code == 200
     assert [x["kind"] for x in response.json()["items"]] == ["report"]

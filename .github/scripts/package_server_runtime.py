@@ -10,7 +10,7 @@ import subprocess
 import urllib.request
 
 REQUIREMENTS = 'requirements.txt'
-BASE = '9bf6dbaea3625a6479691e71365b621d965358c6'
+BASE = 'b69169abb4e750985ba79bf4c08f8f0f1a2ef596'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
 
 

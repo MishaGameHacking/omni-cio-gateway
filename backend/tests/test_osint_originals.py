@@ -19,7 +19,8 @@ def test_original_is_deduplicated_and_missing_legacy_original_is_backfilled(corp
     assert save(corpus, value, NOW + 2) is False
     with closing(corpus()) as db:
         rows = db.execute("SELECT * FROM osint_originals_v1").fetchall()
-        assert len(rows) == 1 and rows[0]["body"] == value["original_pdf"]
+        assert len(rows) == 1
+        assert rows[0]["body"] == value["original_pdf"]
         identifier = db.execute("SELECT id FROM osint_publications_v1").fetchone()[0]
     result = read.document(corpus, identifier, now=NOW + 2)
     assert result["original"]["available"] is True
@@ -32,8 +33,9 @@ def test_original_is_deduplicated_and_missing_legacy_original_is_backfilled(corp
     {"original_pdf": b"not a pdf"}, {"raw_sha": "wrong"}, {"primary": False}, {"kind": "news"},
 ])
 def test_invalid_original_never_commits(corpus, change):
+    value = {**report(), **change}
     with pytest.raises(catalogue.IntakeError, match="original_invalid"):
-        save(corpus, {**report(), **change})
+        save(corpus, value)
     with closing(corpus()) as db:
         assert db.execute("SELECT COUNT(*) FROM osint_originals_v1").fetchone()[0] == 0
 
@@ -42,8 +44,9 @@ def test_capacity_failure_is_explicit_without_replacing_previous_version(corpus,
     value = report()
     save(corpus, value)
     monkeypatch.setattr(store, "MAX_ORIGINAL_BYTES", len(value["original_pdf"]))
+    second = report(b"%PDF-1.7\nsecond revision")
     with pytest.raises(catalogue.IntakeError, match="original_capacity"):
-        save(corpus, report(b"%PDF-1.7\nsecond revision"), NOW + 1)
+        save(corpus, second, NOW + 1)
     with closing(corpus()) as db:
         assert db.execute("SELECT raw_sha FROM osint_publications_v1").fetchone()[0] == value["raw_sha"]
 

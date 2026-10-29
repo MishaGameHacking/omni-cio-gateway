@@ -173,6 +173,14 @@ def _parse(target, source, raw, final_url, now, window):
     return rows, children, coverage, cursor
 
 
+def _request_headers(target):
+    if target["kind"] == "gdelt":
+        return {}
+    if target["kind"] == "pdf" and not store.has_original(backend.connect, target["body_sha"]):
+        return {}
+    return {"If-None-Match": target["etag"], "If-Modified-Since": target["last_modified"]}
+
+
 def process(target, guard):
     source, now = BY_ID[target["source_id"]], int(time.time())
     url, window = target["url"], None
@@ -181,9 +189,7 @@ def process(target, guard):
         if url is None:
             return store.finish(backend.connect, target, now=now, status=target["status"],
                 next_at=now + source.interval, headers={}, coverage=json.loads(target["coverage_json"]), guard=guard)
-    headers = {"If-None-Match": target["etag"], "If-Modified-Since": target["last_modified"]}
-    if target["kind"] == "gdelt" or (target["kind"] == "pdf" and not store.has_original(backend.connect, target["body_sha"])):
-        headers = {}
+    headers = _request_headers(target)
     status, response_headers, raw, final_url = net.request(url, source.hosts, headers,
         maximum={"pdf": MAX_PDF, "rss": MAX_FEED}.get(target["kind"], MAX_BODY),
         before_request=lambda destination: _before(destination, source, guard,

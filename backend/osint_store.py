@@ -17,6 +17,8 @@ except ImportError:
     from osint_catalogue import SOURCES, BY_ID, IntakeError, MAX_PDF, target_url
     from osint_analysis import bands
 
+BUMP_REVISION = "UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1"
+
 MAX_OBJECT_BYTES = 256 * 1024**2
 MAX_ORIGINAL_BYTES = 256 * 1024**2
 MAX_PUBLICATIONS = 100000
@@ -224,7 +226,7 @@ def _save_original(db, item, raw_sha, now):
         raise IntakeError("osint_original_capacity")
     db.execute("INSERT INTO osint_originals_v1 VALUES(?,?,?,?,?)",
                (raw_sha, raw, len(raw), "application/pdf", now))
-    db.execute("UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1")
+    db.execute(BUMP_REVISION)
 
 
 def has_original(connect, raw_sha):
@@ -282,7 +284,7 @@ def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if mode == "fts5":
         db.execute("DELETE FROM osint_search_v1 WHERE rowid=?", (identifier,))
         db.execute("INSERT INTO osint_search_v1(rowid,title,body) VALUES(?,?,?)", (identifier, item["title"], item["text"]))
-    db.execute("UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1")
+    db.execute(BUMP_REVISION)
     return True
 
 
@@ -312,6 +314,6 @@ def finish(connect, target, *, now: int, status: str, next_at: int, headers: dic
              body_sha or target["body_sha"], encoded(cursor if cursor is not None else json.loads(target["cursor_json"])),
              encoded(coverage), target["id"]))
         if target["status"] != status:
-            db.execute("UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1")
+            db.execute(BUMP_REVISION)
     return {"changed": changed, "status": status}
 
