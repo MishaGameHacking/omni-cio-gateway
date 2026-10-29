@@ -10,13 +10,13 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_AI_TOOLS_SHA: 8e5a849274d69e5ef55a169d3e5f3292217f9651
-  EXPECTED_AI_TOOLS_RUN: '40919652854'
+  EXPECTED_AI_TOOLS_SHA: 60941621c98f49fb7e6822e3fa4a22895dfd5179
+  EXPECTED_AI_TOOLS_RUN: '40924243470'
   EXPECTED_AI_DEPLOY_RUN: '40919271605'
   EXPECTED_AI_DEPLOY_WORKFLOW_SHA: b8ecdce47e1ecaff06190e46b1fc912687132b6b
   EXPECTED_AI_RUNTIME_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
-  OWNER_AI_ACTION: provision_disabled
-  OWNER_AI_PROVISION_REVIEW: create-disabled-owner55-key-after-review
+  OWNER_AI_ACTION: preflight_only
+  OWNER_AI_PROVISION_REVIEW: inspect-owner55-configuration-after-review
   OWNER_AI_ACTIVATION_REVIEW: disabled_pending_review
   OWNER_AI_STAGED_KEY_ID: PIN_ONLY_FOR_REVIEWED_ACTIVATION
   OWNER_AI_CREATION_RUN_ID: PIN_ONLY_FOR_REVIEWED_ACTIVATION
@@ -40,8 +40,9 @@ jobs:
           script: |
             const e=process.env;
             const expected=e.OWNER_AI_ACTION==='provision_disabled' ? 'create-disabled-owner55-key-after-review' :
+              e.OWNER_AI_ACTION==='preflight_only' ? 'inspect-owner55-configuration-after-review' :
               e.OWNER_AI_ACTION==='activate' ? 'activate-existing-owner55-key-after-review' : null;
-            const gate=e.OWNER_AI_ACTION==='provision_disabled' ? e.OWNER_AI_PROVISION_REVIEW : e.OWNER_AI_ACTIVATION_REVIEW;
+            const gate=e.OWNER_AI_ACTION==='activate' ? e.OWNER_AI_ACTIVATION_REVIEW : e.OWNER_AI_PROVISION_REVIEW;
             if(!expected||gate!==expected) throw new Error('Explicit reviewed AI operation gate is not set');
             for(const [run_id,sha,path] of [
               [Number(e.EXPECTED_AI_TOOLS_RUN),e.EXPECTED_AI_TOOLS_SHA,'.github/workflows/owner-ai-tools55.yml'],
@@ -69,11 +70,30 @@ jobs:
           ref: ${{ env.EXPECTED_AI_TOOLS_SHA }}
           path: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/emulator_lease.py
+            tools/launch_owner55_ai_wsl.py
+            tools/owner55_ai_guest.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/activate_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/owner_plan_transport_20261027.py
+            deploy/stage_owner55_ai.py
+            deploy/activate_owner55_ai.py
+          sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: cd1866ee944ccea2259669f4293379241fd4ee02
           path: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}/.transport-admin
           persist-credentials: false
+          sparse-checkout: |
+            deploy/prepare_owner_vm.py
+            deploy/access_owner_vm.py
+            tools/timeweb_ci_capacity.py
+            tools/timeweb_actions_probe.py
+            tools/timeweb_ci_catalog.py
+          sparse-checkout-cone-mode: false
       - name: Run reviewed controller only inside private existing owner WSL
         shell: cmd
         working-directory: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
