@@ -1,0 +1,43 @@
+name: Inspect Timeweb AI metadata with GET only on owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/owner-ai-inspect55.yml
+      - tools/inspect_owner55_ai.py
+      - tools/tests/test_inspect_owner55_ai.py
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: owner55-ai-inspect-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/inspect_owner55_ai.py
+            tools/tests/test_inspect_owner55_ai.py
+          sparse-checkout-cone-mode: false
+      - name: Validate script with synthetic responses before credential access
+        shell: cmd
+        working-directory: owner55-ai-inspect-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 -m unittest discover -s tools/tests -p test_inspect_owner55_ai.py -v
+          if errorlevel 1 exit /b 1
+      - name: Read currency, dedicated key metadata and Qwen catalog prices
+        shell: cmd
+        working-directory: owner55-ai-inspect-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          py -3 tools\inspect_owner55_ai.py
+          if errorlevel 1 exit /b 1
