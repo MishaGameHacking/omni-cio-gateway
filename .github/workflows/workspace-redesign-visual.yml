@@ -1,4 +1,4 @@
-name: Render candidate53 production UI on owner laptop
+name: Render candidate54 production UI on owner laptop
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -9,7 +9,7 @@ concurrency:
   group: workspace-redesign-visual
   cancel-in-progress: false
 env:
-  RENDER_SOURCE_SHA: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
+  RENDER_SOURCE_SHA: 851bd5e4f3cee0600cb44ac5807973a1762d1a54
 jobs:
   render:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -33,7 +33,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 45cf542b9a8c6b0c220b54dee9b7c08d874f9ee8
+          ref: 851bd5e4f3cee0600cb44ac5807973a1762d1a54
           path: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Render actual Compose layouts with synthetic data and restore reference files
