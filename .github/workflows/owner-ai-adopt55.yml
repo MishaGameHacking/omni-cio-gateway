@@ -10,8 +10,8 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_AI_ADMIN_TOOLS_SHA: f7f8b54d2e76d9875640960d3202569927af9cc5
-  EXPECTED_AI_ADMIN_TOOLS_RUN: '40938434149'
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 97aa10dbac111f4c3e549cbb3b84078a02198779
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40939322670'
   OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
   OWNER_SUPPLIED_AI_ACTION: inspect_runtime
   OWNER_SUPPLIED_AI_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
