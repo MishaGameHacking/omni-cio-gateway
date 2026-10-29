@@ -1,26 +1,37 @@
-# Owner AI setup — 29 October 2026
+# Проверка supplied API-ключа ИИ — 29.10.2026
 
-Application source `b69169abb4e750985ba79bf4c08f8f0f1a2ef596` is deployed on existing Timeweb server9417611. Signed APK55 is published; see [delivery](OWNER55_DELIVERY_2026-10-29.md).
+Статус на 19:50 UTC (22:50 МСК): ключ из GitHub Secrets `TIMEWEB_AI_TOKEN` действителен, сохранён на существующем сервере9417611 и загружен работающим процессом. Модель — `dashscope/qwen3.5-flash` через `https://api.timeweb.ai/v1`. Новый ключ не создавался, не перевыпускался и не удалялся. Значение ключа, его фрагменты и производные хеши не публиковались.
 
-## Confirmed blocker
+## Что проверено на реальном сервисе
 
-Run [40929077006](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40929077006) returned the fixed code `new_gateway_key_masked`: the provider returned `hidden-by-api-key-policy` instead of the new inference credential. The unused newly created key was deleted and its absence verified (`new_key_retained=false`). No key was delivered to runtime, no inference request was made, and AI was not activated. Do not retry creation or bypass the credential's masking policy.
+- [40935013914](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40935013914) и [40936772899](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40936772899): два коротких платных запроса с синтетической задачей2+2, без портфеля и личных данных. Проверены HTTP-ответ, структурированный JSON, ответ4, finish_reason и usage. Второй запуск дополнительно проверил точное совпадение response.model с контрактом приложения.
+- Каждый запрос:45 входных и9 выходных токенов. Суммарная консервативная оценка по проверенному каталогу —0,00648 ₽. Это расчёт, а не выписка фактических списаний Timeweb.
+- Первое подключение остановилось при несовпадении конфигурации процесса. Инспектор подтвердил: все прочие проверяемые переменные загружены, отсутствовал только TIMEWEB_AI_TOKEN. Провайдер временно заблокирован лимитами0/0; точный readback подтверждён.
+- [40941528106](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40941528106) выявил фактическую причину: прежняя директива systemd UnsetEnvironment исключала TIMEWEB_AI_TOKEN. В этом запуске запись конфигурации не производилась.
+- [40942774522](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40942774522): удалено только исключение TIMEWEB_AI_TOKEN из проверенных существующих unit-файлов. Прочие исключения и настройки сохранены; общий сброс UnsetEnvironment не использовался. Конфигурация ИИ временно поставлена на паузу, процесс перезапущен. Совпадение ключа в памяти, загрузка конфигурации, health, закрытый маршрут401 и неизменность public feed подтверждены при нулевых лимитах провайдера.
+- [40943112424](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40943112424): успешное возобновление. После повторной проверки паузы восстановлены точные лимиты и включено AI_EXTERNAL_PROCESSING_APPROVED. Работающий процесс, защита входа и неизменность public feed проверены ещё раз.
+- [40943443789](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40943443789): административный путь обновления тарифов успешно проверен на работающем сервере, результат not_due. Текущая конфигурация и лимиты подтверждены; ценовые параметры не менялись, модель не вызывалась.
 
-The previous attempt40927228133 also deleted its unused key after validation failed. Neither unused key remains. First WSL attempt40920081275 made no verified AI change; full GET inventory subsequently showed0dedicated keys. Read-only diagnosis40924429655 established SSH unavailability from the existing laptop WSL, with no remote operation started and temporary SSH key cleanup confirmed. Ubuntu administrative transport then passed readiness40927043368. Application builds and tests remain on LAPTOP-NPSGA016/Ubuntu-24.04.
+## Расходы и дальнейшая работа
 
-## Verified implementation
+| Уровень | Суточный предел | Месячный предел |
+|---|---:|---:|
+| Приложение |95 ₽|2900 ₽ за календарный месяц по Москве|
+| Timeweb Gateway |100 ₽|2900 ₽ за период30дней|
 
-- Opaque RFC6750 Bearer credentials are accepted without an invented sk- prefix; masked replies, whitespace, invalid characters and invalid lengths are rejected. Actual provider authentication is required before increasing zero limits.
-- Exact administrative source: `6248bf319e83d8b34fc3252c80b94aea013d3fc5`.
-- [Administration tests40928751163](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40928751163):102 passed; [renewal tests40928751152](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40928751152):107 passed. These suites overlap; their counts are not additive. The redundant base-only job40928751277 was cancelled by the shared GitHub concurrency queue; both successful suites include those base checks.
-- All checks used mocked adapters and blocked network sockets without cloud credentials, in the existing owner WSL.
-- Planned app/provider limits remain95RUB/day and2900RUB/month under hard app ceilings100/3000. These provider limits are NOT active because there is no usable dedicated key.
-- Price renewal verifies an application pause, updates only fresh prices and preserves provider counters by leaving normal provider limits unchanged. Its schedule is NOT installed. Main was not changed; a narrow CI filter is only staged locally for future cron installation.
+Все три маршрута приложения используют одну указанную недорогую модель; платного fallback нет. Сохранены резервирование до отправки и блокировка при неподтверждённом расходе, отсутствии разрешённого брокерского подключения или устаревании цены.
 
-## Continuation
+**Автоматическое обновление тарифов ещё не установлено.** Подготовлен [PR894](https://github.com/MishaGameHacking/omni-cio-gateway/pull/894) с расписанием каждые6часов. Main защищён: требуется PR и обязательная проверка «V10 authoritative merge gate». Прямое обновление main отклонено; настройки защиты не изменялись. До слияния текущая24-часовая проверка цены не продлевается автоматически. По её истечении приложение блокирует платный ИИ. Успешный not_due не означает, что был выполнен фактический цикл смены цен или установлен cron.
 
-A usable Timeweb AI Gateway key is required through a protected secret channel, for example the repository Actions secret `TIMEWEB_AI_TOKEN`. Do not put credentials in issues, source files, PR descriptions or chat. Bind that credential to its verified dedicated provider key ID and limits before delivery; the current automatic creation path must not be rerun while the masking policy applies. Existing keys must not be rotated or overwritten by guess.
+Нормальный будущий цикл не меняет лимиты провайдера и не сбрасывает их счётчики. При неопределённом результате он блокирует провайдера и требует отдельной проверенной процедуры восстановления. Запланированные запуски ещё не наблюдались.
 
-The operational workflow now defaults to read-only preflight. No production AI activation, recurring price renewal, autonomous brokerage execution, real orders or physical-phone acceptance is claimed.
+## Исправления и проверки исходников
 
-Final read-only verification [40929472737](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40929472737) succeeded at18:19:07UTC: complete dedicated-key inventory was empty, runtime inference configuration absent, reviewed budget sources verified, no configuration or limits changed and no inference called. Main remains `f54912165127bfab42673743cd141d635e20881f`.
+- Административные исходники `1507205f0c42230eb5c1e1ad4f49a455176ef34b`:140 синтетических тестов на LAPTOP-NPSGA016/существующей Ubuntu-24.04 WSL, [40942465958](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40942465958).
+- Обновление цен `960ac7293217513171ce84defe778ad5fbcafce7`:111 тестов там же, [40941433016](https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/40941433016). Наборы пересекаются; не суммировать их как уникальные.
+- Исправлено сериализованное представление непрозрачного ключа для EnvironmentFile; добавлено ожидание готовности процесса после systemd Type=simple. Обнаруженная причина действующего сбоя — именно UnsetEnvironment, а не доказанный дефект кавычек конкретного ключа.
+- Восстановление строго привязано к существующему ключу и серверу, сравнивает конфигурацию до записи, не заменяет параллельные изменения и не меняет другие ключи.
+
+Исходники приложения `b69169abb4e750985ba79bf4c08f8f0f1a2ef596`, APK55 и брокерские полномочия этой проверкой не менялись. Реальных торговых поручений не было. Интерактивный запрос через сессию владельца на физическом телефоне не выполнялся; работа всей автономной инвестиционной системы или прибыльность этой проверкой не подтверждаются.
+
+Прежний статус hidden-by-api-key-policy относился к попыткам получить другой созданный ключ через Cloud API. Текущий предоставленный владельцем секрет успешно проверен фактическим inference; прежняя блокировка больше не описывает его работоспособность.
