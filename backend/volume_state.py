@@ -218,7 +218,7 @@ def _exposure_groups(rows: list, axis: str, currency: str) -> tuple:
     groups, unknown = {}, []
     known = not_applicable = 0
     for item in rows:
-        if axis in {"issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
+        if axis in {"position", "issuer", "group", "sector", "country"} and item.get("instrument_type") == "cash":
             not_applicable += 1
             continue
         identifier, label, refs = _axis_identity(item, axis)

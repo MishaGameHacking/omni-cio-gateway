@@ -8,6 +8,7 @@ internal object WorkspaceEndpointPolicy {
         "/automation/status",
         "/automation/preferences",
         "/automation/decisions",
+        "/automation/strategy-plan",
     )
 
     fun permits(path: String): Boolean {
@@ -22,3 +23,4 @@ internal object WorkspaceEndpointPolicy {
         }
     }
 }
+

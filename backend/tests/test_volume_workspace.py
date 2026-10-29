@@ -970,3 +970,28 @@ def test_supported_national_rating_notations_are_kept_per_agency(agency, grade, 
                     status="active", outlook="stable", source=Source(**reviewed("fixture-" + agency, domain)))
     assert rating.level() == 9
     assert rating.bucket().startswith(agency + ":")
+
+
+
+def test_cash_is_not_a_security_concentration_but_currency_risk_remains(fixture):
+    raw = dict(fixture["dashboard"])
+    raw["accounts"] = [{"id": "owned-account-a", "name": "A", "totalValue": {"value": "200", "currency": "RUB"},
+                        "positions": [position("cash:RUB", "200", kind="cash", quantity="200")]}]
+    normalized = workspace.normalize_snapshot(fixture["user"], raw)
+    exposure = state.exposure_data(normalized, config(position=5, currency=80))
+    security = next(row for row in exposure["axes"] if row["id"] == "position")
+    currency = next(row for row in exposure["axes"] if row["id"] == "currency")
+    assert security["items"] == []
+    assert any(item["breached"] for item in currency["items"])
+
+
+def test_duplicate_notifications_do_not_interrupt_twice(fixture):
+    user_id = int(fixture["user"]["id"])
+    with transaction(backend.connect) as db:
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="70%", event_id="first")
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="70%", event_id="repeat")
+        notifications.enqueue_in(db, user_id, kind="risk", title="Synthetic limit", body="90%", event_id="worsened")
+    events = notifications.events(user=fixture["user"])["items"]
+    assert len(events) == 2
+    assert {item["body"] for item in events} == {"70%", "90%"}
+    assert all(item["visual"]["share_percent"] is None for item in events)

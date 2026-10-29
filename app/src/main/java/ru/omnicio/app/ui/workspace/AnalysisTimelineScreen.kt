@@ -18,143 +18,88 @@ import ru.omnicio.app.ui.spectrum.*
 @Composable
 fun AnalysisTimelineScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace")
-    val refresh = LocalWorkspaceRefresh.current
-    val navigate = LocalWorkspaceNavigator.current
-    val openReport = LocalOpenAnalysisReport.current
     val ai = resource.data?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data")
-    var selectedJob by rememberSaveable { mutableStateOf<String?>(null) }
+    val navigate = LocalWorkspaceNavigator.current
+    val report = LocalOpenAnalysisReport.current
+    var jobId by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedCheck by rememberSaveable { mutableStateOf<String?>(null) }
-    var confirm by rememberSaveable { mutableStateOf(false) }
-    val run = rememberWorkspaceAction { selectedJob = it.optString("job_id").takeIf(String::isNotBlank); resource.refresh() }
-    val activeJob = selectedJob?.let { id ->
-        rememberWorkspaceJobState(id, onCompleted = { resource.refresh() })
-    }
-    WorkspaceDetailPage("Работа аналитика", "Время, причины, основания и расход", onBack, SpectrumSymbol.Analyst) { padding ->
+    val run = rememberWorkspaceAction { jobId = it.optString("job_id").takeIf(String::isNotBlank); resource.refresh() }
+    val job = jobId?.let { rememberWorkspaceJobState(it, onCompleted = { resource.refresh() }) }
+    val ready = ai?.optJSONObject("readiness")?.optBoolean("available") == true
+    val check = ai?.optJSONObject("last_check")
+    val checks = ai?.records("check_history").orEmpty().distinctBy { it.text("reason") + ":" + it.text("state") }.take(5)
+    WorkspaceDetailPage("Работа аналитика", "Состояние портфеля и последние изменения", onBack, SpectrumSymbol.Analyst) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
-            .semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
+            .semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { WorkspaceRequestState(resource) }
-            item { PendingJobRecovery { selectedJob = it } }
-            activeJob?.let { model -> item { WorkspaceJobPanel(model, onClose = { selectedJob = null }) } }
-            item { LastAnalysisCard(ai) { resource.refresh(); refresh() } }
+            item { PendingJobRecovery { jobId = it } }
+            job?.let { model -> item { WorkspaceJobPanel(model, onClose = { jobId = null }) } }
+            item { AnalystStatusVisual(check, ready) }
             item { SpectrumCard {
-                Text("Ближайшие проверки", style = MaterialTheme.typography.titleMedium)
-                val next = ai?.records("next_runs").orEmpty()
-                if (next.isEmpty()) Text("Расписание ещё не получено.")
-                next.forEach { slot ->
-                    Text((if (slot.text("slot") == "morning") "Утро: " else "Вечер: ") + localMoment(slot.text("at", "")))
-                    Text(when (slot.text("gate")) {
-                        "market_closed" -> "Биржа закрыта: платный анализ не запускается"
-                        "awaiting_calendar" -> "Ожидаем подтверждённый календарь"
-                        "rule_disabled" -> "Плановые уведомления отключены в настройках"
-                        else -> "Проверка по настроенным правилам"
-                    }, style = MaterialTheme.typography.bodySmall)
+                Text(if (ready) "ИИ доступен" else "ИИ требует подключения", style = MaterialTheme.typography.titleMedium)
+                if (!ready) Text(readinessLabel(ai?.optJSONObject("readiness")?.text("reason", "")))
+                val last = ai?.optJSONObject("last_run")
+                if (last != null) {
+                    Text("Последний анализ: " + localMoment(last.text("created_at", "")), style = MaterialTheme.typography.bodySmall)
+                    Text(analysisReason(last.text("reason", "")))
                 }
-                SpectrumSecondaryButton("Изменить время и уведомления", { navigate(WorkspaceRoute.NotificationSettings) }, Modifier.fillMaxWidth())
-            } }
-            item { AnalysisSlotChecks(ai?.records("slot_checks").orEmpty()) { selectedCheck = it } }
-            item { MonitorCheckCard(ai?.optJSONObject("last_check")) }
-            item { AnalysisCheckHistory(ai?.records("check_history").orEmpty()) { selectedCheck = it } }
-            ai?.records("monitor_jobs").orEmpty().forEach { monitor -> item(key = "monitor:" + monitor.text("job_id")) {
-                DetailFold("Проверка · " + localMoment(monitor.text("created_at", ""))) {
-                    Text(jobStateTitle(monitor.text("state")))
-                    monitor.optJSONObject("result")?.let { result ->
-                        Text("Решение: " + monitorState(result.text("state", "")))
-                        Text(analysisReasonLine(result))
-                        if (!result.isNull("card_id")) SpectrumSecondaryButton("Открыть вывод проверки", { openReport(result.text("card_id")) }, Modifier.fillMaxWidth())
-                    }
-                    monitor.text("error_code", "").takeIf(String::isNotBlank)?.let { Text("Проверка завершилась с ошибкой: " + readinessLabel(it)) }
-                }
-            } }
-            item { AnalysisComparison(ai?.optJSONObject("analysis_diff")) }
-            item { SpectrumCard {
-                val budget = ai?.optJSONObject("budget")
-                Text("Расход на анализ", style = MaterialTheme.typography.titleMedium)
-                Text(PrivateValue((budget?.text("estimated_and_reserved_rub", "Не получено") ?: "Не получено") + " RUB"), style = MaterialTheme.typography.headlineSmall)
-                budget?.let {
-                    Text("Учтённая оценка и резерв за " + it.text("day") + ", " + it.text("timezone"))
-                    Text("Попыток, ожидающих сверки: " + it.optInt("unresolved_attempts"))
-                    if (it.optBoolean("paid_calls_paused")) Text("Платные обращения приостановлены.", color = MaterialTheme.colorScheme.error)
-                }
-                Text("Эта сумма включает резервы запросов. Окончательный счёт провайдера здесь не подтверждается.", style = MaterialTheme.typography.bodySmall)
-                val ready = ai?.optJSONObject("readiness")?.optBoolean("available") == true
-                if (!ready) Text("Модель пока недоступна: " + readinessLabel(ai?.optJSONObject("readiness")?.text("reason", "")))
-                SpectrumPrimaryButton("Запустить проверку портфеля", { confirm = true }, Modifier.fillMaxWidth(),
-                    ready && !run.busy && selectedJob == null, SpectrumSymbol.Analyst)
+                SpectrumPrimaryButton("Проверить портфель", {
+                    run.perform("/workspace/analysis", JSONObject().put("request_id", UUID.randomUUID().toString()).put("reason", "manual"), job = true)
+                }, Modifier.fillMaxWidth(), ready && !run.busy && jobId == null, SpectrumSymbol.Analyst)
+                SpectrumSecondaryButton("Открыть выводы", { report(null) }, Modifier.fillMaxWidth())
                 WorkspaceActionState(run)
             } }
-            ai?.records("jobs").orEmpty().forEach { job -> item(key = job.text("job_id")) { SpectrumCard(onClick = { selectedJob = job.text("job_id") }) {
-                Text(jobStateTitle(job.text("state")), style = MaterialTheme.typography.titleMedium)
-                Text(when (job.text("kind")) { "chat" -> "Диалог"; "refresh" -> "Обновление источников"; "reconcile" -> "Сверка операций"; else -> "Анализ портфеля" })
-                Text(localMoment(job.text("updated_at", "")), style = MaterialTheme.typography.bodySmall)
-            } } }
-        }
-    }
-    selectedCheck?.let { identifier -> AnalysisCheckDialog(identifier) { selectedCheck = null } }
-    if (confirm) WorkspaceDialog("Запустить анализ?", { confirm = false }) {
-        Text("Сервер обновит доступные факты и проверит лимиты. Обращение к модели возможно только в пределах действующих лимитов расхода. Вы сможете увидеть стадию и запросить отмену.")
-        SpectrumPrimaryButton("Запустить по действующим лимитам", {
-            confirm = false
-            run.perform("/workspace/analysis", JSONObject().put("request_id", UUID.randomUUID().toString()).put("reason", "manual"), job = true)
-        }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Вернуться", { confirm = false }, Modifier.fillMaxWidth())
-    }
-}
-
-@Composable
-private fun AnalysisComparison(diff: JSONObject?) {
-    var showFacts by remember { mutableStateOf(false) }
-    SpectrumCard {
-        Text("Изменения двух последних выводов", style = MaterialTheme.typography.titleMedium)
-        if (diff == null || diff.isNull("previous_card_id")) Text("Для сравнения нужны два сохранённых вывода.") else {
-            if (!diff.optBoolean("fact_comparison_available")) Text("Сравниваем сохранённые поля отчётов и их основания. Полного набора структурированных фактов в прежнем отчёте нет.")
-            listOf("added" to "Добавилось", "removed" to "Убрано", "changed" to "Изменилось", "unchanged" to "Сохранилось").forEach { (key, label) ->
-                DetailFold(label + " · " + diff.records(key).size) {
-                    diff.records(key).forEach { change ->
-                        Text(reportField(change.text("field")), style = MaterialTheme.typography.titleSmall)
-                        if (key == "changed") { Text("Было: " + readableReportValue(change.opt("before"))); Text("Стало: " + readableReportValue(change.opt("after"))) }
-                        else Text(readableReportValue(change.opt("value")))
-                    }
-                }
-            }
-            diff.optJSONObject("evidence_diff")?.let { evidence -> DetailFold("Изменения оснований") {
-                listOf("added" to "Новые", "removed" to "Убраны", "unchanged" to "Сохранены").forEach { (key, label) ->
-                    Text(label + ": " + (evidence.optJSONArray(key)?.length() ?: 0))
+            item { SpectrumCard {
+                Text("Последние результаты", style = MaterialTheme.typography.titleMedium)
+                Text("Повторные проверки объединены. Здесь последнее состояние каждого условия.", style = MaterialTheme.typography.bodySmall)
+                if (checks.isEmpty()) Text("Результатов пока нет")
+                checks.forEach { item ->
+                    Text(analysisReason(item.text("reason")), style = MaterialTheme.typography.titleSmall)
+                    Text(monitorState(item.text("state")) + " · " + localMoment(item.text("checked_at", "")), style = MaterialTheme.typography.bodySmall)
+                    SpectrumSecondaryButton("Что проверено", { selectedCheck = item.text("check_id") }, Modifier.fillMaxWidth())
                 }
             } }
-            val facts = diff.optJSONObject("structured_facts")
-            if (facts?.optBoolean("available") == true) {
-                val counts = facts.optJSONObject("counts")
-                Text("Наблюдения: новых " + (counts?.optInt("added") ?: 0) + ", изменённых " + (counts?.optInt("changed") ?: 0) + ", сохранённых " + (counts?.optInt("unchanged") ?: 0))
-                SpectrumSecondaryButton("Сравнить факты портфеля", { showFacts = true }, Modifier.fillMaxWidth())
-            }
+            item { SpectrumCard {
+                Text("Расход на ИИ", style = MaterialTheme.typography.titleMedium)
+                val budget = ai?.optJSONObject("budget")
+                Text(PrivateValue((budget?.text("estimated_and_reserved_rub", "—") ?: "—") + " ₽ сегодня"), style = MaterialTheme.typography.headlineSmall)
+                Text("Включая резерв запросов. Повторные одинаковые проверки не требуют нового ответа ИИ.", style = MaterialTheme.typography.bodySmall)
+                if (budget?.optBoolean("paid_calls_paused") == true) Text("Лимит или проверка оплаты приостановили обращения", color = MaterialTheme.colorScheme.error)
+                SpectrumSecondaryButton("Уведомления", { navigate(WorkspaceRoute.NotificationSettings) }, Modifier.fillMaxWidth())
+            } }
         }
     }
-    if (showFacts && diff != null) AnalysisFactsDialog(diff.text("current_card_id"), diff.text("previous_card_id", "")) { showFacts = false }
+    selectedCheck?.let { AnalysisCheckDialog(it) { selectedCheck = null } }
 }
 
 @Composable
-private fun AnalysisFactsDialog(currentId: String, previousId: String, close: () -> Unit) {
-    var offset by rememberSaveable(currentId, previousId) { mutableIntStateOf(0) }
-    val query = "/workspace/analysis/diff?current_card_id=" + ru.omnicio.app.data.workspace.VolumeWorkspaceClient.encode(currentId) +
-        (if (previousId.isBlank()) "" else "&previous_card_id=" + ru.omnicio.app.data.workspace.VolumeWorkspaceClient.encode(previousId)) + "&offset=" + offset + "&limit=20"
-    val resource = rememberWorkspaceResource(query)
-    WorkspaceDialog("Сравнение наблюдений", close) {
-        WorkspaceRequestState(resource)
-        Text("Каждое значение связано с сохранённым наблюдением. Изменение источника показывается отдельно от изменения числа.")
-        resource.data?.records("items").orEmpty().forEach { item ->
-            val title = when (item.text("state")) { "added" -> "Новое"; "removed" -> "Больше не наблюдается"; "changed" -> "Изменилось"; else -> "Значение сохранилось" }
-            DetailFold(title + " · " + item.text("id").substringBefore(':')) {
-                item.optJSONObject("before")?.let { before -> Text("Было", style = MaterialTheme.typography.titleSmall); VerifiedFact(before.opt("value")); Text(localMoment(before.text("as_of", ""))) }
-                item.optJSONObject("after")?.let { after -> Text("Стало", style = MaterialTheme.typography.titleSmall); VerifiedFact(after.opt("value")); Text(localMoment(after.text("as_of", ""))) }
-                if (item.optBoolean("provenance_changed")) Text("Время или источник наблюдения изменились.")
-                val observation = item.optJSONObject("after") ?: item.optJSONObject("before")
-                EvidenceLinks(item.strings("source_ids").map { JSONObject().put("source_id", it).put("as_of", observation?.text("as_of", "")) }, listOfNotNull(observation?.optJSONObject("highlight")))
+private fun AnalystStatusVisual(check: JSONObject?, ready: Boolean) {
+    val trigger = check?.optJSONObject("trigger")
+    val observations = trigger?.records("observations").orEmpty()
+    val risks = observations.filter { it.text("kind").startsWith("risk_") }
+    val severity = when { check == null -> "Нет свежей проверки"; risks.isNotEmpty() -> "⚠️ Есть основания для проверки риска"; check.text("state") == "failed" -> "Проверка не завершена"; else -> "🔎 Последняя проверка сохранена" }
+    SpectrumCard {
+        Text(severity, style = MaterialTheme.typography.titleLarge)
+        Text(if (check == null) "Подключите данные и запустите проверку" else analysisReason(check.text("reason")))
+        if (risks.isNotEmpty()) risks.take(3).forEach { row ->
+            val after = row.optJSONObject("after")
+            val share = after?.text("share_percent", "")?.toFloatOrNull()
+            Text(row.text("title"), style = MaterialTheme.typography.titleSmall)
+            if (share != null) {
+                Text("Доля " + after?.text("share_percent") + "% · лимит " + after?.text("limit_percent", "не получен") + "%")
+                SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = MaterialTheme.colorScheme.error)
             }
         }
-        if (offset > 0) SpectrumSecondaryButton("Предыдущие наблюдения", { offset = (offset - 20).coerceAtLeast(0) }, Modifier.fillMaxWidth())
-        if (resource.data?.optBoolean("has_more") == true) SpectrumSecondaryButton("Следующие наблюдения", { offset += 20 }, Modifier.fillMaxWidth())
-        SpectrumSecondaryButton("Закрыть", close, Modifier.fillMaxWidth())
+        val coverage = trigger?.optJSONObject("coverage")
+        val total = coverage?.optInt("total") ?: 0
+        val included = coverage?.optInt("included") ?: 0
+        if (total > 0) {
+            Text("Сохранено наблюдений: $included из $total", style = MaterialTheme.typography.bodySmall)
+            SpectrumProgressBar((included.toFloat() / total).coerceIn(0f, 1f))
+        }
+        Text(if (ready) "Расчёты → проверка фактов → объяснение ИИ" else "Расчёты доступны · объяснение ИИ пока недоступно", style = MaterialTheme.typography.bodySmall)
+        Text("Проверка не означает отсутствие риска. Торговых поручений система не отправляет.", style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -203,28 +148,3 @@ internal fun analysisReason(raw: String): String = when (raw) {
 private fun analysisTier(raw: String): String = when (raw) { "fast" -> "Краткая"; "standard" -> "Обычная"; "premium" -> "Углублённая"; else -> "Не получена" }
 private fun analysisState(raw: String): String = when (raw) { "success", "completed" -> "Вывод сохранён"; "skipped" -> "Новый вывод не требовался"; "failed", "error" -> "Ошибка проверки"; else -> jobStateTitle(raw) }
 private fun readinessLabel(raw: String?): String = when (raw) { "model_key_missing", "provider_not_configured", "no_route" -> "нужен настроенный маршрут модели"; "budget_exhausted" -> "достигнут лимит расхода"; else -> "доступность пока не подтверждена" }
-private fun reportField(raw: String) = when (raw) { "title" -> "Тема"; "summary" -> "Вывод"; "actions" -> "Предложенные проверки"; else -> raw.take(100) }
-private fun readableReportValue(value: Any?): String = when (value) {
-    null, JSONObject.NULL -> "Нет сохранённого значения"
-    is org.json.JSONArray -> (0 until value.length()).joinToString("\n") { index -> value.optJSONObject(index)?.let { it.text("title", it.text("description", "Проверка")) } ?: value.optString(index) }
-    is JSONObject -> value.text("title", value.text("description", "Сохранённое основание"))
-    else -> value.toString()
-}
-
-@Composable
-private fun LastAnalysisCard(ai: JSONObject?, onRefresh: () -> Unit) {
-    val openReport = LocalOpenAnalysisReport.current
-    SpectrumCard(emphasized = true) {
-                    val last = ai?.optJSONObject("last_run")
-                    SpatialIcon("analyst", Modifier.size(56.dp), state = if (last?.text("state") == "completed") SpatialState.Success else SpatialState.Idle)
-                    Text("Последний анализ", style = MaterialTheme.typography.titleLarge)
-                    if (last == null) Text("Подтверждённых запусков ещё нет.") else {
-                        Text(localMoment(last.text("created_at", "")))
-                        Text(analysisReasonLine(last))
-                        Text("Состояние: " + analysisState(last.text("state", "")))
-                        Text("Глубина: " + analysisTier(last.text("tier", "")), style = MaterialTheme.typography.bodySmall)
-                        SpectrumSecondaryButton("Открыть сохранённые выводы", { openReport(last.text("card_id", "").takeIf(String::isNotBlank)) }, Modifier.fillMaxWidth())
-                    }
-                    SpectrumSecondaryButton("Обновить сведения", onRefresh, Modifier.fillMaxWidth())
-                }
-}

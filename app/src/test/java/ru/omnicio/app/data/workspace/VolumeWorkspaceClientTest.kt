@@ -27,6 +27,14 @@ class VolumeWorkspaceClientTest {
     }
 
     @Test
+    fun strategyPlanReachesTransportAndOfflineIsRecoverable() {
+        val result = client.request("test-only", "/automation/strategy-plan")
+        assertEquals("network_unavailable", result.code)
+        assertTrue(result.retryable)
+        assertFalse(result.ambiguous)
+    }
+
+    @Test
     fun traversalInThePathRemainsRejected() {
         for (path in listOf("/workspace/../me", "/workspace/catalogue/../../me", "/workspace/A..B?query=safe")) {
             assertThrows(IllegalArgumentException::class.java) { client.request("test-only", path) }
@@ -53,3 +61,4 @@ class VolumeWorkspaceClientTest {
         assertThrows(IllegalArgumentException::class.java) { client.request("test-only", "/workspace", "CONNECT") }
     }
 }
+

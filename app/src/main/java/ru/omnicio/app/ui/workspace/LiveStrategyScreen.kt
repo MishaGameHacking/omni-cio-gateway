@@ -126,7 +126,7 @@ internal data class StrategyEditorAvailability(val hasEditorState: Boolean, val 
 
 internal fun strategyValidationIssues(config: JSONObject): List<String> = buildList {
     val horizon = config.opt("horizon_months") as? Int
-    if (horizon == null || horizon !in 1..600) add("Горизонт: укажите от 1 до 600 месяцев.")
+    if (horizon == null || horizon !in 1..600) add("Горизонт: выберите срок до 50 лет.")
     val reserve = config.optJSONObject("reserve")
     val amount = reserve?.optString("amount")?.toBigDecimalOrNull()
     if (amount == null || amount.signum() < 0) add("Резерв: укажите сумму от нуля.")
@@ -191,9 +191,9 @@ private fun StrategyGoalEditor(config: JSONObject, enabled: Boolean, edit: (JSON
         val riskLevels = listOf("conservative", "moderate", "aggressive")
         WorkspaceChoices("Отношение к риску", listOf("Консервативное", "Умеренное", "Высокое"),
             riskLevels.indexOf(config.text("risk_level")).coerceAtLeast(0), enabled) { edit(JSONObject(config.toString()).put("risk_level", riskLevels[it])) }
-        StrategyNumberChoice("Горизонт", config.opt("horizon_months")?.toString().orEmpty(), "мес.", enabled,
-            "1", "600", listOf("12", "36", "60", "120"), listOf("1", "12")) {
-            edit(JSONObject(config.toString()).put("horizon_months", it.toInt()))
+        StrategyNumberChoice("Горизонт", strategyYears(config.optInt("horizon_months", 36)), "лет", enabled,
+            "1", "50", listOf("1", "3", "5", "10", "20", "30", "50"), listOf("1")) {
+            edit(JSONObject(config.toString()).put("horizon_months", java.math.BigDecimal(it).multiply(java.math.BigDecimal(12)).toInt()))
         }
         Text("Выбор цели не добавляет ожидаемую прибыль к капиталу. Доступность инструмента проверяется у брокера.")
     }
@@ -230,8 +230,8 @@ private fun StrategyLimitEditor(title: String, key: String, config: JSONObject, 
 private fun StrategyDifference(before: JSONObject?, after: JSONObject) {
     if (before == null) Text("До подтверждения активной версии нет.")
     listOf("goal", "horizon_months", "risk_level").forEach { field ->
-        val label = when (field) { "goal" -> "Цель"; "horizon_months" -> "Горизонт, месяцев"; else -> "Профиль риска" }
-        if (before?.opt(field) != after.opt(field)) Text(label + ": " + strategyValue(before?.text(field, UNSPECIFIED_VALUE)) + " → " + strategyValue(after.text(field)))
+        val label = when (field) { "goal" -> "Цель"; "horizon_months" -> "Горизонт, лет"; else -> "Профиль риска" }
+        if (before?.opt(field) != after.opt(field)) Text(label + ": " + (if (field == "horizon_months") before?.optInt(field)?.let(::strategyYears) ?: UNSPECIFIED_VALUE else strategyValue(before?.text(field, UNSPECIFIED_VALUE))) + " → " + (if (field == "horizon_months") strategyYears(after.optInt(field)) else strategyValue(after.text(field))))
     }
     val oldLimits = before?.optJSONObject("limits")
     val newLimits = after.optJSONObject("limits")
@@ -244,4 +244,5 @@ private fun strategyValue(value: String?): String = when (value) {
     "preservation" -> "Сохранение"; "income" -> "Выплаты"; "growth" -> "Рост"; "moderate" -> "Умеренный"
     "conservative" -> "Консервативный"; "aggressive" -> "Высокий"; else -> value ?: UNSPECIFIED_VALUE
 }
+
 

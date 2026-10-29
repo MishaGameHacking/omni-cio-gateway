@@ -56,13 +56,15 @@ internal fun StrategyNumberChoice(title: String, value: String, unit: String, en
     }
     val index = values.indexOfFirst { it.toBigDecimal().compareTo(value.toBigDecimalOrNull() ?: BigDecimal(-1)) == 0 }
     var position by remember(title, value) { mutableFloatStateOf(index.coerceAtLeast(0).toFloat()) }
+    var dragging by remember(title, value) { mutableStateOf(false) }
+    val visibleValue = values.getOrNull(position.roundToInt().coerceAtLeast(0)) ?: value
     Column(Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
         .testTag(if (title == "Горизонт") "strategy-horizon" else "strategy-number-" + title)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-            Text(if (index < 0) "Выберите" else "$value $unit", style = MaterialTheme.typography.labelLarge)
+            Text(if (index < 0 && !dragging) "Выберите" else "$visibleValue $unit", style = MaterialTheme.typography.labelLarge)
         }
-        if (values.size > 1) SpectrumSlider(position, { position = it }, enabled = enabled,
+        if (values.size > 1) SpectrumSlider(position, { position = it; dragging = true }, enabled = enabled,
             valueRange = 0f..values.lastIndex.toFloat(), steps = (values.size - 2).coerceAtLeast(0),
             onValueChangeFinished = { onChange(values[position.roundToInt().coerceIn(values.indices)]) })
     }

@@ -53,7 +53,7 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
     if (selected != null) WorkspaceDialog(selected.text("title", "Стратегия"), { selectedId = null }) {
         val proposed = selected.optJSONObject("config")
         Text(selected.text("description", ""))
-        Text("Горизонт: ${proposed?.optInt("horizon_months")} мес.")
+        Text("Горизонт: ${strategyYears(proposed?.optInt("horizon_months") ?: 36)} лет")
         Text("Резерв: " + PrivateValue(moneyText(proposed?.optJSONObject("reserve"))))
         Text("Предел одной позиции: ${proposed?.optJSONObject("limits")?.text("position_percent", "—")}%")
         Text("Ограничения концентрации, расходов и частоты изменений настроены автоматически.")
@@ -91,20 +91,27 @@ internal fun strategyClassLabel(config: JSONObject?): String {
 @Composable
 internal fun StrategyAllocationSummary(allocation: JSONObject?) {
     val weights = allocation?.optJSONObject("weights_percent") ?: return
+    val waiting = (allocation.optJSONArray("missing")?.length() ?: 0) > 0
     SpectrumCard {
-        Text("Сохранённый план распределения", style = MaterialTheme.typography.titleMedium)
-        listOf("bond" to "Облигации", "share" to "Акции", "etf" to "Фонды", "cash" to "Деньги и резерв")
-            .forEach { (key, label) ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(label, Modifier.weight(1f))
-                    Text(weights.text(key, "—") + " %", style = MaterialTheme.typography.labelLarge)
+        Text(if (waiting) "Распределение ещё не рассчитано" else "Целевое распределение",
+            style = MaterialTheme.typography.titleMedium)
+        if (waiting) {
+            Text("Укажите доход вне портфеля и потери, которые готовы перенести. До этого система не предлагает новые покупки.")
+            Text("Ваши деньги не перемещались. Фактические остатки показаны в «Аналитике».",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            listOf("bond" to "Облигации", "share" to "Акции", "etf" to "Фонды", "cash" to "Деньги и резерв")
+                .forEachIndexed { index, (key, label) ->
+                    val percent = weights.optString(key).toBigDecimalOrNull()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(label, Modifier.weight(1f))
+                        Text((percent?.stripTrailingZeros()?.toPlainString() ?: "—") + " %", style = MaterialTheme.typography.labelLarge)
+                    }
+                    if (percent != null) SpectrumProgressBar((percent.toFloat() / 100f).coerceIn(0f, 1f),
+                        accent = LocalSpectrumPalette.current.chartSeries[index % LocalSpectrumPalette.current.chartSeries.size])
                 }
-            }
-        if ((allocation.optJSONArray("missing")?.length() ?: 0) > 0) {
-            Text("Новые покупки ожидают ваших настроек финансовой устойчивости.",
-                style = MaterialTheme.typography.bodySmall)
+            Text("План, к которому стремится стратегия. Текущие доли смотрите в «Аналитике». Количество покупок ограничено целыми лотами и бюджетом.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Text("Целевые доли, не текущие остатки. Сервер уточняет количество с учётом целых лотов и лимитов.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

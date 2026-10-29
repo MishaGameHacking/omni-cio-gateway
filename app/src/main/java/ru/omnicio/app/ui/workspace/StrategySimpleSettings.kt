@@ -29,13 +29,11 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
                 accounts.indexOfFirst { it.optString("id") == mandate.optString("account_id") }, enabled) {
                 edit(JSONObject(config.toString()).put("mandate", JSONObject(mandate.toString()).put("account_id", accounts[it].getString("id"))))
             }
-            StrategyNumberChoice("Горизонт", config.optInt("horizon_months", 36).toString(), "мес.", enabled,
-                "12", "360", listOf("12", "36", "60", "120", "240", "360"), listOf("12")) {
-                edit(JSONObject(config.toString()).put("horizon_months", it.toInt()))
+            StrategyNumberChoice("Горизонт", strategyYears(config.optInt("horizon_months", 36)), "лет", enabled,
+                "1", "50", listOf("1", "3", "5", "10", "20", "30", "50"), listOf("1")) {
+                edit(JSONObject(config.toString()).put("horizon_months", it.toBigDecimal().multiply(java.math.BigDecimal(12)).toInt()))
             }
-            StrategyNumberChoice("Возраст", if (settings.isNull("age")) "" else settings.optInt("age").toString(), "лет", enabled,
-                "18", "100", listOf("18", "30", "45", "60", "75"), listOf("1")) { change("age", it.toInt()) }
-            Text("Возраст не определяет риск сам по себе. Система учитывает срок, резерв и вашу способность переносить потери.", style = MaterialTheme.typography.bodySmall)
+            Text("Риск учитывает срок, резерв и переносимые потери. Возраст брокерский API не передаёт.", style = MaterialTheme.typography.bodySmall)
         }
         SpectrumCard {
             Text("Какие активы использовать", style = MaterialTheme.typography.titleLarge)
@@ -82,3 +80,9 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
         }
     }
 }
+
+
+/** Server compatibility keeps months internally; the investor sees years. */
+internal fun strategyYears(months: Int): String = java.math.BigDecimal(months)
+    .divide(java.math.BigDecimal(12), 2, java.math.RoundingMode.HALF_UP)
+    .stripTrailingZeros().toPlainString()

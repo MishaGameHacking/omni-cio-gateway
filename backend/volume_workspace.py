@@ -589,7 +589,7 @@ def operation_position(account_id: str, operation_id: str, user: Annotated[Any, 
 def _record_concentration_changes(db, user_id, snapshot, active, old_breaches, new_breaches, all_current, complete_axes):
     for key in new_breaches.keys() | old_breaches.keys():
         before, after = old_breaches.get(key), new_breaches.get(key)
-        if before is not None and after is not None and before["share_percent"] == after["share_percent"]:
+        if before is not None and after is not None and abs(decimal(before["share_percent"]) - decimal(after["share_percent"])) < Decimal("1") and before.get("limit_percent") == after.get("limit_percent"):
             continue
         details_row = after or before
         # An incomplete aggregate may fall below its limit only because a
@@ -604,7 +604,17 @@ def _record_concentration_changes(db, user_id, snapshot, active, old_breaches, n
              "instrument_uids": details_row["instrument_uids"], "source_ids": details_row["source_ids"]},
             snapshot["snapshot_id"] + ":" + ":".join(key))
         notifications.enqueue_in(db, user_id, kind="risk", title=risk_event["title"],
-                                 body="Проверьте подтверждённый лимит и актуальность источника; это не выполненная сделка.", event_id=risk_event["id"])
+                                 body=_risk_notice(after, missing_basis), event_id=risk_event["id"])
+
+
+def _risk_notice(after, missing_basis):
+    if after:
+        return ("⚠️ Доля «" + after["label"] + "»: " + after["share_percent"] + "% при вашем лимите " +
+                after["limit_percent"] + "%. Система пересчитала структуру. Это повод проверить распределение, "
+                "а не подтверждение убытка. Сделки не совершались.")
+    if missing_basis:
+        return "🔎 Не хватает свежих данных для проверки доли. Система запросит обновление; считать риск устранённым пока нельзя."
+    return "✅ По свежим данным доля снова укладывается в ваш лимит. Система обновила оценку; это не подтверждение сделки."
 
 
 def _risk_change_label(after, missing_basis):
@@ -699,3 +709,4 @@ def _section_reason(stale, reason, state):
     if reason:
         return reason
     return "source_coverage_incomplete" if state == "partial" else None
+

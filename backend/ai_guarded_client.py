@@ -182,7 +182,7 @@ def _configured_label(label: str, env, now: int) -> Route:
         reject('ai_processing_approval_required')
     region = env.get(prefix + 'PROCESSING_REGION', '')
     permitted = [part.strip() for part in env.get('AI_ALLOWED_PROCESSING_REGIONS', 'RU').split(',')]
-    if re.fullmatch('[A-Z]{2}', region) is None or region not in permitted:
+    if (re.fullmatch('[A-Z]{2}', region) is None and region != 'EXTERNAL') or region not in permitted:
         reject('ai_processing_region_not_approved')
     url = env.get('TIMEWEB_AI_BASE_URL', '').strip() or GATEWAY
     key = env.get('TIMEWEB_AI_TOKEN', '').strip()
@@ -239,6 +239,18 @@ def _assert_complete_response(response):
         raise GuardError('ai_incomplete_response')
 
 
+def completion_payload(route: Route, messages, max_output_tokens: int) -> dict:
+    payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
+    if route.mode == 'gateway':
+        payload['model'] = route.model
+        if route.model == 'dashscope/qwen3.5-flash':
+            # Provider catalogue exposes this exact parameter; avoid hidden
+            # reasoning tokens for bounded fact explanations. No model fallback.
+            payload['enable_thinking'] = False
+            payload['response_format'] = {'type': 'json_object'}
+    return payload
+
+
 class GuardedAIClient:
     def __init__(self, user_id: int, connect, *, transport=None, env=None,
                  attempt_id=None, budget_guard=None, before_send=None, after_response=None, route_guard=None):
@@ -291,9 +303,7 @@ class GuardedAIClient:
                             project_cap=micro_rub(self.env.get('AI_PROJECT_DAILY_RUB', '0')), job=job, guard=self.budget_guard,
                             user_month_cap=self._monthly_cap('AI_USER_MONTHLY_RUB'),
                             project_month_cap=self._monthly_cap('AI_PROJECT_MONTHLY_RUB'))
-        payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
-        if route.mode == 'gateway':
-            payload['model'] = route.model
+        payload = completion_payload(route, messages, max_output_tokens)
         sent = False
         try:
             if job:
@@ -381,3 +391,4 @@ class GuardedAIClient:
         if values[0] + values[1] != values[2] or values[0] == 0:
             raise GuardError('ai_usage_inconsistent')
         return ModelUsage(*values)
+

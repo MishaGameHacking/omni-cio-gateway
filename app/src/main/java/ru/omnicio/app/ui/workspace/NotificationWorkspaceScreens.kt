@@ -71,18 +71,19 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
             preview = null
         }
     }
-    WorkspaceDetailPage("Уведомления", "Ваше время и условия доставки", onBack, SpectrumSymbol.Notifications) { padding ->
+    WorkspaceDetailPage("Уведомления", "Только важное для вашего портфеля", onBack, SpectrumSymbol.Notifications) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
             .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
             contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource); AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Notifications) } }
             config?.let { settings ->
                 item { SpectrumCard {
-                    WorkspaceToggle("Получать события", "Применяется автоматически", settings.optBoolean("enabled"), enabled = editable && !simulate.busy) { edit("enabled", it) }
+                    WorkspaceToggle("Важные уведомления", "Изменения риска и события по вашим активам", settings.optBoolean("enabled"), enabled = editable && !simulate.busy) { edit("enabled", it) }
                     WorkspaceToggle("Утренние и вечерние обзоры", "Только по заданному времени", settings.optBoolean("briefs_enabled"), enabled = editable && !simulate.busy) { edit("briefs_enabled", it) }
-                    WorkspaceToggle("Критичные изменения", "По подтверждённым правилам риска", settings.optBoolean("critical_enabled"), enabled = editable && !simulate.busy) { edit("critical_enabled", it) }
+                    WorkspaceToggle("Предупреждения о риске", "Система объяснит, что изменилось и что проверила", settings.optBoolean("critical_enabled"), enabled = editable && !simulate.busy) { edit("critical_enabled", it) }
                 } }
                 item { SpectrumCard {
+                    DetailFold("Время и дополнительные настройки") {
                     val zone = settings.text("timezone", "Europe/Moscow")
                     val deviceZone = remember { ZoneId.systemDefault().id }
                     val zones = remember(deviceZone, zone) { notificationZoneSuggestions(deviceZone, zone) }
@@ -94,6 +95,7 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
                     Text("Тихие часы могут переходить через полночь.")
                     if (!notificationRulesValid(settings)) Text("Проверьте время: утренний и вечерний обзоры должны приходить в разное время.",
                         color = MaterialTheme.colorScheme.error)
+                    }
                 } }
                 item { SpectrumCard {
                     SpectrumSecondaryButton("Проверить на прошлых событиях", {
@@ -154,12 +156,13 @@ fun NotificationEventsScreen(onBack: () -> Unit) {
     val resource = rememberWorkspaceResource("/workspace/notifications/events")
     val navigate = LocalWorkspaceNavigator.current
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    WorkspaceDetailPage("События", "Содержание и подтверждённые состояния доставки", onBack, SpectrumSymbol.Notifications) { padding ->
+    WorkspaceDetailPage("События", "Что изменилось и требует ли это внимания", onBack, SpectrumSymbol.Notifications) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).semantics { testTagsAsResourceId = true }.testTag("workspace-content"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(workspaceGap)) {
             item { WorkspaceRequestState(resource) }
             item { SpectrumSecondaryButton("Настроить события", { navigate(WorkspaceRoute.NotificationSettings) }, Modifier.fillMaxWidth()) }
             if (resource.data?.records("items")?.isEmpty() == true) item { WorkspaceEmpty("Новых событий пока нет", "Здесь сохраняются обзоры и подтверждённые изменения портфеля по вашим правилам.") }
             resource.data?.records("items").orEmpty().forEach { event -> item(key = event.text("id")) { SpectrumCard(onClick = { selected = event.text("id") }) {
+                NotificationImpact(event)
                 Text(event.text("title"), style = MaterialTheme.typography.titleLarge)
                 Text(event.text("body", ""))
                 Text(notificationState(event.text("state")), Modifier.testTag("notification-state-" + event.text("id")),
@@ -206,11 +209,35 @@ internal fun notificationRulesValid(value: JSONObject): Boolean = runCatching {
     }
 }.getOrDefault(false)
 private fun notificationState(state: String): String = when (state) {
-    "pending" -> "Ожидает подходящего времени"; "claimed" -> "Устройство получило право на показ"; "presented" -> "Устройство сообщило о показе"
+    "pending" -> "Ожидает подходящего времени"; "claimed" -> "Передано устройству"; "presented" -> "Доставлено на устройство"
     "read" -> "Прочитано"; "suppressed" -> "Исключено правилами"; else -> "Состояние уточняется"
 }
 private fun notificationReason(reason: String) = when (reason) {
     "rule_disabled" -> "Исключено выключенными правилами доставки"
     "quiet_hours" -> "Тихие часы"; "disabled" -> "Уведомления выключены"; "briefs_disabled" -> "Обзоры выключены"; "critical_disabled" -> "Критичные события выключены"
     "eligible", "matched" -> "Соответствует правилам"; else -> "Результат по сохранённым условиям"
+}
+
+
+@Composable
+private fun NotificationImpact(event: JSONObject) {
+    val visual = event.optJSONObject("visual")
+    val severity = visual?.text("severity", "")
+    val tone = when (severity) {
+        "warning", "critical" -> MaterialTheme.colorScheme.error
+        "resolved" -> LocalSpectrumPalette.current.semantic.success
+        else -> MaterialTheme.colorScheme.primary
+    }
+    Text(when (severity) {
+        "critical" -> "🔴 Нужно внимание"
+        "warning" -> "⚠️ Проверьте распределение"
+        "resolved" -> "✅ Состояние улучшилось"
+        "watch" -> "🔎 Нужна проверка"
+        else -> "ℹ️ Изменение в портфеле"
+    }, color = tone, style = MaterialTheme.typography.labelLarge)
+    val share = visual?.text("share_percent", "")?.toFloatOrNull()
+    if (share != null) {
+        SpectrumProgressBar((share / 100f).coerceIn(0f, 1f), accent = tone)
+        Text("Доля " + visual?.text("share_percent") + "% · лимит " + visual?.text("limit_percent", "—") + "%", style = MaterialTheme.typography.bodySmall)
+    }
 }
