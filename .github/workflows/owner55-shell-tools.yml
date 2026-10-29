@@ -1,0 +1,47 @@
+name: Verify owner55 publication tools on laptop with synthetic data
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/owner55-shell-tools.yml
+      - deploy/publish_owner55_shell.py
+      - deploy/test_owner55_shell.py
+      - tools/prepare_owner55_shell.py
+      - tools/deliver_owner55_shell.py
+      - tools/check_owner55_shell_tools.py
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: owner55-shell-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            deploy
+            tools
+            .github/scripts/emulator_lease.py
+      - name: Verify syntax and run publication input tests in existing laptop WSL
+        shell: cmd
+        working-directory: owner55-shell-tools-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 -m py_compile deploy\publish_owner55_shell.py tools\prepare_owner55_shell.py tools\deliver_owner55_shell.py tools\check_owner55_shell_tools.py
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_owner55_shell_tools.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
