@@ -10,10 +10,10 @@ concurrency:
   group: owner-ai-private-operation55
   cancel-in-progress: false
 env:
-  EXPECTED_AI_ADMIN_TOOLS_SHA: eaec2a667ba98f8ab95347ca03bce99d0f18fb4e
-  EXPECTED_AI_ADMIN_TOOLS_RUN: '40936385593'
+  EXPECTED_AI_ADMIN_TOOLS_SHA: f7f8b54d2e76d9875640960d3202569927af9cc5
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40938434149'
   OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
-  OWNER_SUPPLIED_AI_ACTION: adopt_activate
+  OWNER_SUPPLIED_AI_ACTION: inspect_runtime
   OWNER_SUPPLIED_AI_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
   EXPECTED_SUPPLIED_PROBE_SHA: 952522798839a5cae0499a373a900286fdfbdeb0
   EXPECTED_SUPPLIED_PROBE_RUN: '40936772899'
@@ -28,7 +28,7 @@ jobs:
         with:
           script: |
             const e=process.env;
-            if(!['inspect','adopt_activate'].includes(e.OWNER_SUPPLIED_AI_ACTION)) throw new Error('Reviewed action required');
+            if(!['inspect','adopt_activate','inspect_runtime'].includes(e.OWNER_SUPPLIED_AI_ACTION)) throw new Error('Reviewed action required');
             for(const [id,sha,path] of [
               [e.EXPECTED_AI_ADMIN_TOOLS_RUN,e.EXPECTED_AI_ADMIN_TOOLS_SHA,'.github/workflows/owner-ai-admin-tools55.yml'],
               [e.EXPECTED_SUPPLIED_PROBE_RUN,e.EXPECTED_SUPPLIED_PROBE_SHA,'.github/workflows/owner-ai-supplied-probe55.yml'],
