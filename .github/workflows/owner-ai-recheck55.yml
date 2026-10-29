@@ -1,0 +1,57 @@
+name: Проверить ответ ИИ Analyst AI одним ограниченным запросом
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-ai-recheck55.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_TOOLS_SHA: eaec2a667ba98f8ab95347ca03bce99d0f18fb4e
+  EXPECTED_TOOLS_RUN: '40936385593'
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Require exact successful tests on owner laptop
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(process.env.EXPECTED_TOOLS_RUN)});
+            if(r.head_sha!==process.env.EXPECTED_TOOLS_SHA||r.conclusion!=='success'||r.status!=='completed'||
+               r.path!=='.github/workflows/owner-ai-admin-tools55.yml'||r.run_attempt!==1) throw new Error('Exact tested source required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_TOOLS_SHA }}
+          path: supplied-ai-probe55-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: |
+            tools/probe_supplied_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/inspect_owner55_ai.py
+            tools/owner_ai_private_transport.py
+          sparse-checkout-cone-mode: false
+      - name: Check provider authentication, bounded JSON generation and usage
+        shell: py -3 {0}
+        working-directory: supplied-ai-probe55-${{ github.run_id }}
+        env:
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: utf-8
+        run: |
+          import json, subprocess, sys
+          result = subprocess.run([sys.executable, "tools/probe_supplied_owner55_ai.py"],
+              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=180)
+          lines = [line for line in result.stdout.splitlines() if line.startswith("OWNER_AI_SUPPLIED_PROBE=")]
+          if len(lines) != 1:
+              raise SystemExit("Expected sanitized probe receipt is missing")
+          receipt = json.loads(lines[0].partition("=")[2])
+          print(lines[0], flush=True)
+          if result.returncode != 0 or receipt.get("runtime_response_model_matches") is not True:
+              raise SystemExit("Supplied key or exact runtime response contract is not verified")
+

@@ -19,6 +19,30 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      - name: Проверить формат ключа без раскрытия значения
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          OWNER_ENTRY_SECRET: ${{ secrets.ANALYST_OWNER_BOOTSTRAP_SECRET }}
+        with:
+          script: |
+            const secret = process.env.OWNER_ENTRY_SECRET || '';
+            const problems = [];
+            if (!secret) {
+              core.notice('Одноразовый ключ отсутствует. Добавьте ANALYST_OWNER_BOOTSTRAP_SECRET в Repository secrets раздела Actions.');
+              return;
+            }
+            if (secret.length < 32) problems.push('Ключ слишком короткий: требуется минимум 32 символа.');
+            if (secret.length > 128) problems.push('Ключ слишком длинный: допускается максимум 128 символов.');
+            if (/\s/.test(secret)) problems.push('В ключе есть пробелы или переносы строк. Они не допускаются.');
+            if (/[^A-Za-z0-9_\-\s]/.test(secret)) problems.push('В ключе есть недопустимые символы. Разрешены только латинские буквы, цифры, дефис и подчёркивание.');
+            if (problems.length) {
+              const instructions = 'Измените значение ANALYST_OWNER_BOOTSTRAP_SECRET в GitHub Secrets, сохраните его у себя и нажмите Re-run all jobs. В приложение нужно вводить именно значение, а не название секрета.';
+              await core.summary.addHeading('Ключ найден, но его формат не подходит')
+                .addList(problems).addRaw(instructions).write();
+              core.setFailed(problems.join(' '));
+            } else {
+              core.notice('Ключ найден, формат соответствует требованиям. Значение не выводится.');
+            }
       - name: Require tested tools and the deployed owner authentication source
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
