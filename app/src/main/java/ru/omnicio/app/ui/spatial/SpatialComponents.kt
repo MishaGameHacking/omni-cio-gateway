@@ -59,8 +59,8 @@ fun SpatialSurface(
     val layered = LocalWorkspacePreferences.current.value.depth
     val highContrast = LocalFlatContrast.current
     val shape = RoundedCornerShape(when (kind) {
-        SpatialSurfaceKind.Card -> 18.dp
-        SpatialSurfaceKind.Dock -> 16.dp
+        SpatialSurfaceKind.Card -> 22.dp
+        SpatialSurfaceKind.Dock -> 24.dp
         SpatialSurfaceKind.Chip -> 12.dp
         SpatialSurfaceKind.Heading -> 0.dp
         else -> 12.dp
@@ -69,12 +69,13 @@ fun SpatialSurface(
     val fill = if (kind == SpatialSurfaceKind.Heading) Color.Transparent else resolved.fill
     val border = when {
         kind == SpatialSurfaceKind.Heading -> Color.Transparent
-        state == SpatialState.Idle && !highContrast && kind != SpatialSurfaceKind.Input -> Color.Transparent
+        state == SpatialState.Idle && !highContrast && kind != SpatialSurfaceKind.Input -> palette.colors.outlineVariant.copy(alpha = .62f)
         else -> resolved.border
     }
     val borderWidth = if (state == SpatialState.Selected) 1.5.dp else 1.dp
     val tint = if (emphasized) palette.colors.secondaryContainer else palette.colors.surfaceContainerLow
-    val gradient = Brush.verticalGradient(listOf(fill, fill))
+    val gradient = Brush.verticalGradient(listOf(
+        if (emphasized) lerp(fill, tint, .24f) else fill, fill))
     Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 1.dp else 0.dp, shape, clip = false)
         .clip(shape).background(gradient).border(borderWidth, border, shape)) {
         CompositionLocalProvider(LocalSpatialDepth provides 0f,
@@ -231,4 +232,5 @@ fun SpatialRing(
     }
     SpatialCanvas(primitives, modifier)
 }
+
 

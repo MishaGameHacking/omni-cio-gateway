@@ -15,6 +15,38 @@ import ru.omnicio.app.data.portfolio.PortfolioSnapshot
 class AnalystBackendClient(
     private val baseUrl: String = BackendConfig.BASE_URL,
 ) {
+    fun ownerAccessStatus(): BackendResult<OwnerAccessStatus> = when (val response = request("GET", "/auth/owner/status")) {
+        is BackendResult.Failure -> response
+        is BackendResult.Success -> runCatching {
+            val json = JSONObject(response.value)
+            require(json.getString("method") == "password")
+            val minimum = json.getInt("min_password_length")
+            val maximum = json.getInt("max_password_bytes")
+            require(minimum in 10..128 && maximum in minimum..1024)
+            OwnerAccessStatus(json.getBoolean("configured"), minimum, maximum)
+        }.fold({ BackendResult.Success(it) }, {
+            BackendResult.Failure("Сервер пока не подтвердил новый способ входа.", retryable = true)
+        })
+    }
+
+    fun loginOwner(password: String): BackendResult<AnalystSession> = ownerSessionRequest(
+        "/auth/owner/login", password)
+
+    fun setupOwnerPassword(password: String, accessToken: String?, bootstrap: String): BackendResult<AnalystSession> =
+        ownerSessionRequest("/auth/owner/setup", password, accessToken, bootstrap.takeIf(String::isNotBlank))
+
+    private fun ownerSessionRequest(path: String, password: String, bearer: String? = null,
+        bootstrap: String? = null): BackendResult<AnalystSession> {
+        val body = JSONObject().put("password", password)
+            .put("device_name", "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}".take(100)).toString()
+        return when (val response = request("POST", path, bearer, body, bootstrap)) {
+            is BackendResult.Failure -> response
+            is BackendResult.Success -> runCatching { parseSession(JSONObject(response.value)) }.fold(
+                { BackendResult.Success(it) },
+                { BackendResult.Failure("Не удалось проверить ответ входа. Повторите попытку.", retryable = true) })
+        }
+    }
+
     fun exchangeTelegramCode(code: String): BackendResult<AnalystSession> {
         val response = request(
             method = "POST",
@@ -140,6 +172,7 @@ class AnalystBackendClient(
         path: String,
         bearer: String? = null,
         body: String? = null,
+        bootstrap: String? = null,
     ): BackendResult<String> {
         val connection = runCatching {
             BackendConfig.openConnection(URI(baseUrl + path)).apply {
@@ -151,6 +184,7 @@ class AnalystBackendClient(
                 if (bearer != null) {
                     setRequestProperty("Authorization", "Bearer $bearer")
                 }
+                if (bootstrap != null) setRequestProperty("X-Owner-Bootstrap", bootstrap)
                 if (body != null) {
                     doOutput = true
                     setRequestProperty("Content-Type", "application/json")
@@ -184,11 +218,12 @@ class AnalystBackendClient(
 
             when {
                 status in 200..299 -> BackendResult.Success(responseBody)
+                path.startsWith("/auth/owner/") -> ownerAccessFailure(status)
                 status == 426 -> BackendResult.Failure("Обновите Analyst AI, чтобы продолжить.", retryable = true)
                 status == HttpURLConnection.HTTP_UNAUTHORIZED ||
                     status == HttpURLConnection.HTTP_FORBIDDEN -> {
                     BackendResult.Failure(
-                        "Сеанс Analyst AI истёк или недействителен. Войдите через Telegram заново.",
+                        "Сеанс Analyst AI истёк или недействителен. Войдите с паролем заново.",
                         retryable = false,
                     )
                 }
@@ -216,6 +251,18 @@ class AnalystBackendClient(
             connection.disconnect()
         }
     }
+
+    private fun ownerAccessFailure(status: Int): BackendResult.Failure = BackendResult.Failure(
+        message = when (status) {
+            401, 403 -> "Доступ не подтверждён. Проверьте пароль или ключ настройки."
+            409 -> "Пароль уже настроен. Войдите с сохранённым паролем."
+            422 -> "Пароль должен содержать не менее 10 символов и не более 128 байт."
+            429 -> "Слишком много попыток. Подождите перед следующим входом."
+            426 -> "Обновите Analyst AI, чтобы продолжить."
+            404 -> "Новый вход ещё не доступен на сервере. Требуется обновление серверной системы."
+            else -> "Не удалось проверить доступ на сервере. Повторите позже."
+        }, retryable = status == 429 || status >= 500 || status == 404, statusCode = status,
+    )
 
     private fun tinvestFailure(detail: String?, status: Int): BackendResult.Failure {
         val message = when (detail) {
@@ -360,3 +407,4 @@ class AnalystBackendClient(
         const val READ_TIMEOUT_MS = 15_000
     }
 }
+

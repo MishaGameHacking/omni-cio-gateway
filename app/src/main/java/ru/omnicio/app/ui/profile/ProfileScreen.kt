@@ -173,8 +173,8 @@ fun ProfileScreen(
                     }
                 }
                 item(key = "account-settings") {
-                    SettingsGroup("Аккаунт") {
-                        Text(user.name?.takeIf(String::isNotBlank) ?: "Вход через Telegram",
+                    SettingsGroup("Личный доступ") {
+                        Text(user.name?.takeIf(String::isNotBlank) ?: "Владелец Analyst AI",
                             style = MaterialTheme.typography.titleMedium)
                         SettingsLink("О приложении", serverVersionLabel, SpectrumSymbol.Update) {
                             dialog = "about"
@@ -195,7 +195,7 @@ fun ProfileScreen(
         "about" -> SettingsInformation("Analyst AI",
             serverVersionLabel + "\n\nОболочка Android: " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + "). Серверная система обновляется независимо от оболочки.\n\nПерсональная система анализа. Независимое приложение, не официальное приложение Т-Банка. Доступность анализа зависит от подключённых источников и серверных настроек.") { dialog = null }
         "logout" -> WorkspaceDialog("Выйти из Analyst AI?", onDismiss = { dialog = null }) {
-            Text("Для следующего входа потребуется подтверждение Telegram. Подключение брокера на сервере сохранится.")
+            Text("Для следующего входа потребуется пароль Analyst AI. Подключение брокера на сервере сохранится.")
             SpectrumPrimaryButton("Выйти", { dialog = null; onLogout() }, Modifier.fillMaxWidth())
             SpectrumSecondaryButton("Остаться", { dialog = null }, Modifier.fillMaxWidth())
         }
@@ -266,4 +266,5 @@ private fun SettingsSaveStatus(presentation: WorkspacePreferenceController) {
     Text(presentation.saveStatus, style = MaterialTheme.typography.bodySmall)
     if (presentation.saveFailed) SpectrumSecondaryButton("Повторить сохранение", presentation.retrySave, Modifier.fillMaxWidth())
 }
+
 

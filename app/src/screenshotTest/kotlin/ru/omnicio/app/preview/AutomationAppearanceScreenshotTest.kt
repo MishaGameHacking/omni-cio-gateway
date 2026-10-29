@@ -21,9 +21,13 @@ import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.WorkspaceTransport
+import ru.omnicio.app.ui.LocalOpenNavigationMenu
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
-import ru.omnicio.app.ui.auth.TelegramLoginScreen
+import ru.omnicio.app.ui.auth.OwnerAccessScreen
+import ru.omnicio.app.ui.auth.LocalOwnerAccessPreviewStatus
+import ru.omnicio.app.data.backend.OwnerAccessStatus
+import ru.omnicio.app.ui.home.SystemTelemetryCard
 import ru.omnicio.app.ui.home.HomeScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
@@ -113,7 +117,10 @@ private fun HostAppearance(page: String, state: String) {
         else -> BrokerConnectionState.Connected
     }
     CompositionLocalProvider(
+        LocalOpenNavigationMenu provides {},
         LocalWorkspaceSession provides WorkspaceSession("", "synthetic-layout-only"),
+        LocalOwnerAccessPreviewStatus provides OwnerAccessStatus(state != "setup", 10, 128),
+        LocalWorkspaceSnapshot provides if (state == "current") system55Fixture() else null,
         LocalWorkspaceTransport provides forbiddenTransport,
         LocalWorkspacePreviewResources provides mapOf(
             "/automation/status" to resource, "/automation/decisions" to resource),
@@ -132,10 +139,10 @@ private fun HostAppearance(page: String, state: String) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     val user = AnalystUser("synthetic-layout-only", "Тест интерфейса", null, null)
                     when (page) {
-                        "login" -> TelegramLoginScreen(
+                        "login" -> OwnerAccessScreen(
                             loading = state == "loading",
                             errorMessage = if (state == "error") "Синтетический пример ошибки входа. Повторите попытку." else null,
-                            onLoginClick = {})
+                            onSessionReady = { _, _ -> }, onAccessStart = { null })
 
                         "home" -> HomeScreen(user, PortfolioUiState.NotConnected, PortfolioCurrency.RUB,
                             false, null, null, onCurrencyClick = {}, onOpenPortfolio = {},
@@ -313,4 +320,53 @@ private fun Analytics54Fixture(page: String) {
             }
         }
     }
+}
+
+
+
+@PreviewTest
+@Preview(name = "owner55-setup", widthDp = 390, heightDp = 1050, locale = "ru")
+@Preview(name = "owner55-setup-large-text", widthDp = 320, heightDp = 1400, fontScale = 1.5f, locale = "ru")
+@Composable
+fun OwnerSetup55() = HostAppearance("login", "setup")
+
+@PreviewTest
+@Preview(name = "system55-home-tall", widthDp = 390, heightDp = 2300, locale = "ru")
+@Composable
+fun SystemHome55() = HostAppearance("home", "current")
+
+@PreviewTest
+@Preview(name = "system55-telemetry", widthDp = 390, heightDp = 1000, locale = "ru")
+@Preview(name = "system55-telemetry-large-text", widthDp = 320, heightDp = 1500, fontScale = 1.5f, locale = "ru")
+@Composable
+fun SystemTelemetry55() {
+    check(LocalInspectionMode.current)
+    CompositionLocalProvider(LocalWorkspacePreferences provides WorkspacePreferenceController(
+        WorkspacePreferences(motion = MotionLevel.OFF, haptics = false))) {
+        AnalystTheme {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                    SystemTelemetryCard(system55Fixture().getJSONObject("sections").getJSONObject("ai").getJSONObject("data"),
+                        java.time.Instant.parse("2026-10-29T12:00:30Z")) { }
+                }
+            }
+        }
+    }
+}
+
+/** Synthetic, screenshot-only counters; this function never ships in the production source set. */
+private fun system55Fixture(): JSONObject {
+    val ai = JSONObject().put("jobs", JSONArray().put(JSONObject().put("job_id", "synthetic-job")
+        .put("state", "running").put("stage", "collecting_metadata").put("updated_at", "2026-10-29T12:00:00Z")
+        .put("progress", JSONObject().put("completed", 17).put("total", 40))))
+        .put("check_history", JSONArray().apply {
+            listOf(23, 18, 15, 22, 9, 12).forEachIndexed { index, count ->
+                put(JSONObject().put("observation_count", count).put("checked_at", "2026-10-29T${(12-index).toString().padStart(2, '0')}:00:00Z"))
+            }
+        })
+        .put("budget", JSONObject().put("estimated_and_reserved_rub", "12.50").put("daily_cap_rub", "80")
+            .put("monthly_estimated_and_reserved_rub", "240.50").put("monthly_cap_rub", "2500")
+            .put("budget_configuration_valid", true).put("paid_calls_paused", false))
+    return JSONObject().put("sections", JSONObject().put("ai", JSONObject().put("data", ai)))
 }

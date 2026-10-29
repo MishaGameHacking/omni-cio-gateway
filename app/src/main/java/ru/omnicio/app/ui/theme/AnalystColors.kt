@@ -113,48 +113,37 @@ private val WorkspaceSemantic = AnalystSemanticColors(
 )
 
 private val GraphiteColors = darkColorScheme(
-    primary = Color(0xFF9DB9FF), onPrimary = Color(0xFF102C63),
-    inversePrimary = Color(0xFF205DD7),
-    primaryFixed = WorkspaceColors.primaryFixed,
-    primaryFixedDim = WorkspaceColors.primaryFixedDim,
-    onPrimaryFixed = WorkspaceColors.onPrimaryFixed,
-    onPrimaryFixedVariant = WorkspaceColors.onPrimaryFixedVariant,
-    secondaryFixed = WorkspaceColors.secondaryFixed,
-    secondaryFixedDim = WorkspaceColors.secondaryFixedDim,
-    onSecondaryFixed = WorkspaceColors.onSecondaryFixed,
-    onSecondaryFixedVariant = WorkspaceColors.onSecondaryFixedVariant,
-    tertiaryFixed = WorkspaceColors.tertiaryFixed,
-    tertiaryFixedDim = WorkspaceColors.tertiaryFixedDim,
-    onTertiaryFixed = WorkspaceColors.onTertiaryFixed,
-    onTertiaryFixedVariant = WorkspaceColors.onTertiaryFixedVariant,
-    primaryContainer = Color(0xFF263A60), onPrimaryContainer = Color(0xFFDCE6FF),
-    secondary = Color(0xFF87D5C5), onSecondary = Color(0xFF093B33),
-    secondaryContainer = Color(0xFF233F3A), onSecondaryContainer = Color(0xFFC0F5E8),
-    tertiary = Color(0xFFC9AFF0), onTertiary = Color(0xFF392351),
-    tertiaryContainer = Color(0xFF40324E), onTertiaryContainer = Color(0xFFEEDCFF),
-    inverseSurface = Color(0xFFE4E2E6), inverseOnSurface = Color(0xFF303136),
+    primary = Color(0xFF68DDF2), onPrimary = Color(0xFF042C35),
+    primaryContainer = Color(0xFF123845), onPrimaryContainer = Color(0xFFC7F6FF),
+    inversePrimary = Color(0xFF006778),
+    secondary = Color(0xFFB7A2FF), onSecondary = Color(0xFF291656),
+    secondaryContainer = Color(0xFF30234F), onSecondaryContainer = Color(0xFFE8DDFF),
+    tertiary = Color(0xFFD1ABFF), onTertiary = Color(0xFF3B165B),
+    tertiaryContainer = Color(0xFF362448), onTertiaryContainer = Color(0xFFF0DCFF),
+    background = Color(0xFF080D17), onBackground = Color(0xFFF2F5FC),
+    surface = Color(0xFF101927), onSurface = Color(0xFFF2F5FC),
+    surfaceVariant = Color(0xFF1D2B3D), onSurfaceVariant = Color(0xFFB6C3D8),
+    surfaceContainerLowest = Color(0xFF070B13), surfaceContainerLow = Color(0xFF0C1421),
+    surfaceContainer = Color(0xFF142031), surfaceContainerHigh = Color(0xFF19283B),
+    surfaceContainerHighest = Color(0xFF21334A), surfaceBright = Color(0xFF2C3E55),
+    surfaceDim = Color(0xFF080D17), surfaceTint = Color(0xFF68DDF2),
+    inverseSurface = Color(0xFFE3EAF4), inverseOnSurface = Color(0xFF152031),
+    outline = Color(0xFF8394AE), outlineVariant = Color(0xFF30425B),
+    error = Color(0xFFFFA7B5), onError = Color(0xFF5D1328),
+    errorContainer = Color(0xFF4D2031), onErrorContainer = Color(0xFFFFDCE3),
     scrim = Color(0xFF000000),
-    background = Color(0xFF141517), onBackground = Color(0xFFF1F1F3),
-    surface = Color(0xFF1D1E21), onSurface = Color(0xFFF1F1F3),
-    surfaceVariant = Color(0xFF303136), onSurfaceVariant = Color(0xFFCACBD1),
-    surfaceContainerLowest = Color(0xFF111214), surfaceContainerLow = Color(0xFF191A1D),
-    surfaceContainer = Color(0xFF242529), surfaceContainerHigh = Color(0xFF2B2C31),
-    surfaceContainerHighest = Color(0xFF35363C), surfaceBright = Color(0xFF3A3B40),
-    surfaceDim = Color(0xFF141517), surfaceTint = Color(0xFF9DB9FF),
-    outline = Color(0xFF9799A3), outlineVariant = Color(0xFF494B54),
-    error = Color(0xFFFFB1BB), onError = Color(0xFF5F152A),
-    errorContainer = Color(0xFF572332), onErrorContainer = Color(0xFFFFD9DF),
 )
 private val GraphiteSemantic = WorkspaceSemantic.copy(
-    success = Color(0xFF8BD8AA), onSuccess = Color(0xFF073A21),
-    successContainer = Color(0xFF223C2D), onSuccessContainer = Color(0xFFBBF2D0),
-    warning = Color(0xFFF2CB7C), onWarning = Color(0xFF3C2B04),
-    warningContainer = Color(0xFF45391E), onWarningContainer = Color(0xFFFFE4AC),
-    info = Color(0xFF9DB9FF), onInfo = Color(0xFF102C63),
-    infoContainer = Color(0xFF263A60), onInfoContainer = Color(0xFFDCE6FF),
-    disabledInk = Color(0xFFA3A5AE), disabledContainer = Color(0xFF303136),
-    chartGrid = Color(0xFF41434B), chartAxis = Color(0xFF9799A3),
-    chartSeparator = Color(0xFF1D1E21), chartSelectedInner = Color(0xFF1D1E21), chartSelectedOuter = Color(0xFFF1F1F3),
+    success = Color(0xFF74E3B7), onSuccess = Color(0xFF003825),
+    successContainer = Color(0xFF123D30), onSuccessContainer = Color(0xFFB4F5D9),
+    warning = Color(0xFFF5CB78), onWarning = Color(0xFF3E2C03),
+    warningContainer = Color(0xFF41341D), onWarningContainer = Color(0xFFFFE5B1),
+    info = Color(0xFF97C8FF), onInfo = Color(0xFF082C51),
+    infoContainer = Color(0xFF18354F), onInfoContainer = Color(0xFFD0E7FF),
+    disabledInk = Color(0xFF9AAAC1), disabledContainer = Color(0xFF1D2B3D),
+    chartGrid = Color(0xFF2B3B52), chartAxis = Color(0xFF9AAAC1),
+    chartSeparator = Color(0xFF101927), chartSelectedInner = Color(0xFF101927),
+    chartSelectedOuter = Color(0xFFF2F5FC),
 )
 
 @Suppress("UNUSED_PARAMETER")
@@ -168,5 +157,6 @@ fun analystColors(dark: Boolean = false, accent: AccentStyle = AccentStyle.AUROR
 /** Actual state-layer composition; callers retain the foreground paired to the fill. */
 internal fun analystPressedColor(fill: Color, foreground: Color, opacity: Float = .08f): Color =
     foreground.copy(alpha = opacity).compositeOver(fill)
+
 
 

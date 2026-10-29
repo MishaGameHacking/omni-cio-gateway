@@ -36,7 +36,7 @@ async def _payload(request: Request, allowed: set[str]) -> dict:
         body.extend(chunk)
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeError) as exc:
+    except (ValueError, UnicodeError, RecursionError) as exc:
         raise OwnerAuthError("owner_auth_payload_invalid", 422) from exc
     if not isinstance(data, dict) or not set(data).issubset(allowed):
         raise OwnerAuthError("owner_auth_payload_invalid", 422)

@@ -13,7 +13,7 @@ data class AnalystDestination(val id: String, val title: String, val symbol: Spe
 
 /** IDs remain compatible with restored navigation, notifications and saved drafts. */
 val analystDestinations: List<AnalystDestination> = listOf(
-    AnalystDestination("Home", "Главная", SpectrumSymbol.Home, NavigationGroup.Main, AnalystTab.Home, tab = AnalystTab.Home),
+    AnalystDestination("Home", "Система", SpectrumSymbol.Home, NavigationGroup.Main, AnalystTab.Home, tab = AnalystTab.Home),
     AnalystDestination("Portfolio", "Аналитика", SpectrumSymbol.Portfolio, NavigationGroup.Main, AnalystTab.Portfolio, tab = AnalystTab.Portfolio),
     AnalystDestination("Recommendations", "Решения", SpectrumSymbol.Decisions, NavigationGroup.Main, AnalystTab.Actions, tab = AnalystTab.Actions),
     AnalystDestination("Profile", "Настройки", SpectrumSymbol.Settings, NavigationGroup.Main, AnalystTab.Profile, tab = AnalystTab.Profile),

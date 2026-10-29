@@ -295,12 +295,15 @@ class GuardedAIClient:
         assert_monitoring_access(self.connect)
         encoded = _encoded_messages(messages, max_output_tokens)
         route = self.check_ready(tier, input_bytes=len(encoded), max_output_tokens=max_output_tokens)
-        binding = broker_binding(self.connect, self.user_id)
         # Conservative configurable estimate, not a tokenizer/invoice guarantee.
         input_bound = len(encoded) + route.input_allowance
         ceiling = token_cost(input_bound, max_output_tokens, route.input_rate, route.output_rate)
         if self.route_guard is not None:
             self.route_guard(route, ceiling)
+        # Reject changed quotes before acquiring a new connection-bound attempt.
+        # Readiness already checked presence; bind the version only after the
+        # caller accepts this exact route and conservative cost ceiling.
+        binding = broker_binding(self.connect, self.user_id)
         job = CURRENT_JOB.get()
         if job:
             queue = AnalysisQueue(self.connect)

@@ -136,6 +136,13 @@ class OwnerPasswordRouteTests(unittest.TestCase):
         self.assertGreater(int(response.headers["Retry-After"]), 0)
         self.assertNotIn(PASSWORD, response.text)
 
+    def test_deeply_nested_json_is_rejected_without_server_error(self):
+        payload = b"[" * 1000 + b"0" + b"]" * 1000
+        response = self.client.post("/auth/owner/login", content=payload,
+                                    headers={"Content-Type": "application/json"})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json(), {"detail": "owner_auth_payload_invalid"})
+
     def test_password_rotation_returns_new_existing_session_shape(self):
         session = self.setup_password().json()
         response = self.client.post("/auth/owner/password", json={"current_password": PASSWORD,

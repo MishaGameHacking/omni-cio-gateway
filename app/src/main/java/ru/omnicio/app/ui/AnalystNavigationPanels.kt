@@ -218,11 +218,16 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
                     if (row > 0) HorizontalDivider(Modifier.padding(horizontal = 12.dp), color = colors.outlineVariant)
                     androidx.compose.material3.Text(group.title, Modifier.padding(horizontal = 12.dp),
                         style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
-                    destinations.forEach { destination ->
-                        val route = destination.workspace
-                        SpectrumTextButton(destination.title, { close(destination) }, symbol = destination.symbol,
-                            modifier = Modifier.fillMaxWidth().testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
-                                else "navigation-primary-" + destination.tab!!.name.lowercase()))
+                    LazyRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                        itemsIndexed(destinations, key = { _, item -> item.id }) { _, destination ->
+                            val route = destination.workspace
+                            SpectrumGlyphButton(destination.symbol, destination.title, { close(destination) },
+                                Modifier.size(56.dp).testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
+                                    else "navigation-primary-" + destination.tab!!.name.lowercase()),
+                                active = if (route != null) route == selectedWorkspace
+                                    else selectedWorkspace == null && destination.tab == selected)
+                        }
                     }
                 }
             }
