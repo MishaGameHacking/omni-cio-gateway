@@ -1,0 +1,27 @@
+name: Verify material notification preference change on owner laptop
+on:
+  push:
+    branches: [codex/strategy53-delivery-tools-2026-10-29]
+    paths: [.github/workflows/material54-check.yml, deploy/material_notifications54.py, deploy/test_material_notifications54.py]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: material54-${{ github.run_id }}
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/material_notifications54.py
+            deploy/test_material_notifications54.py
+          sparse-checkout-cone-mode: false
+      - shell: cmd
+        working-directory: material54-${{ github.run_id }}
+        run: |
+          py -3 -c "import os; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'"
+          if errorlevel 1 exit /b 1
+          py -3 deploy/test_material_notifications54.py -v
+          if errorlevel 1 exit /b 1
