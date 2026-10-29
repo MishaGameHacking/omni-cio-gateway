@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -212,9 +213,16 @@ private fun androidx.compose.foundation.lazy.LazyListScope.analyticsAssets(accou
 @Composable
 private fun AnalyticsValueCard(data: AnalyticsViewData, full: Boolean, selectPeriod: (PortfolioPeriod) -> Unit, details: () -> Unit) {
     AnalyticsCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(PrivateValue(data.total.moneyText()), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
-            CurrencyChoice(data.total?.currency ?: data.currency)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth < 260.dp * LocalDensity.current.fontScale) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(PrivateValue(data.total.moneyText()), style = MaterialTheme.typography.headlineMedium)
+                    CurrencyChoice(data.total?.currency ?: data.currency)
+                }
+            } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(PrivateValue(data.total.moneyText()), Modifier.weight(1f), style = MaterialTheme.typography.headlineMedium)
+                CurrencyChoice(data.total?.currency ?: data.currency)
+            }
         }
         Text("Стоимость портфеля", style = MaterialTheme.typography.bodyLarge)
         if (data.current) AnalyticsHistory(data.requests.mapNotNull { it.json }, data.currency)
@@ -315,10 +323,21 @@ private fun AnalyticsTotals(requests: List<AccountData>, current: Boolean, full:
 
 @Composable
 private fun AnalyticsMetric(label: String, value: String, signed: BigDecimal? = null) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-        Text(value, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            color = when { signed == null || signed.signum() == 0 -> MaterialTheme.colorScheme.onSurface; signed.signum() > 0 -> LocalSpectrumPalette.current.semantic.success; else -> MaterialTheme.colorScheme.error })
+    val color = when {
+        signed == null || signed.signum() == 0 -> MaterialTheme.colorScheme.onSurface
+        signed.signum() > 0 -> LocalSpectrumPalette.current.semantic.success
+        else -> MaterialTheme.colorScheme.error
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < 260.dp * LocalDensity.current.fontScale) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Text(value, color = color)
+            }
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+            Text(value, Modifier.weight(1f), textAlign = androidx.compose.ui.text.style.TextAlign.End, color = color)
+        }
     }
 }
 
@@ -376,6 +395,16 @@ private fun AnalyticsStructure(accounts: List<PortfolioAccount>, total: MoneyAmo
     if (totalAmount - sum > totalAmount * BigDecimal("0.001")) buckets["Не распределено API"] = totalAmount - sum
     val fractions = buckets.map { it.key to it.value.divide(totalAmount, MathContext.DECIMAL64).toFloat() }.filter { it.second > 0f }
     val colors = LocalSpectrumPalette.current.chartSeries
+    AnalyticsDonut(fractions, colors, total)
+    fractions.forEachIndexed { index, (title, fraction) ->
+        AnalyticsMetric(title, decimalText(BigDecimal.valueOf(fraction.toDouble() * 100)) + "%")
+        SpectrumProgressBar(fraction, accent = colors[index % colors.size])
+    }
+}
+
+@Composable
+private fun AnalyticsDonut(fractions: List<Pair<String, Float>>, colors: List<Color>, total: MoneyAmount?) {
+    val largeText = LocalDensity.current.fontScale > 1.3f
     Box(Modifier.fillMaxWidth().height(232.dp), contentAlignment = Alignment.Center) {
         Canvas(Modifier.size(224.dp).semantics { contentDescription = "Структура портфеля, " + fractions.joinToString { it.first + " " + (it.second * 100).toInt() + "%" } }) {
             var angle = -90f
@@ -385,12 +414,9 @@ private fun AnalyticsStructure(accounts: List<PortfolioAccount>, total: MoneyAmo
             }
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(PrivateValue(total.moneyText()), style = MaterialTheme.typography.titleLarge)
+            if (!largeText) Text(PrivateValue(total.moneyText()), style = MaterialTheme.typography.titleLarge)
             Text("Групп: " + fractions.size, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-    fractions.forEachIndexed { index, (title, fraction) ->
-        AnalyticsMetric(title, decimalText(BigDecimal.valueOf(fraction.toDouble() * 100)) + "%")
-        SpectrumProgressBar(fraction, accent = colors[index % colors.size])
-    }
+    if (largeText) Text(PrivateValue(total.moneyText()), style = MaterialTheme.typography.titleLarge)
 }
