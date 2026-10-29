@@ -32,7 +32,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: owner-ai-tools55
+  group: owner-ai-admin-tools55
   cancel-in-progress: false
 jobs:
   verify:
