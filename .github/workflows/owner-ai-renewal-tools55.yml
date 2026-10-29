@@ -1,10 +1,15 @@
 name: Test AI price renewal administration in existing owner WSL
-# Revalidate renewal against the shared opaque Bearer-token staging parser.
+# Revalidate renewal against systemd-compatible opaque credential serialization.
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths:
       - .github/workflows/owner-ai-renewal-tools55.yml
+      - deploy/stage_owner55_ai.py
+      - deploy/activate_owner55_ai.py
+      - tools/activate_owner55_ai.py
+      - tools/tests/test_provision_owner55_ai.py
+      - tools/tests/test_activate_owner55_ai.py
       - tools/owner_ai_renewal_transport.py
       - tools/renew_owner55_ai.py
       - deploy/renew_owner55_ai.py
@@ -15,7 +20,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: owner-ai-tools55
+  group: owner-ai-renewal-tools55
   cancel-in-progress: false
 jobs:
   verify:
