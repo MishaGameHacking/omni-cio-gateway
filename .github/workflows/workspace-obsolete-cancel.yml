@@ -1,4 +1,4 @@
-name: Cancel superseded strategy verification only
+name: Cancel superseded candidate54 verification only
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -14,9 +14,9 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const run_id=40832311620;
-            const old='d981e9a87b70cd0f668b8fb6c8762d28a50f56f2';
-            const next='4a154b14771fc882b30727620926604ab198d28c';
+            const run_id=40860447517;
+            const old='2ffcf3761d0cae539b2156c6670786b1b509b6ba';
+            const next='a88ea60c71c4d19942ccf1892ceba50213e6e528';
             const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
             if(run.head_sha!==old||run.head_branch!=='codex/workspace-strategies-2026-10-28'||
                run.path!=='.github/workflows/workspace-redesign.yml'||run.event!=='push')

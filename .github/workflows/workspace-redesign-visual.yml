@@ -9,7 +9,7 @@ concurrency:
   group: workspace-redesign-visual
   cancel-in-progress: false
 env:
-  RENDER_SOURCE_SHA: 851bd5e4f3cee0600cb44ac5807973a1762d1a54
+  RENDER_SOURCE_SHA: a88ea60c71c4d19942ccf1892ceba50213e6e528
 jobs:
   render:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
@@ -33,7 +33,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 851bd5e4f3cee0600cb44ac5807973a1762d1a54
+          ref: a88ea60c71c4d19942ccf1892ceba50213e6e528
           path: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Render actual Compose layouts with synthetic data and restore reference files
@@ -50,6 +50,8 @@ jobs:
           path: |
             ${{ runner.temp }}/redesign-visual-${{ github.run_id }}-${{ github.run_attempt }}/
             visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/screenshotTest/
+            visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/reports/tests/updateDebugScreenshotTest/
+            visual-source-${{ github.run_id }}-${{ github.run_attempt }}/app/build/test-results/updateDebugScreenshotTest/
           if-no-files-found: error
           retention-days: 7
 
