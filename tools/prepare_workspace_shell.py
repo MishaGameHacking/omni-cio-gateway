@@ -44,7 +44,7 @@ def main():
                 "native-alignment-tests", "mesh-tests", "gradle", "apk-verification"}
     need(required <= {step["label"] for step in steps}
          and all(step["exit_code"] == 0 for step in steps), "laptop_checks_not_passed")
-    need(report["version_code"] == 52 and report["version_name"] == "0.16.0-preview"
+    need(report["version_code"] == 53 and report["version_name"] == "0.17.0-preview"
          and report["package"] == "ru.omnicio.app.debug", "unexpected_apk_identity")
     need(digest(apk) == report["sha256"] == os.environ["EXPECTED_APK_SHA256"]
          and len(apk) == report["bytes"], "apk_bytes_changed")
@@ -71,3 +71,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

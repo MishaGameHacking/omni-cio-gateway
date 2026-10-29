@@ -1,7 +1,7 @@
 name: Check redesigned shell delivery inputs on owner laptop
 on:
   push:
-    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    branches: [codex/strategy53-delivery-tools-2026-10-29]
     paths:
       - .github/workflows/workspace-shell-tools-check.yml
       - deploy/publish_workspace_shell.py
@@ -43,3 +43,4 @@ jobs:
           if errorlevel 1 exit /b 1
           py -3 tools\check_workspace_shell_tools.py
           if errorlevel 1 exit /b 1
+
