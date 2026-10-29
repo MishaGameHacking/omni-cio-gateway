@@ -278,7 +278,7 @@ class StagingFormatTests(unittest.TestCase):
 
 class GatewayCredentialGrammarTests(unittest.TestCase):
     def test_controller_and_remote_accept_opaque_bearer_grammar_at_bounds(self):
-        values = ['a' * 32, 'a' * 4096, SECRET,
+        values = ['a', 'a' * 8192, 'synthetic:opaque:key', SECRET,
                   'eyJhbGciOiJIUzI1NiJ9.synthetic_signature-1234567890',
                   'sk-SYNTHETIC-ONLY-NOT-A-REAL-CREDENTIAL-1234567890',
                   'a' * 30 + '==']
@@ -288,10 +288,10 @@ class GatewayCredentialGrammarTests(unittest.TestCase):
                 stage.require_gateway_key(value)
 
     def test_controller_and_remote_reject_invalid_or_masked_credentials_consistently(self):
-        values = [None, {}, '', 'a' * 31, 'a' * 4097, '=' * 32,
+        values = [None, {}, '', 'a' * 8193,
                   'a' * 31 + '\n', 'a' * 31 + '\r', 'a' * 31 + ' ',
-                  'a' * 31 + '\u00e9', 'a' * 16 + '=' + 'a' * 16,
-                  'a' * 31 + ':', 'a' * 31 + '\x00', provision.MASKED]
+                  'a' * 31 + '\u00e9', 'a' * 31 + '\x7f',
+                  'a' * 31 + '\x00', provision.MASKED]
         for index, value in enumerate(values):
             code = 'new_gateway_key_masked' if value == provision.MASKED else 'new_gateway_key_invalid'
             with self.subTest(case=index):

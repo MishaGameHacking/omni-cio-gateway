@@ -94,10 +94,10 @@ def validate_prices(pricing):
 
 
 def require_gateway_key(secret):
-    # Match the controller's bounded RFC 6750 grammar without assuming a prefix.
+    # Match the controller's opaque HTTP-safe credential validation.
     need(secret != MASKED, 'new_gateway_key_masked')
-    need(isinstance(secret, str) and 32 <= len(secret) <= 4096
-         and re.fullmatch(r'[A-Za-z0-9._~+/\-]+=*', secret), 'new_gateway_key_invalid')
+    need(isinstance(secret, str) and 1 <= len(secret) <= 8192
+         and all(33 <= ord(c) <= 126 for c in secret), 'new_gateway_key_invalid')
 
 
 def settings_for(payload, secret):

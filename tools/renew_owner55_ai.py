@@ -55,12 +55,13 @@ def operation_source():
 
 
 def renew(api, private_transfer, operation, sources, key_id, creation_run, *, now=None):
+    provider_limits = {'day':'100', 'month':'2900'} if creation_run == 'owner-supplied' else LIMITS
     finances = api.request('GET', activation.provision.FINANCES).get('finances')
     need(isinstance(finances, dict) and finances.get('currency') == 'RUB', 'renewal_currency_not_rub')
     activation.owned_key(api, key_id, creation_run)
     # Require the normal active limits. Never undo a manual or incident block.
     identities = activation.limit_ids(api.request('GET', activation.KEYS + '/' + key_id + '/entity-limits'),
-                                      key_id, LIMITS)
+                                      key_id, provider_limits)
     try:
         observed = datetime.now(timezone.utc) if now is None else now
         pricing = activation.provision.pricing(api, observed)
@@ -71,18 +72,18 @@ def renew(api, private_transfer, operation, sources, key_id, creation_run, *, no
         contract['status'] = {'renewal_due', 'not_due'}
         receipt = private_transfer(operation, {**payload, 'action': 'renewal_preflight'}, contract)
         activation.owned_key(api, key_id, creation_run)
-        activation.verify_limits(api, key_id, identities, LIMITS)
+        activation.verify_limits(api, key_id, identities, provider_limits)
         if receipt == preflight_receipt(key_id, False):
-            return {**receipt, 'provider_daily_limit_rub': '95', 'provider_30_day_limit_rub': '2900',
+            return {**receipt, 'provider_daily_limit_rub': provider_limits['day'], 'provider_30_day_limit_rub': '2900',
                     'automatic_retry_permitted': False}
         need(receipt == due_receipt, 'renewal_preflight_receipt_invalid')
         expected = expected_receipt(key_id, pricing)
         receipt = private_transfer(operation, {**payload, 'action': 'renew_prices'},
                                    activation.receipt_contract(expected))
         need(receipt == expected, 'renewal_private_receipt_invalid')
-        activation.verify_limits(api, key_id, identities, LIMITS)
+        activation.verify_limits(api, key_id, identities, provider_limits)
         activation.owned_key(api, key_id, creation_run)
-        return {**receipt, 'provider_daily_limit_rub': '95', 'provider_30_day_limit_rub': '2900',
+        return {**receipt, 'provider_daily_limit_rub': provider_limits['day'], 'provider_30_day_limit_rub': '2900',
                 'provider_limits_changed': False, 'automatic_retry_permitted': False}
     except BaseException:
         # Once exact ownership and limit IDs are established, uncertainty in

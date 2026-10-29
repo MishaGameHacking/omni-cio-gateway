@@ -63,6 +63,13 @@ class ActivationAPI(provision.CloudAPI):
 
 
 def owned_key(api, key_id, creation_run):
+    if creation_run == 'owner-supplied':
+        need(provision.uuid_text(key_id) == key_id, 'staged_key_identity_invalid')
+        matches = [row for row in provision.keys(api) if row['id'] == key_id]
+        need(len(matches) == 1, 'dedicated_key_identity_changed')
+        # Identity is the pinned UUID and owner project, not a display name.
+        provision.validate_created_metadata(matches[0], matches[0]['name'], key_id)
+        return
     need(provision.uuid_text(key_id) == key_id and re.fullmatch('[0-9]{8,20}', creation_run),
          'staged_key_identity_invalid')
     rows = provision.keys(api)

@@ -129,6 +129,7 @@ def validate_completion(payload, pricing, bound):
     cost = (Decimal(incoming) * Decimal(pricing['input_rub_per_million'])
             + Decimal(outgoing) * Decimal(pricing['output_rub_per_million'])) / 1000000
     return {'response_json_verified': True, 'arithmetic_verified': True,
+            'runtime_response_model_matches': payload['model'] == provision.MODEL,
             'prompt_tokens': incoming, 'completion_tokens': outgoing,
             'estimated_cost_rub': format(cost, 'f')}
 

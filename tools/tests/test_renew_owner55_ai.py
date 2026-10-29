@@ -112,6 +112,17 @@ class RenewalControllerTests(unittest.TestCase):
         self.assertNotIn('price_valid_until', receipt)
         self.assertEqual(self.patches(), [])
 
+    def test_supplied_owner_key_preserves_100_ruble_provider_day_limit(self):
+        self.api.values['day'] = '100'
+        def transfer(operation, payload, contract):
+            self.assertEqual(self.api.values, {'day':'100', 'month':'2900'})
+            if payload['action'] == 'renewal_preflight':
+                return renewal.preflight_receipt(KEY, False)
+            raise AssertionError('Not due')
+        receipt = renewal.renew(self.api, transfer, 'reviewed-operation', {}, KEY, 'owner-supplied', now=NOW)
+        self.assertEqual(receipt['provider_daily_limit_rub'], '100')
+        self.assertEqual(self.patches(), [])
+
     def test_missing_fresh_catalog_price_does_not_extend_expiry(self):
         self.prices.return_value = {'availability_verified': True, 'pricing_verified': False}
         with self.assertRaises(renewal.RenewalError) as raised:

@@ -78,11 +78,11 @@ def need(condition, code):
 
 
 def require_gateway_key(secret):
-    # Gateway credentials are opaque Bearer tokens, not a documented sk- format.
-    # RFC 6750 b64token permits padding only at the end; nothing is normalized.
+    # Timeweb uses opaque HTTP-safe credentials, with no documented prefix,
+    # minimum length or OAuth alphabet. Preserve the exact supplied bytes.
     need(secret != MASKED, 'new_gateway_key_masked')
-    need(isinstance(secret, str) and 32 <= len(secret) <= 4096
-         and re.fullmatch(r'[A-Za-z0-9._~+/\-]+=*', secret), 'new_gateway_key_invalid')
+    need(isinstance(secret, str) and 1 <= len(secret) <= 8192
+         and all(33 <= ord(c) <= 126 for c in secret), 'new_gateway_key_invalid')
 
 
 def permitted_write(method, path):

@@ -181,8 +181,8 @@ def _transport_secret(operation, payload, secret, receipt_contract):
     _need(isinstance(operation, str) and 0 < len(operation.encode()) <= 128 * 1024,
           'private_operation_size_invalid')
     _need(isinstance(payload, dict), 'private_payload_invalid')
-    _need(secret is None or (isinstance(secret, str) and 16 <= len(secret) <= 4096
-          and secret.isascii() and not any(character.isspace() for character in secret)),
+    _need(secret is None or (isinstance(secret, str) and 1 <= len(secret) <= 8192
+          and all(33 <= ord(character) <= 126 for character in secret)),
           'private_credential_invalid')
     _need(not secret or secret not in operation, 'private_credential_embedded_in_code')
     try:
