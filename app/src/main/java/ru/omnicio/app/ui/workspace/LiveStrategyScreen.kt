@@ -40,7 +40,6 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
     var hasEditorState by rememberSaveable(userId) { mutableStateOf(false) }
     var loaded by remember(userId) { mutableStateOf(false) }
     var tab by rememberSaveable(userId) { mutableIntStateOf(0) }
-    var parameterTab by rememberSaveable(userId) { mutableIntStateOf(0) }
     val version = active?.optInt("version") ?: 0
     val config = remember(configText) { JSONObject(configText) }
     LaunchedEffect(resource.data, auto?.ready) {
@@ -85,20 +84,24 @@ fun LiveStrategyScreen(userId: String, onBack: () -> Unit) {
                     AutoSaveStatus(record) { auto?.retry(AutoSaveKind.Strategy) }
                 }
                 when (tab) {
-                    0 -> item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
-                        editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
+                    0 -> {
+                        if (active?.optJSONObject("config")?.has("construction") == true) item {
+                            StrategyAllocationSummary(resource.data?.optJSONObject("allocation"))
+                        }
+                        item { StrategyProfilesPanel(resource.data?.optJSONObject("profiles"), config,
+                            editor.canEdit, { next -> edit(next); tab = 1 }, edit) }
+                    }
                     1 -> {
                         item { StrategySimpleSettings(config, resource.data?.records("available_accounts").orEmpty(),
                             editor.canEdit, edit) }
                     }
                     else -> item { StrategyActionPlanPanel() }
                 }
-                item { DetailFold("Сравнить с действующими правилами") { StrategyDifference(active?.optJSONObject("config"), config) } }
                 if (!validStrategy(config)) item {
                     SpectrumCard {
                         Text("Завершите настройку", style = MaterialTheme.typography.titleMedium)
                         strategyValidationIssues(config).forEach { Text(it, color = MaterialTheme.colorScheme.error) }
-                        SpectrumSecondaryButton("Открыть параметры", { tab = 1; parameterTab = 1 }, Modifier.fillMaxWidth())
+                        SpectrumSecondaryButton("Открыть параметры", { tab = 1 }, Modifier.fillMaxWidth())
                     }
                 }
             }

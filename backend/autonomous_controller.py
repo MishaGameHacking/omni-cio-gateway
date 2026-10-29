@@ -464,6 +464,20 @@ def _ordered_candidates(found, config, snapshot, account):
     return sorted(found.values(), key=lambda item: ranking_key(item, held))
 
 
+def _review_candidates(user, batch, account, active, deadline):
+    candidates, errors = [], []
+    for item in batch:
+        if time.monotonic() >= deadline:
+            errors.append("discovery_time_budget")
+            break
+        candidate = _check_candidate(user, item, account, active["version"])
+        candidates.append(candidate)
+        ready = candidate.get("suggested_lots", 0) > 0 and not candidate.get("missing_evidence")
+        if active["config"].get("construction") and ready:
+            break  # Publish the first funded step while its quote is still fresh.
+    return candidates, errors
+
+
 def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     user_id = int(user["id"])
     active = state.active_strategy(user_id)
@@ -494,14 +508,9 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         result["reasons"] = [reason("catalogue_unavailable" if errors else "catalogue_no_eligible_instruments")]
         return result, cursor
     batch = [ordered[(cursor + i) % len(ordered)] for i in range(min(MAX_REVIEWED_PER_CYCLE, tuning['candidate_batch'], len(ordered)))]
-    for item in batch:
-        if time.monotonic() >= deadline:
-            errors.append("discovery_time_budget")
-            break
-        candidate = _check_candidate(user, item, account, version)
-        result["candidates"].append(candidate)
-        if config.get("construction") and candidate.get("suggested_lots", 0) > 0 and not candidate.get("missing_evidence"):
-            break  # Publish the first funded step while its quote is still fresh.
+    candidates, review_errors = _review_candidates(user, batch, account, active, deadline)
+    result["candidates"] = candidates
+    errors.extend(review_errors)
     result["coverage"]["reviewed"] = len(result["candidates"])
     result["coverage"]["constraint_checks_passed"] = sum(item["constraints_passed"] for item in result["candidates"])
     result["reasons"] += [reason(code) for code in sorted(set(errors))]

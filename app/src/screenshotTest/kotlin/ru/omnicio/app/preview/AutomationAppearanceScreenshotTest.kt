@@ -183,10 +183,10 @@ private fun appearanceResource(state: String): WorkspaceResource {
 }
 
 @PreviewTest
-@Preview(name = "strategy-profiles-compact", widthDp = 390, heightDp = 1100, locale = "ru")
-@Preview(name = "strategy-profiles-large-text", widthDp = 320, heightDp = 1500, fontScale = 2f, locale = "ru")
+@Preview(name = "profiles-compact", widthDp = 390, heightDp = 1100, locale = "ru")
+@Preview(name = "profiles-large", widthDp = 320, heightDp = 1500, fontScale = 2f, locale = "ru")
 @Composable
-fun StrategyProfilesAppearance() {
+fun Profiles53() {
     val catalogue = JSONObject().put("items", JSONArray().apply {
         listOf("capital" to "Бережный старт", "coupon" to "Регулярный доход", "balanced" to "Сбалансированный портфель",
             "growth" to "Долгосрочный рост", "equity" to "Долевое участие").forEach { (id, title) ->
@@ -212,11 +212,11 @@ private fun strategy53Fixture(): JSONObject = JSONObject()
         .put("key_rate_mode", "at_least_key_rate").put("enabled_classes", JSONArray(listOf("bond", "share", "etf"))))
 
 @PreviewTest
-@Preview(name = "strategy53-settings-light", widthDp = 390, heightDp = 1200, locale = "ru")
-@Preview(name = "strategy53-settings-graphite", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
-@Preview(name = "strategy53-settings-large-text", widthDp = 320, heightDp = 1200, fontScale = 1.5f, locale = "ru")
+@Preview(name = "settings53-light", widthDp = 390, heightDp = 1200, locale = "ru")
+@Preview(name = "settings53-graphite", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "settings53-large-text", widthDp = 320, heightDp = 1200, fontScale = 1.5f, locale = "ru")
 @Composable
-fun StrategySettings53Appearance() {
+fun Settings53() {
     AnalystTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -228,10 +228,10 @@ fun StrategySettings53Appearance() {
 }
 
 @PreviewTest
-@Preview(name = "strategy53-plan-light", widthDp = 390, heightDp = 1050, locale = "ru")
-@Preview(name = "strategy53-plan-graphite", widthDp = 390, heightDp = 1050, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "plan53-light", widthDp = 390, heightDp = 1050, locale = "ru")
+@Preview(name = "plan53-graphite", widthDp = 390, heightDp = 1050, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun StrategyPlan53Appearance() {
+fun Plan53() {
     val data = JSONObject().put("actions", JSONArray().put(JSONObject().put("name", "Синтетический актив").put("ticker", "TEST")
         .put("action", "buy").put("suggested_lots", 2).put("quantity", "20")
         .put("total_cost", JSONObject().put("amount", "2000").put("currency", "RUB"))
@@ -245,10 +245,10 @@ fun StrategyPlan53Appearance() {
 }
 
 @PreviewTest
-@Preview(name = "strategy53-desktop-rail-light", widthDp = 1000, heightDp = 900, locale = "ru")
-@Preview(name = "strategy53-desktop-rail-graphite", widthDp = 1000, heightDp = 900, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "rail53-light", widthDp = 1000, heightDp = 900, locale = "ru")
+@Preview(name = "rail53-graphite", widthDp = 1000, heightDp = 900, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
 @Composable
-fun StrategyDesktop53Appearance() {
+fun Rail53() {
     AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
         Row(Modifier.fillMaxSize()) {
             StrategyNavigationRail(AnalystTab.Actions, WorkspaceRoute.Strategies, {}, {}, initiallyExpanded = true)

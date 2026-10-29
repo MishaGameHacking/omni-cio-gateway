@@ -33,7 +33,6 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
                 }
                 Text(profile.text("description", ""), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 val value = profile.optJSONObject("config")
-                val mandate = value?.optJSONObject("mandate")
                 Text(strategyClassLabel(value),
                     style = MaterialTheme.typography.labelLarge)
                 if (activeId == profile.text("id", "")) SpectrumBadge("Выбранная основа")
@@ -53,7 +52,6 @@ internal fun StrategyProfilesPanel(catalogue: JSONObject?, config: JSONObject, e
     val selected = profiles.firstOrNull { it.text("id", "") == selectedId }
     if (selected != null) WorkspaceDialog(selected.text("title", "Стратегия"), { selectedId = null }) {
         val proposed = selected.optJSONObject("config")
-        val mandate = proposed?.optJSONObject("mandate")
         Text(selected.text("description", ""))
         Text("Горизонт: ${proposed?.optInt("horizon_months")} мес.")
         Text("Резерв: " + PrivateValue(moneyText(proposed?.optJSONObject("reserve"))))
@@ -88,4 +86,25 @@ internal fun strategyClassLabel(config: JSONObject?): String {
         "bond" -> "Облигации"; "share" -> "Акции"; else -> "Фонды"
     } }.joinToString(" · ")
     return "Облигации и акции"
+}
+
+@Composable
+internal fun StrategyAllocationSummary(allocation: JSONObject?) {
+    val weights = allocation?.optJSONObject("weights_percent") ?: return
+    SpectrumCard {
+        Text("Сохранённый план распределения", style = MaterialTheme.typography.titleMedium)
+        listOf("bond" to "Облигации", "share" to "Акции", "etf" to "Фонды", "cash" to "Деньги и резерв")
+            .forEach { (key, label) ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(label, Modifier.weight(1f))
+                    Text(weights.text(key, "—") + " %", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        if ((allocation.optJSONArray("missing")?.length() ?: 0) > 0) {
+            Text("Новые покупки ожидают ваших настроек финансовой устойчивости.",
+                style = MaterialTheme.typography.bodySmall)
+        }
+        Text("Целевые доли, не текущие остатки. Сервер уточняет количество с учётом целых лотов и лимитов.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
