@@ -19,7 +19,8 @@ SOURCE_FILES = ('tools/owner_ai_admin_transport.py', 'tools/admin_owner55_ai.py'
     'tools/owner_plan_transport_20261027.py', 'tools/inspect_owner55_ai.py',
     'tools/provision_owner55_ai.py', 'tools/activate_owner55_ai.py',
     'deploy/stage_owner55_ai.py', 'deploy/activate_owner55_ai.py', 'tools/adopt_supplied_owner55_ai.py',
-    'tools/provision_owner55_bootstrap.py', 'deploy/provision_owner55_bootstrap.py')
+    'tools/provision_owner55_bootstrap.py', 'deploy/provision_owner55_bootstrap.py',
+    'tools/sync_owner55_ai_key.py', 'deploy/sync_owner55_ai_key.py')
 DEPENDENCY_FILES = ('deploy/prepare_owner_vm.py', 'deploy/access_owner_vm.py',
     'tools/timeweb_ci_capacity.py', 'tools/timeweb_actions_probe.py', 'tools/timeweb_ci_catalog.py')
 

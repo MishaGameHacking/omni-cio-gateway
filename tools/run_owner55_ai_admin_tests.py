@@ -17,12 +17,13 @@ SOURCES = ['tools/inspect_owner55_ai.py', 'tools/provision_owner55_ai.py',
            'tools/owner_ai_admin_transport.py', 'tools/admin_owner55_ai.py',
            'tools/check_owner55_ai_admin_tools.py', 'tools/run_owner55_ai_admin_tests.py',
            'tools/probe_supplied_owner55_ai.py', 'tools/adopt_supplied_owner55_ai.py',
-           'tools/provision_owner55_bootstrap.py', 'deploy/provision_owner55_bootstrap.py']
+           'tools/provision_owner55_bootstrap.py', 'deploy/provision_owner55_bootstrap.py',
+           'tools/sync_owner55_ai_key.py', 'deploy/sync_owner55_ai_key.py']
 PATTERNS = ['test_inspect_owner55_ai.py', 'test_provision_owner55_ai.py',
             'test_owner_ai_private_transport.py', 'test_activate_owner55_ai.py',
             'test_owner55_ai_launcher.py', 'test_owner_ai_admin_transport.py',
             'test_admin_owner55_ai.py', 'test_probe_supplied_owner55_ai.py', 'test_adopt_supplied_owner55_ai.py',
-            'test_provision_owner55_bootstrap.py']
+            'test_provision_owner55_bootstrap.py', 'test_sync_owner55_ai_key.py']
 
 
 def main():

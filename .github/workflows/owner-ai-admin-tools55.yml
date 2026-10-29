@@ -32,6 +32,9 @@ on:
       - tools/provision_owner55_bootstrap.py
       - deploy/provision_owner55_bootstrap.py
       - tools/tests/test_provision_owner55_bootstrap.py
+      - tools/sync_owner55_ai_key.py
+      - deploy/sync_owner55_ai_key.py
+      - tools/tests/test_sync_owner55_ai_key.py
 permissions:
   contents: read
 concurrency:
@@ -85,6 +88,9 @@ jobs:
             tools/provision_owner55_bootstrap.py
             deploy/provision_owner55_bootstrap.py
             tools/tests/test_provision_owner55_bootstrap.py
+            tools/sync_owner55_ai_key.py
+            deploy/sync_owner55_ai_key.py
+            tools/tests/test_sync_owner55_ai_key.py
           sparse-checkout-cone-mode: false
       - name: Compile sources and run mocked tests without cloud credentials
         shell: cmd
