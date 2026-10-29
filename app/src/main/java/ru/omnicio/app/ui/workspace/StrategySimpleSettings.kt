@@ -73,7 +73,7 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
                 change("key_rate_mode", if (it) "at_least_key_rate" else "allow_below")
             }
             Text("При выключенном фильтре допустима меньшая доходность. Высокая доходность может означать высокий риск дефолта; ради неё лимиты не повышаются.", style = MaterialTheme.typography.bodySmall)
-            WorkspaceToggle("Реинвестировать поступления", "Рассчитывать новые покупки только после фактического поступления денег", settings.optBoolean("reinvest", true), enabled = enabled) { value ->
+            WorkspaceToggle("Реинвестировать поступления", "При выключении новые покупки приостановлены; сокращение риска остаётся доступным", settings.optBoolean("reinvest", true), enabled = enabled) { value ->
                 edit(JSONObject(config.toString()).put("construction", JSONObject(settings.toString()).put("reinvest", value))
                     .put("mandate", JSONObject(mandate.toString()).put("reinvest_coupons", value).put("reinvest_dividends", value)))
             }

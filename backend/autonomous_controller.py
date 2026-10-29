@@ -280,7 +280,7 @@ def _empty_discovery(state_name: str = "waiting", codes: list[str] | None = None
             "automatic_orders": False, "recommendation_complete": False, "sources": []}
 
 
-def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
+def _claim_discovery(user: Any, now: int, *, force: bool = False) -> tuple[str, int] | None:
     user_id, key, owner = int(user["id"]), state.broker_key(user), uuid.uuid4().hex
     active = state.active_strategy(user_id)
     version = (active or {}).get("version", 0)
@@ -296,7 +296,7 @@ def _claim_discovery(user: Any, now: int) -> tuple[str, int] | None:
         same = row is not None and row["broker_key"] == key
         if same and row["lease_until"] and row["lease_until"] > now:
             return None
-        if same and row["strategy_version"] == version and 0 <= now - row["attempted_at"] < DISCOVERY_INTERVAL_SECONDS:
+        if same and row["strategy_version"] == version and 0 <= now - row["attempted_at"] < (60 if force else DISCOVERY_INTERVAL_SECONDS):
             return None
         cursor = row["cursor"] if same else 0
         # The new strategy cannot inherit candidates calculated under old limits.
@@ -356,14 +356,24 @@ def _account_for_research(snapshot: dict, config: dict) -> str | None:
 
 
 def _check_candidate(user: Any, item: dict, account: str, version: int) -> dict:
+    assert_enabled(int(user["id"]))
+    assert_monitoring_access(backend.connect)
     active = state.active_strategy(int(user["id"]))
     if active and active["version"] == version and active["config"].get("construction"):
-        try:
-            from .strategy_actions import assess_candidate
-        except ImportError:
-            from strategy_actions import assess_candidate
-        snapshot = state.saved_snapshot(user, active["config"]["reserve"]["currency"])
-        return assess_candidate(user, item, account, active, snapshot)
+        return _strategy_candidate(user, item, account, active)
+    return _legacy_candidate(user, item, account, version)
+
+
+def _strategy_candidate(user, item, account, active):
+    try:
+        from .strategy_actions import assess_candidate
+    except ImportError:
+        from strategy_actions import assess_candidate
+    snapshot = state.saved_snapshot(user, active["config"]["reserve"]["currency"])
+    return assess_candidate(user, item, account, active, snapshot)
+
+
+def _legacy_candidate(user, item, account, version):
     uid = item["uid"]
     base = {"instrument_uid": uid, "ticker": item.get("ticker") or "", "name": item.get("name") or uid,
             "instrument_type": item["instrument_type"], "currency": str(item.get("currency") or "").upper(),
@@ -431,6 +441,24 @@ def _research_catalogues(user, config, classes):
     return found, scanned, sources, errors
 
 
+def _ordered_candidates(found, config, snapshot, account):
+    if not config.get("construction"):
+        return [found[key] for key in sorted(found)]
+    try:
+        from .strategy_construction import ranking_key
+    except ImportError:
+        from strategy_construction import ranking_key
+    held = set()
+    for position in snapshot.get("positions", []):
+        uid, meta, kind = position.get("instrument_uid"), position.get("metadata") or {}, position.get("instrument_type")
+        if position.get("account_id") != account or kind not in {"bond", "share", "etf"} or not decimal(meta.get("lot")):
+            continue
+        held.add(uid)
+        found.setdefault(uid, {"uid": uid, "ticker": position.get("ticker"), "name": position.get("title"),
+            "instrument_type": kind, "lot": meta["lot"], "currency": "RUB"})
+    return sorted(found.values(), key=lambda item: ranking_key(item, held))
+
+
 def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     user_id = int(user["id"])
     active = state.active_strategy(user_id)
@@ -452,16 +480,7 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
         from strategy_profiles import research_tuning
     tuning = research_tuning(config, snapshot)
     found, scanned, sources, errors = _research_catalogues(user, config, tuning["asset_classes"])
-    if config.get("construction"):
-        # Include owned positions even when buying is disabled; they may need a reduction.
-        for position in snapshot.get("positions", []):
-            uid = position.get("instrument_uid")
-            metadata = position.get("metadata") or {}
-            kind = position.get("instrument_type")
-            if position.get("account_id") == account and kind in {"bond", "share", "etf"} and decimal(metadata.get("lot")):
-                found.setdefault(uid, {"uid": uid, "ticker": position.get("ticker"), "name": position.get("title"),
-                    "instrument_type": kind, "lot": metadata["lot"], "currency": "RUB"})
-    ordered = [found[key] for key in sorted(found)]
+    ordered = _ordered_candidates(found, config, snapshot, account)
     result = _empty_discovery("partial", ["research_incomplete"])
     result.update(as_of=now_iso(), snapshot_id=snapshot["snapshot_id"], strategy_version=version, sources=sources)
     result["coverage"].update(scanned=scanned, eligible=len(ordered), catalogue_classes_complete=not errors)
@@ -485,10 +504,10 @@ def _collect_discovery(user: Any, cursor: int, now: int) -> tuple[dict, int]:
     return result, (cursor + len(result["candidates"])) % len(ordered)
 
 
-def observe_and_discover(user: Any, snapshot: dict, current_time: datetime) -> None:
+def observe_and_discover(user: Any, snapshot: dict, current_time: datetime, *, force: bool = False) -> None:
     now, user_id, key = int(time.time()), int(user["id"]), state.broker_key(user)
     record_initial_observation(user, snapshot, int(current_time.timestamp()))
-    claim = _claim_discovery(user, now)
+    claim = _claim_discovery(user, now, force=force)
     if claim is None:
         return
     owner, cursor = claim

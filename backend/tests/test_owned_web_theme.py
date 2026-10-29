@@ -132,7 +132,7 @@ class OwnedWebThemeTests(unittest.TestCase):
         return {'login': Page(login.body.decode()), 'return': Page(returning.body.decode()),
                 'denial': Page(self.denial().body.decode()), 'help': Page(help_page)}
 
-    def test_all_actual_pages_keep_the_same_style_in_both_system_preferences(self):
+    def test_all_actual_pages_match_native_light_and_graphite_preferences(self):
         roles = {'bg': 'background', 'surface': 'surface', 'text': 'on_surface', 'muted': 'on_surface_variant',
                  'primary': 'primary', 'on-primary': 'on_primary', 'primary-container': 'primary_container',
                  'on-primary-container': 'on_primary_container', 'danger': 'error', 'outline': 'outline',
@@ -140,11 +140,11 @@ class OwnedWebThemeTests(unittest.TestCase):
                  'disabled-container': 'disabled_container', 'surface-container': 'surface_container'}
         for name, page in self.pages().items():
             self.assertTrue(any(tag == 'meta' and attrs.get('name') == 'color-scheme' and
-                                attrs.get('content') == 'dark' for tag, attrs in page.tags))
+                                attrs.get('content') == 'light dark' for tag, attrs in page.tags))
             for dark in (False, True):
                 with self.subTest(page=name, dark=dark):
                     variables = declarations(page, {':root'}, dark)
-                    self.assertEqual(variables['color-scheme'], 'dark')
+                    self.assertEqual(variables['color-scheme'], 'dark' if dark else 'light')
                     android = android_colors(dark)
                     for css_name, resource_name in roles.items():
                         self.assertEqual(color(variables['--' + css_name], variables),
@@ -245,3 +245,4 @@ class OwnedWebThemeTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

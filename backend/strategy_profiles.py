@@ -157,7 +157,6 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
         cash = sum((decimal(item) or Decimal(0) for item in (snapshot or {}).get("capital", {}).get("cash", [])
                     if item.get("currency") == currency), Decimal(0))
     available = max(Decimal(0), cash - reserve)
-    mode = config.get("mandate", {}).get("asset_mode", "mixed")
     classes = sorted(permitted_classes(config))
     # Small portfolios need fewer simultaneous candidate requests, not weaker limits.
     maximum = _batch_size(available)

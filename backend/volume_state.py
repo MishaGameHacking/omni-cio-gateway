@@ -405,6 +405,15 @@ def _preserve_tuning(config, active, payload):
         config["tuning"] = active["config"]["tuning"]
 
 
+def _preserve_editor_fields(config, active, payload):
+    supplied = payload.config.model_fields_set if payload.config is not None else set()
+    rollback = payload.rollback_to_version is not None
+    config = preserve_mandate(config, active, supplied=("mandate" in supplied or (rollback and config.get("mandate") is not None)))
+    config = preserve_construction(config, active, supplied=("construction" in supplied or rollback))
+    _preserve_tuning(config, active, payload)
+    return config
+
+
 @router.post("/strategy/preview", responses=HTTP_ERRORS)
 def preview_strategy(payload: StrategyPreview, user: Any = Depends(backend.current_user)) -> dict:
     return _preview_strategy(payload, user)
@@ -426,9 +435,7 @@ def _preview_strategy(payload: StrategyPreview, user: Any) -> dict:
         config = validate_config(json.loads(row[0]))
     else:
         config = validate_config(payload.config)
-    config = preserve_mandate(config, active, supplied=((payload.config is not None and "mandate" in payload.config.model_fields_set) or (payload.rollback_to_version is not None and config.get("mandate") is not None)))
-    config = preserve_construction(config, active, supplied=((payload.config is not None and "construction" in payload.config.model_fields_set) or payload.rollback_to_version is not None))
-    _preserve_tuning(config, active, payload)
+    config = _preserve_editor_fields(config, active, payload)
     snapshot = saved_snapshot(user, config["reserve"]["currency"])
     if not snapshot:
         raise HTTPException(409, "workspace_refresh_required")

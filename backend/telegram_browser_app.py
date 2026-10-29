@@ -109,29 +109,48 @@ def _login_page(state: str, nonce: str) -> HTMLResponse:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <title>Вход в Analyst AI</title>
 <style nonce="{nonce_attr}">
   :root {{
+    color-scheme: light;
+    --bg: #F5F7FB;
+    --surface: #FFFFFF;
+    --text: #17243A;
+    --muted: #526176;
+    --primary: #2463EB;
+    --on-primary: #FFFFFF;
+    --primary-container: #E4EDFF;
+    --on-primary-container: #153C89;
+    --surface-container: #F0F3F8;
+    --outline: #738196;
+    --outline-variant: #E0E6EF;
+    --danger: #B42343;
+    --disabled-ink: #66758A;
+    --disabled-container: #EDF1F6;
+  }}
+  @media (prefers-color-scheme: dark) {{
+  :root {{
     color-scheme: dark;
-    --bg: #050E1C;
-    --surface: #0A1A2C;
-    --text: #EDF5FF;
-    --muted: #ACC3DC;
-    --primary: #A99AFF;
-    --on-primary: #1B0D45;
-    --primary-container: #403199;
-    --on-primary-container: #FFFFFF;
-    --surface-container: #0D2136;
-    --outline: #88A4C5;
-    --outline-variant: #294763;
-    --danger: #FF99B2;
-    --disabled-ink: #99AEC7;
-    --disabled-container: #152B41;
+    --bg: #141517;
+    --surface: #1D1E21;
+    --text: #F1F1F3;
+    --muted: #CACBD1;
+    --primary: #9DB9FF;
+    --on-primary: #102C63;
+    --primary-container: #263A60;
+    --on-primary-container: #DCE6FF;
+    --surface-container: #242529;
+    --outline: #9799A3;
+    --outline-variant: #494B54;
+    --danger: #FFB1BB;
+    --disabled-ink: #A3A5AE;
+    --disabled-container: #303136;
+  }}
   }}
   body {{ min-height:100vh; margin:0; padding:max(24px,env(safe-area-inset-top)) 20px
          max(24px,env(safe-area-inset-bottom)); display:grid; place-items:center;
-         background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%); color:var(--text);
+         background:var(--bg); color:var(--text);
          font:17px/1.48 system-ui,-apple-system,"Segoe UI",sans-serif; }}
   main {{ width:min(100%,520px); padding:30px 24px; border:1px solid var(--outline-variant);
          border-radius:28px; background:var(--surface); }}
@@ -418,3 +437,4 @@ def telegram_browser_complete(payload: TelegramBrowserToken, request: Request) -
 
 
 app = legacy.app
+

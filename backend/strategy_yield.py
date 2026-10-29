@@ -61,16 +61,15 @@ def parse_key_rate(document: str, now: datetime) -> dict:
 def key_rate() -> dict:
     def load():
         try:
-            with httpx.Client(timeout=15, follow_redirects=False) as client:
-                with client.stream("GET", CBR_URL) as response:
-                    response.raise_for_status()
-                    data = bytearray()
-                    for chunk in response.iter_bytes():
-                        data.extend(chunk)
-                        if len(data) > 512_000:
-                            raise ValueError("key_rate_response_too_large")
+            with httpx.Client(timeout=15, follow_redirects=False) as client, client.stream("GET", CBR_URL) as response:
+                response.raise_for_status()
+                data = bytearray()
+                for chunk in response.iter_bytes():
+                    data.extend(chunk)
+                    if len(data) > 512_000:
+                        raise ValueError("key_rate_response_too_large")
             return parse_key_rate(data.decode("utf-8"), datetime.now(timezone.utc))
-        except (httpx.HTTPError, ValueError, UnicodeError):
+        except (httpx.HTTPError, ValueError):
             raise HTTPException(503, "key_rate_source_unavailable") from None
     return details.cached(("cbr-key-rate-v1",), 3600, load)
 
@@ -96,6 +95,22 @@ def annual_yield(cost: Decimal, cashflows: list[tuple[int, Decimal]]) -> Decimal
     return Decimal(str((low + high) * 50)).quantize(Decimal("0.0001"))
 
 
+def _coupon_payments(events, now, maturity):
+    payments, dates = [], set()
+    for row in events:
+        date = timestamp(row.get("couponDate")).date()
+        if date <= now.date() or date > maturity.date():
+            continue
+        amount = decimal(row.get("payOneBond"))
+        if str((row.get("payOneBond") or {}).get("currency")).upper() != "RUB":
+            raise ValueError("bond_coupon_currency_unknown")
+        if amount is None or amount <= 0 or row.get("couponType") != "COUPON_TYPE_CONSTANT" or date in dates:
+            raise ValueError("bond_future_coupon_unverified")
+        dates.add(date)
+        payments.append(((date - now.date()).days, amount))
+    return payments
+
+
 def fixed_bond_cashflows(meta: dict, events: list, now: datetime) -> list[tuple[int, Decimal]]:
     if any(meta.get(flag, False) is not False for flag in (
             "floatingCouponFlag", "amortizationFlag", "perpetualFlag", "subordinatedFlag", "indexedNominalFlag")):
@@ -104,19 +119,12 @@ def fixed_bond_cashflows(meta: dict, events: list, now: datetime) -> list[tuple[
         raise ValueError("bond_offer_yield_to_worst_required")
     maturity = timestamp(meta.get("maturityDate"))
     days = (maturity.date() - now.date()).days
+    if str((meta.get("nominal") or {}).get("currency")).upper() != "RUB":
+        raise ValueError("bond_nominal_currency_unknown")
     nominal = decimal(meta.get("nominal"))
     if not 1 <= days <= 3660 or nominal is None or nominal <= 0:
         raise ValueError("bond_maturity_or_nominal_unknown")
-    payments, dates = [], set()
-    for row in events:
-        date = timestamp(row.get("couponDate")).date()
-        if date <= now.date() or date > maturity.date():
-            continue
-        amount = decimal(row.get("payOneBond"))
-        if amount is None or amount <= 0 or row.get("couponType") != "COUPON_TYPE_CONSTANT" or date in dates:
-            raise ValueError("bond_future_coupon_unverified")
-        dates.add(date)
-        payments.append(((date - now.date()).days, amount))
+    payments = _coupon_payments(events, now, maturity)
     frequency = meta.get("couponQuantityPerYear")
     if type(frequency) is not int or frequency < 1 or frequency > 12 or not payments:
         raise ValueError("bond_coupon_schedule_incomplete")

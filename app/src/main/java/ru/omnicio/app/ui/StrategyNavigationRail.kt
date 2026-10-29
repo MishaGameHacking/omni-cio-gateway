@@ -11,6 +11,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.spectrum.*
@@ -35,7 +38,13 @@ internal fun StrategyNavigationRail(selected: AnalystTab, workspace: WorkspaceRo
         analystMenuDestinations.forEach { destination ->
             val active = destination.workspace?.let { it == workspace } ?: (workspace == null && destination.tab == selected)
             val open = { destination.workspace?.let(navigateWorkspace) ?: destination.tab?.let(navigateTab); Unit }
-            if (expanded) SpectrumTextButton(destination.title, open, symbol = destination.symbol, modifier = Modifier.fillMaxWidth())
+            if (expanded) Row(Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                .selectable(active, role = Role.Tab, onClick = open)
+                .background(if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                .padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SpectrumIcon(destination.symbol, Modifier.size(44.dp), selected = active, motionAllowed = false)
+                Text(destination.title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
+            }
             else SpectrumGlyphButton(destination.symbol, destination.title, open, Modifier.size(56.dp), active = active)
         }
     }

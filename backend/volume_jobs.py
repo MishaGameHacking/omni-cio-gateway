@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from contextlib import closing, nullcontext
 from contextvars import ContextVar
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import json
 import time
 import uuid
 from typing import Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import Field
+from pydantic import Field, StrictBool
 
 try:
     from . import app as backend
@@ -224,6 +224,30 @@ def _enqueue_analysis(job: dict) -> dict:
     return result
 
 
+def _strategy_history_payload(user, payload):
+    if payload.get("strategy_plan") is not True:
+        return payload
+    try:
+        from . import volume_state
+    except ImportError:
+        import volume_state
+    active = volume_state.active_strategy(int(user["id"])) or {}
+    mandate = active.get("config", {}).get("mandate", {})
+    days = max(mandate.get("turnover_window_days", 30), mandate.get("rebalance_cooldown_days", 30)) + 1
+    today = datetime.now(timezone.utc).date()
+    return {**payload, "start": (today - timedelta(days=days)).isoformat(), "end": today.isoformat()}
+
+
+def _refresh_strategy_plan(user, payload):
+    try:
+        from . import volume_state, autonomous_controller
+    except ImportError:
+        import volume_state
+        import autonomous_controller
+    snapshot = volume_state.saved_snapshot(user, payload.get("currency", "RUB"))
+    autonomous_controller.observe_and_discover(user, snapshot, datetime.now(timezone.utc), force=True)
+
+
 def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
     try:
         from .volume_workspace import collect
@@ -248,7 +272,10 @@ def _perform_job(job: dict, user: Any, payload: dict, checkpoint: dict) -> dict:
             waiting = automatic_collection_gate(user, payload, checkpoint)
             if waiting is not None:
                 return waiting
-        return collect(user, payload, checkpoint, progress)
+        result = collect(user, _strategy_history_payload(user, payload), checkpoint, progress)
+        if payload.get("strategy_plan") is True:
+            _refresh_strategy_plan(user, payload)
+        return result
     if job["kind"] == "chat":
         return run_message(user, job, payload)
     if job["kind"] == "analysis":
@@ -324,6 +351,7 @@ def drain(limit: int = 5) -> None:
 
 
 class Refresh(RequestId):
+    strategy_plan: StrictBool = False
     currency: Literal["RUB", "USD", "EUR"] = "RUB"
     start: date | None = None
     end: date | None = None
@@ -398,3 +426,4 @@ def retry(identifier: str, payload: RequestId, tasks: BackgroundTasks, user: Any
     result = enqueue(int(user["id"]), payload.request_id, row["kind"], request, checkpoint=checkpoint, before_insert=relink)
     tasks.add_task(run_job, result["job_id"])
     return result
+

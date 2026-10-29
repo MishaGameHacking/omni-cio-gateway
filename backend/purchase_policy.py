@@ -34,17 +34,21 @@ def verified_identity(value, now: datetime) -> bool:
         return False
 
 
+def asset_risk_reasons(meta):
+    if meta.get("instrumentType") != "etf":
+        return []
+    try:
+        from .fund_policy import fund_reasons
+    except ImportError:
+        from fund_policy import fund_reasons
+    return fund_reasons(meta)
+
+
 def instrument_reasons(meta: dict, info: dict, config: dict) -> list[str]:
-    reasons = []
+    reasons = asset_risk_reasons(meta)
     kind = meta.get("instrumentType")
     if kind not in {"share", "bond", "etf"}:
         reasons.append("instrument_requires_separate_risk_model")
-    if kind == "etf":
-        try:
-            from .fund_policy import fund_reasons
-        except ImportError:
-            from fund_policy import fund_reasons
-        reasons.extend(fund_reasons(meta))
     exchange = {"REAL_EXCHANGE_MOEX": "MOEX", "REAL_EXCHANGE_RTS": "SPB"}.get(meta.get("realExchange"))
     if exchange is None or not ({exchange, "RU"} & set(config.get("allowed_markets", []))):
         reasons.append("market_not_allowed_or_unknown")

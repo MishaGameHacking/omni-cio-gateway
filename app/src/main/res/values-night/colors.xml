@@ -1,34 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="analyst_background">#F5F7FB</color>
-    <color name="analyst_on_background">#17243A</color>
-    <color name="analyst_surface">#FFFFFF</color>
-    <color name="analyst_on_surface">#17243A</color>
-    <color name="analyst_primary">#2463EB</color>
-    <color name="analyst_on_primary">#FFFFFF</color>
-    <color name="analyst_primary_container">#E4EDFF</color>
-    <color name="analyst_on_primary_container">#153C89</color>
-    <color name="analyst_secondary">#086E7A</color>
-    <color name="analyst_on_secondary">#FFFFFF</color>
-    <color name="analyst_secondary_container">#DDF5F1</color>
-    <color name="analyst_on_secondary_container">#07534E</color>
-    <color name="analyst_tertiary">#7950B8</color>
-    <color name="analyst_on_tertiary">#FFFFFF</color>
-    <color name="analyst_tertiary_container">#F0E6FF</color>
-    <color name="analyst_on_tertiary_container">#4B2878</color>
-    <color name="analyst_surface_variant">#EDF1F7</color>
-    <color name="analyst_on_surface_variant">#526176</color>
-    <color name="analyst_surface_container">#F0F3F8</color>
-    <color name="analyst_surface_container_highest">#E5EDF7</color>
-    <color name="analyst_outline">#738196</color>
-    <color name="analyst_outline_variant">#E0E6EF</color>
-    <color name="analyst_error">#B42343</color>
-    <color name="analyst_on_error">#FFFFFF</color>
-    <color name="analyst_scrim">#101B30</color>
-    <color name="analyst_warning">#946000</color>
-    <color name="analyst_disabled_ink">#66758A</color>
-    <color name="analyst_disabled_container">#EDF1F6</color>
+    <color name="analyst_background">#141517</color>
+    <color name="analyst_on_background">#F1F1F3</color>
+    <color name="analyst_surface">#1D1E21</color>
+    <color name="analyst_on_surface">#F1F1F3</color>
+    <color name="analyst_primary">#9DB9FF</color>
+    <color name="analyst_on_primary">#102C63</color>
+    <color name="analyst_primary_container">#263A60</color>
+    <color name="analyst_on_primary_container">#DCE6FF</color>
+    <color name="analyst_secondary">#87D5C5</color>
+    <color name="analyst_on_secondary">#093B33</color>
+    <color name="analyst_secondary_container">#233F3A</color>
+    <color name="analyst_on_secondary_container">#C0F5E8</color>
+    <color name="analyst_tertiary">#C9AFF0</color>
+    <color name="analyst_on_tertiary">#392351</color>
+    <color name="analyst_tertiary_container">#40324E</color>
+    <color name="analyst_on_tertiary_container">#EEDCFF</color>
+    <color name="analyst_surface_variant">#303136</color>
+    <color name="analyst_on_surface_variant">#CACBD1</color>
+    <color name="analyst_surface_container">#242529</color>
+    <color name="analyst_surface_container_highest">#35363C</color>
+    <color name="analyst_outline">#9799A3</color>
+    <color name="analyst_outline_variant">#494B54</color>
+    <color name="analyst_error">#FFB1BB</color>
+    <color name="analyst_on_error">#5F152A</color>
+    <color name="analyst_scrim">#000000</color>
+    <color name="analyst_warning">#F2CB7C</color>
+    <color name="analyst_disabled_ink">#A3A5AE</color>
+    <color name="analyst_disabled_container">#303136</color>
 
     <color name="analyst_launcher_background">@color/analyst_surface</color>
 </resources>
+
 

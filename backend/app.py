@@ -282,28 +282,47 @@ def mobile_login_result(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <title>Возврат в Analyst AI</title>
 <style>
   :root {{
+    color-scheme: light;
+    --bg: #F5F7FB;
+    --surface: #FFFFFF;
+    --text: #17243A;
+    --muted: #526176;
+    --primary: #2463EB;
+    --on-primary: #FFFFFF;
+    --primary-container: #E4EDFF;
+    --on-primary-container: #153C89;
+    --surface-container: #F0F3F8;
+    --outline: #738196;
+    --outline-variant: #E0E6EF;
+    --danger: #B42343;
+    --disabled-ink: #66758A;
+    --disabled-container: #EDF1F6;
+  }}
+  @media (prefers-color-scheme: dark) {{
+  :root {{
     color-scheme: dark;
-    --bg: #050E1C;
-    --surface: #0A1A2C;
-    --text: #EDF5FF;
-    --muted: #ACC3DC;
-    --primary: #A99AFF;
-    --on-primary: #1B0D45;
-    --primary-container: #403199;
-    --on-primary-container: #FFFFFF;
-    --surface-container: #0D2136;
-    --outline: #88A4C5;
-    --outline-variant: #294763;
-    --danger: #FF99B2;
-    --disabled-ink: #99AEC7;
-    --disabled-container: #152B41;
+    --bg: #141517;
+    --surface: #1D1E21;
+    --text: #F1F1F3;
+    --muted: #CACBD1;
+    --primary: #9DB9FF;
+    --on-primary: #102C63;
+    --primary-container: #263A60;
+    --on-primary-container: #DCE6FF;
+    --surface-container: #242529;
+    --outline: #9799A3;
+    --outline-variant: #494B54;
+    --danger: #FFB1BB;
+    --disabled-ink: #A3A5AE;
+    --disabled-container: #303136;
+  }}
   }}
   body {{ min-height:100vh; display:grid; place-items:center; margin:0;
-         padding:20px; box-sizing:border-box; background:var(--bg); background-image:radial-gradient(ellipse at top,#122449,transparent 65%);
+         padding:20px; box-sizing:border-box; background:var(--bg);
          color:var(--text); font:16px/1.5 system-ui,sans-serif; }}
   main {{ text-align:center; max-width:440px; }}
   a,a:visited {{ display:block; margin-top:22px; padding:14px 20px; border-radius:12px;

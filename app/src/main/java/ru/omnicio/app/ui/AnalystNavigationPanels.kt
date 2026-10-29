@@ -220,7 +220,6 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
                         style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
                     destinations.forEach { destination ->
                         val route = destination.workspace
-                        val active = if (route != null) route == selectedWorkspace else selectedWorkspace == null && destination.tab == selected
                         SpectrumTextButton(destination.title, { close(destination) }, symbol = destination.symbol,
                             modifier = Modifier.fillMaxWidth().testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
                                 else "navigation-primary-" + destination.tab!!.name.lowercase()))

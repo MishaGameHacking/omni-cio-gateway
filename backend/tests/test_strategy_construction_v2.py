@@ -97,8 +97,9 @@ def test_only_one_current_funded_action_is_exposed():
 def test_yield_solver_known_zero_coupon_and_cost_sensitivity():
     assert annual_yield(Decimal(100), [(365, Decimal(110))]) == Decimal("10.0000")
     assert annual_yield(Decimal(101), [(365, Decimal(110))]) < Decimal(10)
+    cost, flows = Decimal(100), [(0, Decimal(110))]
     with pytest.raises(ValueError):
-        annual_yield(Decimal(100), [(0, Decimal(110))])
+        annual_yield(cost, flows)
 
 
 def test_key_rate_parser_rejects_stale_future_and_conflicting_rows():
@@ -129,8 +130,58 @@ def test_funds_require_real_typed_terms_and_do_not_allow_leverage():
 def test_legacy_editor_preserves_construction_and_current_read_has_allocation(fixture):
     value = policy()
     activate(fixture, value)
+    saved = state.active_strategy(fixture["user"]["id"])["config"]["construction"]
     activate(fixture, config(), expected=1, request="legacy-construction-edit")
-    assert state.active_strategy(fixture["user"]["id"])["config"]["construction"] == value["construction"]
+    assert state.active_strategy(fixture["user"]["id"])["config"]["construction"] == saved
     response = fixture["client"].get("/workspace/strategy")
     assert response.status_code == 200
     assert response.json()["allocation"]["paid_model_required"] is False
+
+
+def test_broker_commission_is_separate_from_bond_accrued_interest():
+    from backend.strategy_actions import _exact_budget_reasons
+    value = policy()
+    result = {"total_cost": {"amount": "106", "currency": "RUB"},
+              "clean_principal": {"amount": "100", "currency": "RUB"},
+              "estimated_commission": {"units": "0", "nano": 100000000, "currency": "rub"}}
+    assert _exact_budget_reasons(result, value, Decimal(5000), Decimal(5000), Decimal(250), Decimal(0)) == []
+    result["estimated_commission"]["units"] = "5"
+    assert _exact_budget_reasons(result, value, Decimal(5000), Decimal(5000), Decimal(250), Decimal(0)) == ["commission_above_strategy_limit"]
+
+
+def test_recent_real_trades_consume_budget_and_prevent_repeated_rebalance():
+    from datetime import timedelta
+    from backend.strategy_activity import activity_budget
+    value = policy()
+    value["mandate"].update(turnover_window_days=30, rebalance_cooldown_days=10, max_discretionary_turnover_percent="20")
+    now = datetime(2026, 10, 29, tzinfo=timezone.utc)
+    row = {"id": "executed-1", "account_id": "a", "instrumentUid": "held", "category": "trades",
+           "state": "OPERATION_STATE_EXECUTED", "date": (now - timedelta(days=5)).isoformat(),
+           "payment": {"amount": "-100", "currency": "RUB"}}
+    snapshot = {"operations": {"complete": True, "start": (now - timedelta(days=31)).isoformat(),
+        "end": now.isoformat(), "items": [row, dict(row)]}}
+    assert activity_budget(value, snapshot, "a", "other", Decimal(1000), now) == 100
+    with pytest.raises(ValueError, match="strategy_rebalance_cooldown"):
+        activity_budget(value, snapshot, "a", "held", Decimal(1000), now)
+    snapshot["operations"]["complete"] = False
+    with pytest.raises(ValueError, match="strategy_operation_window_incomplete"):
+        activity_budget(value, snapshot, "a", "other", Decimal(1000), now)
+
+
+def test_income_switch_disables_additions_before_quote_calls(monkeypatch):
+    from backend import strategy_actions as actions
+    value = policy()
+    value["construction"]["reinvest"] = False
+    snapshot = {"snapshot_id": "s", "accounts": [{"id": "a", "value": {"amount": "5000", "currency": "RUB"}}], "positions": []}
+    def forbidden(*args):
+        pytest.fail("Paused additions must not request broker quotes")
+    monkeypatch.setattr(actions, "_book_offer", forbidden)
+    result = actions.assess_candidate({"id": 1}, {"uid": "asset", "instrument_type": "bond", "lot": "1"},
+        "a", {"version": 1, "config": value}, snapshot)
+    assert result["suggested_lots"] == 0
+    assert result["missing_evidence"] == ["reinvestment_disabled_new_buys_paused"]
+
+
+def test_reduction_has_priority_without_spending_unsettled_sale_proceeds():
+    rows = [{"action": action, "evidence_current": True, "suggested_lots": 1, "missing_evidence": []} for action in ("buy", "sell")]
+    assert next_action_plan({"candidates": rows})["actions"] == [rows[1]]

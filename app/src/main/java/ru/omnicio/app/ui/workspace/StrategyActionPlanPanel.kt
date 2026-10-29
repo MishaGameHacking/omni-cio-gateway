@@ -10,11 +10,28 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import org.json.JSONObject
+import androidx.compose.runtime.saveable.rememberSaveable
 import ru.omnicio.app.ui.spectrum.*
 
 @Composable
 internal fun StrategyActionPlanPanel() {
     val resource = rememberWorkspaceResource("/automation/strategy-plan")
+    var jobId by rememberSaveable { mutableStateOf<String?>(null) }
+    val job = rememberWorkspaceResource("/workspace/jobs/" + (jobId ?: "none"), enabled = jobId != null)
+    val refresh = rememberWorkspaceAction { reply -> jobId = reply.optString("job_id").takeIf { it.isNotBlank() } }
+    val foreground = workspaceForeground()
+    val state = job.data?.optString("state")
+    LaunchedEffect(jobId, foreground, job.data) {
+        if (jobId == null || !foreground) return@LaunchedEffect
+        if (state in setOf("completed", "failed", "cancelled", "uncertain")) {
+            resource.refresh()
+        } else {
+            delay(2_000)
+            job.refresh()
+        }
+    }
+    val running = jobId != null && state !in setOf("completed", "failed", "cancelled", "uncertain")
     val activity = LocalActivity.current
     val browser = LocalUriHandler.current
     var browserFallback by remember { mutableStateOf<String?>(null) }
@@ -26,7 +43,7 @@ internal fun StrategyActionPlanPanel() {
         Text("Количество рассчитывает сервер по подтверждённым остаткам, целевым долям и свежему стакану.", style = MaterialTheme.typography.bodyMedium)
         val actions = resource.data?.records("actions").orEmpty()
         if (actions.isEmpty()) SpectrumCard {
-            Text("Пока без покупки", style = MaterialTheme.typography.titleMedium)
+            Text("Пока без операции", style = MaterialTheme.typography.titleMedium)
             Text("Ожидаем свежий расчёт или недостающие сведения. Увеличивать риск, чтобы заполнить план, система не будет.")
         }
         actions.forEach { row ->
@@ -64,7 +81,14 @@ internal fun StrategyActionPlanPanel() {
             }
         }
         message?.let { Text(it) }
-        SpectrumSecondaryButton("Проверить состояние расчёта", resource.refresh, Modifier.fillMaxWidth())
+        WorkspaceRequestState(job)
+        refresh.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        if (running) Text("Обновляем остатки и котировки, затем рассчитываем план…")
+        if (state == "failed") Text("Расчёт не завершён. Проверьте подключение и повторите обновление.")
+        SpectrumSecondaryButton(if (running) "Расчёт выполняется" else "Обновить цены и план", {
+            jobId = null
+            refresh.perform("/workspace/refresh", JSONObject().put("currency", "RUB").put("strategy_plan", true), job = true)
+        }, Modifier.fillMaxWidth(), enabled = !running && !refresh.busy && !refresh.ambiguous)
         Text("После операции следующий шаг появится по обновлённому портфелю. Расчёты не используют платный ИИ.", style = MaterialTheme.typography.bodySmall)
     }
     browserFallback?.let { url -> WorkspaceDialog("Открыть карточку в браузере?", { browserFallback = null }) {
