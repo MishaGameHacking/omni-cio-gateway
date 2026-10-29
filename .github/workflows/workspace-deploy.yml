@@ -15,10 +15,10 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: 4a154b14771fc882b30727620926604ab198d28c
-  EXPECTED_TEST_RUN: '40833239415'
-  EXPECTED_ARTIFACT_SHA256: 22efacfb7fffda1eed6a885ab5a8933feb8562165a7225b333a0656def893e14
-  EXPECTED_BUNDLE_SHA256: 48f8250d542401b106e23bd1ea17fcdec4897d9737ed3a00cc09a8d44532c448
+  EXPECTED_SOURCE_SHA: a88ea60c71c4d19942ccf1892ceba50213e6e528
+  EXPECTED_TEST_RUN: '40863135938'
+  EXPECTED_ARTIFACT_SHA256: c8e9db7074f431f422e2ec17e3ce61faf4d8549d9b300c7f455fa34986cee895
+  EXPECTED_BUNDLE_SHA256: 2b0c13704b5b32205a6abd8f8789a16e3990fe8e2f7e3b7d268adde5142aa525
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 4a154b14771fc882b30727620926604ab198d28c
+          ref: a88ea60c71c4d19942ccf1892ceba50213e6e528
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -54,8 +54,8 @@ jobs:
             if (!sonar || sonar.status!=='completed') throw new Error('Exact-source Sonar is not available; deployment has not been authorized by quality checks');
             const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
             assertCleanSonar(sonar,notes,ref);
-            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40827968540});
-            const toolsSha='6fe51b138314b5c815e67a9e0f2ec402d85b3493';
+            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40854028268});
+            const toolsSha='49e457d56330faa85853ed890c2a0ed1ef1b84ae';
             if(toolsRun.status!=='completed'||toolsRun.conclusion!=='success'||toolsRun.head_sha!==toolsSha||
                toolsRun.path!=='.github/workflows/workspace-tools-check.yml'||toolsRun.run_attempt!==1)
               throw new Error('Installer tests are not bound to reviewed tools');
