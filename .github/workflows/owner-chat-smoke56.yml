@@ -1,0 +1,144 @@
+name: Verify one bounded owner56 chat request on deployed runtime
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-chat-smoke56.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_DEPLOY_RUN: '40969026216'
+  EXPECTED_DEPLOY_SHA: 4269ebc55666bd57d20daba6b31b6e11b561be4f
+  EXPECTED_RUNTIME_SOURCE: a9574656fcac4507660c872ebcc22641154a3c8a
+  EXPECTED_SMOKE_TOOLS_SHA: 4b88dcc71ccca360ad48b5f1dbf46a1c4d3f54e3
+  EXPECTED_SMOKE_TOOLS_RUN: '40968832921'
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  EXPECTED_AI_ADMIN_TOOLS_RUN: '40954726120'
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+  OWNER_SUPPLIED_AI_KEY_ID: 7b994b79-044b-44fd-81b9-671fcede317d
+  EXPECTED_SUPPLIED_PROBE_SHA: 5c12bd815c65f9e4aece011f4a99330fb538ceb3
+  EXPECTED_SUPPLIED_PROBE_RUN: '40953689640'
+  OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
+jobs:
+  connect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Require tested administration, successful probe and deployed budget controls
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            let deployed=false;
+            for(let attempt=0;attempt<60;attempt++) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_DEPLOY_RUN)});
+              if(r.head_sha!==e.EXPECTED_DEPLOY_SHA||r.path!=='.github/workflows/workspace-deploy.yml'||r.run_attempt!==1)
+                throw new Error('Deployment identity changed');
+              if(r.status==='completed') {
+                if(r.conclusion!=='success') throw new Error('Deployment failed; live verification is blocked');
+                deployed=true;break;
+              }
+              await new Promise(resolve=>setTimeout(resolve,30000));
+            }
+            if(!deployed) throw new Error('Deployment verification timed out');
+            for(const [id,sha,path] of [
+              [e.EXPECTED_AI_ADMIN_TOOLS_RUN,e.EXPECTED_AI_ADMIN_TOOLS_SHA,'.github/workflows/owner-ai-admin-tools55.yml'],
+              [e.EXPECTED_SUPPLIED_PROBE_RUN,e.EXPECTED_SUPPLIED_PROBE_SHA,'.github/workflows/owner-ai-recheck55.yml'],
+              [e.EXPECTED_DEPLOY_RUN,e.EXPECTED_DEPLOY_SHA,'.github/workflows/workspace-deploy.yml'],
+              [e.EXPECTED_SMOKE_TOOLS_RUN,e.EXPECTED_SMOKE_TOOLS_SHA,'.github/workflows/owner56-chat-smoke-tools.yml']]) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(id)});
+              if(r.head_sha!==sha||r.conclusion!=='success'||r.status!=='completed'||r.path!==path||r.run_attempt!==1)
+                throw new Error('Exact successful evidence required');
+            }
+            for(const [name,digest] of Object.entries(JSON.parse(e.OWNER_AI_EXPECTED_BUDGET_SOURCES))) {
+              const {data:f}=await github.rest.repos.getContent({...context.repo,path:'backend/'+name,ref:e.EXPECTED_RUNTIME_SOURCE});
+              if(require('node:crypto').createHash('sha256').update(Buffer.from(f.content,'base64')).digest('hex')!==digest)
+                throw new Error('Budget source identity changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+          sparse-checkout: |
+            tools/owner_ai_admin_transport.py
+            tools/admin_owner55_ai.py
+            tools/adopt_supplied_owner55_ai.py
+            tools/owner55_ai_guest.py
+            tools/inspect_owner55_ai.py
+            tools/provision_owner55_ai.py
+            tools/activate_owner55_ai.py
+            tools/owner_ai_private_transport.py
+            tools/owner_plan_transport_20261027.py
+            deploy/stage_owner55_ai.py
+            deploy/activate_owner55_ai.py
+            tools/provision_owner55_bootstrap.py
+            deploy/provision_owner55_bootstrap.py
+            tools/sync_owner55_ai_key.py
+            deploy/sync_owner55_ai_key.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/prepare_owner_vm.py
+            deploy/access_owner_vm.py
+            tools/timeweb_ci_capacity.py
+            tools/timeweb_actions_probe.py
+            tools/timeweb_ci_catalog.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_SMOKE_TOOLS_SHA }}
+          path: smoke-core
+          persist-credentials: false
+          sparse-checkout: tools/owner56_chat_smoke.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: smoke-operation
+          persist-credentials: false
+          sparse-checkout: tools/owner56_live_chat_runner.py
+          sparse-checkout-cone-mode: false
+      - name: Verify exactly one conversation with a one-ruble maximum and no orders
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json,os,sys
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput,source_proof
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          remote=Path('../smoke-operation/tools/owner56_live_chat_runner.py').read_text()
+          verified_core=Path('../smoke-core/tools/owner56_chat_smoke.py').read_text()
+          stage=Path('deploy/stage_owner55_ai.py').read_text()
+          operation=chr(10).join([
+              'support={"__name__":"read_only_stage"}',
+              'exec(compile('+repr(stage)+',"stage","exec"),support)',
+              'exec(compile('+repr(remote)+',"owner-chat-smoke","exec"),{"STAGING":support,"ENVELOPE":ENVELOPE,"__name__":"__main__"})'])
+          contract={k:bool for k in ['sent','completed','answer_present']}
+          contract.update(user_messages=int,assistant_messages=int,status={'blocked','incomplete','verified','unconfirmed'})
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  payload={'source_sha256':source_proof(os.environ),'verified_core':verified_core,
+                      'request_id':'owner56.smoke.'+os.environ['EXPECTED_RUNTIME_SOURCE'],
+                      'runtime_sha256':{'investment_chat_policy.py': '154d6e487b8ab1e4215e5adf920817a238fe1a527965cf6e7e1c25cf39d5a8f5', 'osint_api.py': 'e5e6f464603694866670aa94707f739f6658a5d2a473da86c3d7bb9375fc6ebe', 'osint_read.py': 'debd18186da91e6b52d4c3123ab239b389a08e628807e777172746b66482cb8b', 'osint_retention.py': '6865aa89dbe155b9d9b8c6f9cf55ab27f17e67cd2584da2da9818d4a7f0f96d3', 'osint_store.py': 'a21542ce2b041cd6130873bb58ef27f974adc0ff183420460fec9f31e812d873', 'osint_worker.py': '402c1eb0906822fb09981c5c3a582993da67f9be0d3a92a31247c57d850f1862', 'volume_chat.py': '0b3dea92ef5607f712ae37842acb16e32c6951a072f7934279333b4b9ca5f56f', 'volume_explanations.py': '336c732d8f590d8542e2ac1d8a9f35969482b50af2a8dc6f5323be467fdb2db1'}}
+                  receipt=transport_admin(operation,payload,None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'unconfirmed','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:
+              receipt={'status':'unconfirmed','error_code':'chat_verification_failed'}
+          print('OWNER56_CHAT_CHECK='+json.dumps(receipt,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='verified' else 1)
+          PY
