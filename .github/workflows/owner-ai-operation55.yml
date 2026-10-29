@@ -1,0 +1,84 @@
+name: Reviewed owner AI operation through existing laptop WSL
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner-ai-operation55.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_TOOLS_SHA: 8e5a849274d69e5ef55a169d3e5f3292217f9651
+  EXPECTED_AI_TOOLS_RUN: '40919652854'
+  EXPECTED_AI_DEPLOY_RUN: '40919271605'
+  EXPECTED_AI_DEPLOY_WORKFLOW_SHA: b8ecdce47e1ecaff06190e46b1fc912687132b6b
+  EXPECTED_AI_RUNTIME_SOURCE_SHA: b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+  OWNER_AI_ACTION: provision_disabled
+  OWNER_AI_PROVISION_REVIEW: create-disabled-owner55-key-after-review
+  OWNER_AI_ACTIVATION_REVIEW: disabled_pending_review
+  OWNER_AI_STAGED_KEY_ID: PIN_ONLY_FOR_REVIEWED_ACTIVATION
+  OWNER_AI_CREATION_RUN_ID: PIN_ONLY_FOR_REVIEWED_ACTIVATION
+  OWNER_AI_EXPECTED_BUDGET_SOURCES: '{"ai_budget.py":"b650b0f291fc10b72c02f4c37a5066f9f77414f817d6e3bd8eb5582b48543666","ai_guarded_client.py":"2eb72b00976ad657b8b2ed552bd4b4b605b79ffd4351393ba6c9c473ff389117","ai_broker_access.py":"6c69b79629547263267f80b31a69bea02866a17fb1238ec92dec6e50ca05ee9a"}'
+jobs:
+  operate:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - name: Require exact tested tools and actual deployed budget source
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            const expected=e.OWNER_AI_ACTION==='provision_disabled' ? 'create-disabled-owner55-key-after-review' :
+              e.OWNER_AI_ACTION==='activate' ? 'activate-existing-owner55-key-after-review' : null;
+            const gate=e.OWNER_AI_ACTION==='provision_disabled' ? e.OWNER_AI_PROVISION_REVIEW : e.OWNER_AI_ACTIVATION_REVIEW;
+            if(!expected||gate!==expected) throw new Error('Explicit reviewed AI operation gate is not set');
+            for(const [run_id,sha,path] of [
+              [Number(e.EXPECTED_AI_TOOLS_RUN),e.EXPECTED_AI_TOOLS_SHA,'.github/workflows/owner-ai-tools55.yml'],
+              [Number(e.EXPECTED_AI_DEPLOY_RUN),e.EXPECTED_AI_DEPLOY_WORKFLOW_SHA,'.github/workflows/workspace-deploy.yml']]) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||
+                 run.path!==path||run.run_attempt!==1||run.event!=='push')
+                throw new Error('Exact tool or backend deployment verification is missing');
+            }
+            const {data:deployedWorkflow}=await github.rest.repos.getContent({...context.repo,
+              path:'.github/workflows/workspace-deploy.yml',ref:e.EXPECTED_AI_DEPLOY_WORKFLOW_SHA});
+            const deployedText=Buffer.from(deployedWorkflow.content,'base64').toString('utf8');
+            if(!deployedText.includes('EXPECTED_SOURCE_SHA: '+e.EXPECTED_AI_RUNTIME_SOURCE_SHA+'\n'))
+              throw new Error('Deployment receipt workflow does not bind the required backend source');
+            const sources=JSON.parse(e.OWNER_AI_EXPECTED_BUDGET_SOURCES);
+            if(JSON.stringify(Object.keys(sources).sort())!==JSON.stringify(['ai_broker_access.py','ai_budget.py','ai_guarded_client.py']))
+              throw new Error('Budget source inventory is incomplete');
+            for(const [name,digest] of Object.entries(sources)) {
+              const {data:file}=await github.rest.repos.getContent({...context.repo,path:'backend/'+name,ref:e.EXPECTED_AI_RUNTIME_SOURCE_SHA});
+              const actual=require('node:crypto').createHash('sha256').update(Buffer.from(file.content,'base64')).digest('hex');
+              if(actual!==digest) throw new Error('Reviewed budget source identity changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_TOOLS_SHA }}
+          path: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}/.transport-admin
+          persist-credentials: false
+      - name: Run reviewed controller only inside private existing owner WSL
+        shell: cmd
+        working-directory: owner-ai-operation55-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          py -3 tools\launch_owner55_ai_wsl.py
+          if errorlevel 1 exit /b 1
