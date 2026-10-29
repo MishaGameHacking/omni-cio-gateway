@@ -1,12 +1,9 @@
-name: Deploy verified workspace sources to existing Timeweb runtime
+name: Deploy verified owner system 55 to existing Timeweb runtime
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths:
       - .github/workflows/workspace-deploy.yml
-      - deploy/workspace_release.py
-      - deploy/test_workspace_release.py
-      - tools/prepare_workspace_transport.py
 permissions:
   contents: read
   actions: read
@@ -15,10 +12,12 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_SOURCE_SHA: a88ea60c71c4d19942ccf1892ceba50213e6e528
-  EXPECTED_TEST_RUN: '40863135938'
-  EXPECTED_ARTIFACT_SHA256: c8e9db7074f431f422e2ec17e3ce61faf4d8549d9b300c7f455fa34986cee895
-  EXPECTED_BUNDLE_SHA256: 2b0c13704b5b32205a6abd8f8789a16e3990fe8e2f7e3b7d268adde5142aa525
+  EXPECTED_SOURCE_SHA: PIN_FINAL_SOURCE_SHA
+  EXPECTED_TEST_RUN: 'PIN_FINAL_TEST_RUN'
+  EXPECTED_ARTIFACT_SHA256: PIN_FINAL_ARTIFACT_SHA256
+  EXPECTED_BUNDLE_SHA256: PIN_FINAL_BUNDLE_SHA256
+  EXPECTED_TOOLS_SHA: PIN_VERIFIED_TOOLS_SHA
+  EXPECTED_TOOLS_RUN: 'PIN_VERIFIED_TOOLS_RUN'
 jobs:
   quality:
     runs-on: ubuntu-24.04
@@ -26,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: a88ea60c71c4d19942ccf1892ceba50213e6e528
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
           persist-credentials: false
           sparse-checkout: .github/scripts/require_clean_sonar.cjs
           sparse-checkout-cone-mode: false
@@ -54,10 +53,10 @@ jobs:
             if (!sonar || sonar.status!=='completed') throw new Error('Exact-source Sonar is not available; deployment has not been authorized by quality checks');
             const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
             assertCleanSonar(sonar,notes,ref);
-            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40854028268});
-            const toolsSha='49e457d56330faa85853ed890c2a0ed1ef1b84ae';
+            const {data:toolsRun}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(process.env.EXPECTED_TOOLS_RUN)});
+            const toolsSha=process.env.EXPECTED_TOOLS_SHA;
             if(toolsRun.status!=='completed'||toolsRun.conclusion!=='success'||toolsRun.head_sha!==toolsSha||
-               toolsRun.path!=='.github/workflows/workspace-tools-check.yml'||toolsRun.run_attempt!==1)
+               toolsRun.path!=='.github/workflows/owner-system-tools55.yml'||toolsRun.run_attempt!==1)
               throw new Error('Installer tests are not bound to reviewed tools');
             for(const path of ['deploy/workspace_release.py','deploy/test_workspace_release.py','tools/prepare_workspace_transport.py']) {
               const {data:old}=await github.rest.repos.getContent({...context.repo,path,ref:toolsSha});
@@ -84,12 +83,15 @@ jobs:
             const run_id=Number(process.env.EXPECTED_TEST_RUN);
             const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
             if (run.run_attempt!==1 || run.head_sha!==process.env.EXPECTED_SOURCE_SHA || run.event!=='push' ||
-                run.path!=='.github/workflows/workspace-redesign.yml' || run.head_branch!=='codex/workspace-strategies-2026-10-28')
+                run.path!=='.github/workflows/owner-system.yml' || run.head_branch!=='codex/owner-system-2026-10-29' ||
+                run.status!=='completed' || run.conclusion!=='success')
               throw new Error('Laptop verification identity changed');
             const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id,per_page:100});
-            const verified=jobs.filter(job=>job.name==='verify');
-            if(verified.length!==1 || verified[0].status!=='completed' || verified[0].conclusion!=='success')
-              throw new Error('Exact backend verification has not passed');
+            for(const name of ['verify','verify-client']) {
+              const verified=jobs.filter(job=>job.name===name);
+              if(verified.length!==1 || verified[0].status!=='completed' || verified[0].conclusion!=='success')
+                throw new Error('Exact laptop verification has not passed: '+name);
+            }
             const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
             const matches=items.filter(item=>item.name==='server-runtime-'+run_id+'-1' && !item.expired);
             if (matches.length!==1 || matches[0].digest!=='sha256:'+process.env.EXPECTED_ARTIFACT_SHA256) throw new Error('Artifact identity changed');
@@ -110,4 +112,5 @@ jobs:
           path: plan-reports/
           if-no-files-found: warn
           retention-days: 7
+
 
