@@ -1,3 +1,4 @@
+# Inspect runtime after owner supplied a new Gateway credential; GET/read-only only.
 # AI key creation is paused: run 40929077006 confirmed hidden-by-api-key-policy.
 # The unused key was deleted and read back absent. Do not retry creation or change masking policy.
 name: Reviewed owner AI configuration through existing administrative transport
