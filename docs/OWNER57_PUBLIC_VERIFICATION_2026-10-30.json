@@ -1,0 +1,58 @@
+{
+  "publication": {
+    "apk_bytes": 29873479,
+    "apk_sha256": "d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7",
+    "client_artifact_sha256": "e3ffcd2cfc819acfa6e9de9e8201f40270e25a3bde842befd3fd37836ab25af0",
+    "delivery_run_id": "41029055042",
+    "members": {
+      "apk-verification.json": {
+        "bytes": 17051,
+        "sha256": "2db9fd8361fa9de9361ba91f1bc3822d4d68bfcffda3c5ad2bab0a8069b7f6c0"
+      },
+      "app-preview.apk": {
+        "bytes": 29873479,
+        "sha256": "d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7"
+      },
+      "build-result.json": {
+        "bytes": 10709,
+        "sha256": "fdb7b2aa9fbf3686f3a780c0f81a24f413c0a718447b63f19a09f6e6bbc190ea"
+      }
+    },
+    "native_acceptance": false,
+    "payload_bytes": 29901595,
+    "payload_sha256": "a2ecd27a669330176187c13410d5689da31e3ad47e2407bbad7a816331529684",
+    "runtime_deploy_run_id": "40969026216",
+    "runtime_source_commit": "a9574656fcac4507660c872ebcc22641154a3c8a",
+    "runtime_test_run_id": "40966175873",
+    "source_commit": "c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f",
+    "test_run_id": "41024346794",
+    "visual_artifact_sha256": "4f419370cbbcc3dc0575dab4bf8da4a28e8735d589e92c3c0fecac25923a7dd2",
+    "visual_run_id": "41024460138",
+    "visual_source_commit": "c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f",
+    "status": "published",
+    "version_code": 57,
+    "version_name": "0.21.0-preview",
+    "certificate_sha256": "bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1",
+    "published_at": 1793350210,
+    "url": "https://analyst-ai-2941515.twc1.net/client/apk/Analyst-AI-57-d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7.apk",
+    "previous_version_code": 56,
+    "physical_phone_verified": false,
+    "full_native_matrix_passed": false,
+    "backend_deployment_performed": false
+  },
+  "https_policy_verified": true,
+  "https_entire_apk_verified": true,
+  "backend_health": 200,
+  "physical_phone_verified": false,
+  "confirmation_run_id": "41029541401",
+  "confirmation_read_only": true,
+  "original_delivery_health_timeout": true,
+  "evidence": {
+    "confirmation_workflow_sha": "a14978fb65e562ed2733c6577387829e96ded3a2",
+    "confirmation_artifact_id": 12965211630,
+    "confirmation_artifact_sha256": "2398e7c383637a1faf5ec79e03ab6ef4a79336278a97b5209413e44982548365",
+    "publication_workflow_sha": "477ac90870154786c961b05e790448668c0704ee",
+    "publication_artifact_id": 12964474400,
+    "publication_artifact_sha256": "d2f15f3cb3ff2d8cb69f0e230f08b1c07462826ead93daa7d94da3b3d7d34f8f"
+  }
+}
