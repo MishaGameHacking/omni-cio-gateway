@@ -1,0 +1,64 @@
+name: Prove the Windows service before enabling the protected Ubuntu
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-scm.yml, tools/home_runtime/AnalystAIHomeHost.cs, tools/home_runtime/enable_service.ps1, tools/home_runtime/service_smoke.ps1]
+permissions:
+  contents: read
+jobs:
+  service:
+    runs-on: windows-2025
+    timeout-minutes: 9
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-scm-qa-'));
+            try{
+              for(const name of ['AnalystAIHomeHost.cs','enable_service.ps1','service_smoke.ps1']){
+                const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+name});
+                fs.writeFileSync(path.join(dir,name),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH','GITHUB_ACTIONS','RUNNER_ENVIRONMENT','RUNNER_OS'].includes(k.toUpperCase())));
+              const p=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),
+                ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(dir,'service_smoke.ps1'),path.join(dir,'enable_service.ps1'),path.join(dir,'AnalystAIHomeHost.cs')],
+                {env,windowsHide:true,encoding:'utf8',timeout:320000});
+              const rows=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_SCM_QA(?:_ERROR)?=/.test(s));
+              rows.forEach(s=>core.info(s.slice(0,1000)));
+              if(p.status!==0||!rows.some(s=>s.startsWith('HOME_SCM_QA=')))throw Error('Windows did not prove the ordinary service account and restart');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
+  stage:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
+            const sha=x=>crypto.createHash('sha256').update(x).digest('hex');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016'||path.basename(process.env.USERPROFILE).toLowerCase()!=='networkservice')throw Error('Wrong staging identity');
+            const base=path.join(process.env.LOCALAPPDATA,'AnalystAI-HomeLab');
+            if(fs.lstatSync(base).isSymbolicLink()||JSON.parse(fs.readFileSync(path.join(base,'installation.json'))).marker!=='analyst-home-public-stage-1')throw Error('Unknown spool');
+            const files={};
+            for(const n of ['AnalystAIHomeHost.cs','enable_service.ps1']){
+              const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+n});
+              files[n]=Buffer.from(data.content,'base64');
+            }
+            const dir=path.join(base,'scm-setup-'+sha(files['enable_service.ps1']));
+            fs.mkdirSync(dir,{recursive:true});if(!fs.lstatSync(dir).isDirectory()||fs.lstatSync(dir).isSymbolicLink())throw Error('Wrong staging target');
+            for(const [n,b] of Object.entries(files)){
+              const file=path.join(dir,n);
+              if(!fs.existsSync(file))fs.writeFileSync(file,b,{flag:'wx'});
+              if(fs.lstatSync(file).isSymbolicLink()||!fs.readFileSync(file).equals(b))throw Error('Existing stage differs');
+            }
+            const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
+            const cmd="& (Join-Path $env:ANALYST_TEST_DIR 'enable_service.ps1') -VerifyOnly -HostSource ([IO.File]::ReadAllText((Join-Path $env:ANALYST_TEST_DIR 'AnalystAIHomeHost.cs')))";
+            const p=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),
+              ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-Command',cmd],
+              {env:{...env,ANALYST_TEST_DIR:dir},windowsHide:true,encoding:'utf8',timeout:90000});
+            if(p.status!==0||!(p.stdout||'').includes('HOME_SCM_SOURCE_VERIFIED')){
+              const reason=(p.stderr||'').match(/Compiler CS[0-9]+ at line [0-9]+/)?.[0]||'preflight';
+              throw Error('Verified Lenovo source compilation failed: '+reason);
+            }
+            core.info('HOME_SCM_STAGED='+JSON.stringify({source:sha(files['AnalystAIHomeHost.cs']),setup:sha(files['enable_service.ps1']),compiled:true,elevation:false}));
