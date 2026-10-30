@@ -14,7 +14,7 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const ref='a9d3a4c8677d119184269d18459ce044967e4689';
+            const ref='bc0614c5547ba94a88250d0b97eb32b0b1d2f25d';
             const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
             const sonar=checks.filter(c=>c.head_sha===ref&&c.name==='SonarCloud Code Analysis'&&c.app?.id===12526&&c.app?.slug==='sonarqubecloud').sort((a,b)=>b.id-a.id)[0];
             if(!sonar||sonar.status!=='completed') throw new Error('Exact source analysis pending');
