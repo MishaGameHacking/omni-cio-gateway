@@ -104,11 +104,7 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
         item("capital") { TerminalCapital(snapshot,accountName,chooseAccount,refreshing,error,disconnected,refresh,connect) }
         item("value") {
             TerminalPanel("ДИНАМИКА СТОИМОСТИ",trailing={ TerminalAction((snapshot?.totalValue?.currency ?: "RUB")+" ▾",{ currencyPicker=true }) }) {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
-                    listOf("1Н","1М","3М","6М","1Г","ВСЁ").forEachIndexed { index,label ->
-                        TerminalAction(label,{ selectPeriod(index) },selected=period==index)
-                    }
-                }
+                TerminalPeriods(period,selectPeriod)
                 val ready=snapshot != null && requests.size==snapshot.accounts.size && requests.isNotEmpty() &&
                     requests.all { it.json!=null && it.error==null && !it.showingPreviousQuery && it.json.optString("currency").equals(snapshot.totalValue.currency,true) }
                 when {
@@ -146,11 +142,27 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
 }
 
 @Composable
+private fun TerminalPeriods(selected: Int, select: (Int)->Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val columns=if(maxWidth<300.dp*LocalDensity.current.fontScale) 3 else 6
+        Column(Modifier.fillMaxWidth()) {
+            listOf("1Н","1М","3М","6М","1Г","ВСЁ").withIndex().toList().chunked(columns).forEach { row ->
+                Row(Modifier.fillMaxWidth()) {
+                    row.forEach { (index,label) ->
+                        TerminalAction(label,{ select(index) },Modifier.weight(1f),selected=selected==index)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun TerminalCapital(snapshot: PortfolioSnapshot?, accountName: String, chooseAccount: ()->Unit,
     refreshing: Boolean, error: String?, disconnected: Boolean, refresh: ()->Unit, connect: ()->Unit) {
     TerminalPanel("ПОРТФЕЛЬ",trailing={
         Row(verticalAlignment=Alignment.CenterVertically) {
-            TerminalAction(accountName+" ▾",chooseAccount,enabled=snapshot!=null)
+            TerminalAction(accountName+" ▾",chooseAccount,Modifier.widthIn(max=180.dp),enabled=snapshot!=null)
             TerminalIconButton("update","Обновить данные",refresh)
         }
     }) {

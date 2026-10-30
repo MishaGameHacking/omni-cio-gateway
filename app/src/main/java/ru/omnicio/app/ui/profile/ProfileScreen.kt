@@ -74,6 +74,7 @@ fun ProfileScreen(
     val serverVersionLabel = ServerVersion.label(status?.optJSONObject("server_version"), resource.busy, resource.error != null)
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     val broker = LocalBrokerConnection.current
+    val showHeader = !ru.omnicio.app.ui.terminal.LocalTerminalDetail.current
     val brokerLabel = when {
         status?.optBoolean("broker_connected") == true -> "Доступ к данным подтверждён"
         status?.has("broker_connected") == true -> "Нужен токен для чтения данных"
@@ -87,7 +88,7 @@ fun ProfileScreen(
             LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).clipToBounds()
                 .semantics { testTagsAsResourceId = true }.testTag("profile-content"),
                 contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                item(key = "settings-header") {
+                if (showHeader) item(key = "settings-header") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         ru.omnicio.app.ui.AnalystHeaderMenu()

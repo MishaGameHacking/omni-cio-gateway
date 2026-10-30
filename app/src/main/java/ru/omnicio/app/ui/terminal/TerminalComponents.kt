@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -47,14 +48,26 @@ internal fun TerminalPanel(title: String, modifier: Modifier = Modifier, trailin
     Surface(modifier.fillMaxWidth(), shape = TerminalShape, color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(title, Modifier.weight(1f).semantics { heading() }, fontSize = 13.sp,
-                    lineHeight = 18.sp, letterSpacing = .5.sp, fontWeight = FontWeight.SemiBold)
-                trailing?.invoke()
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth < 300.dp * LocalDensity.current.fontScale && trailing != null) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TerminalPanelTitle(title)
+                        trailing()
+                    }
+                } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    TerminalPanelTitle(title, Modifier.weight(1f))
+                    trailing?.invoke()
+                }
             }
             content()
         }
     }
+}
+
+@Composable
+private fun TerminalPanelTitle(title: String, modifier: Modifier = Modifier) {
+    Text(title, modifier.semantics { heading() }, fontSize = 13.sp,
+        lineHeight = 18.sp, letterSpacing = .5.sp, fontWeight = FontWeight.SemiBold)
 }
 
 @Composable

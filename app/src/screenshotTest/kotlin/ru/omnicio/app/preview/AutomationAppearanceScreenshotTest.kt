@@ -149,9 +149,12 @@ private fun HostAppearance(page: String, state: String) {
                             false, null, null, onCurrencyClick = {}, onOpenPortfolio = {},
                             onOpenRecommendations = {}, onOpenRisk = {}, onOpenMessages = {},
                             onOpenProfile = {}, onConnect = {})
-                        "settings" -> ProfileScreen(user, tApiConfigured = broker == BrokerConnectionState.Connected,
-                            screenshotsBlocked = false, onScreenshotsBlockedChange = {},
-                            onPortfolioClick = {}, onOpenTApi = {}, onOpenEducation = {}, onLogout = {})
+                        "settings" -> ru.omnicio.app.ui.terminal.TerminalWorkspace(
+                            visible = true, route = null, title = "Настройки", close = {}, dashboard = {}) {
+                            ProfileScreen(user, tApiConfigured = broker == BrokerConnectionState.Connected,
+                                screenshotsBlocked = false, onScreenshotsBlockedChange = {},
+                                onPortfolioClick = {}, onOpenTApi = {}, onOpenEducation = {}, onLogout = {})
+                        }
                         "decisions" -> Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f)) { AutonomousDecisionsScreen {} }
                             AnalystBottomBar(AnalystTab.Actions, {}, {})
@@ -428,7 +431,7 @@ fun OwnerCooldown56() {
 @PreviewTest
 @Preview(name = "terminal57-phone", widthDp = 390, heightDp = 844, locale = "ru")
 @Preview(name = "terminal57-full", widthDp = 390, heightDp = 2600, locale = "ru")
-@Preview(name = "terminal57-large-text", widthDp = 320, heightDp = 1900, fontScale = 1.5f, locale = "ru")
+@Preview(name = "terminal57-large-text", widthDp = 320, heightDp = 3200, fontScale = 1.5f, locale = "ru")
 @Composable
 fun Terminal57() = Terminal57Fixture()
 
@@ -438,7 +441,7 @@ fun Terminal57() = Terminal57Fixture()
 fun TerminalEmpty57() = Terminal57Fixture(empty = true)
 
 @PreviewTest
-@Preview(name = "terminal57-private", widthDp = 390, heightDp = 1600, locale = "ru")
+@Preview(name = "terminal57-private", widthDp = 390, heightDp = 2000, locale = "ru")
 @Composable
 fun TerminalPrivacy57() = Terminal57Fixture(hidden = true)
 
