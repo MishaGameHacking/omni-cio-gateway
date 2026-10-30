@@ -27,7 +27,14 @@ def verify_model(path):
         raise ValueError("local_model_checksum_mismatch")
 
 
-def model_select(engine, runtime, context):
+def validate_fragment(row, index):
+    if not isinstance(row, dict) or set(row) != {"id", "text"} or type(row["id"]) is not int or row["id"] != index:
+        raise ValueError("invalid_fragment")
+    if not isinstance(row["text"], str) or not row["text"].strip() or len(row["text"].encode()) > 1200:
+        raise ValueError("invalid_fragment")
+
+
+def validate_context(context):
     # Validate all incoming keys and bounds. No path/URL/credential/tools can be
     # supplied through this private socket, even by a compromised caller.
     if not isinstance(context, dict) or set(context) != {
@@ -37,12 +44,19 @@ def model_select(engine, runtime, context):
     if not isinstance(rows, list) or not 1 <= len(rows) <= contract.MAX_PARAGRAPHS:
         raise ValueError("invalid_fragments")
     for index, row in enumerate(rows):
-        if not isinstance(row, dict) or set(row) != {"id", "text"} or type(row["id"]) is not int or row["id"] != index:
-            raise ValueError("invalid_fragment")
-        if not isinstance(row["text"], str) or not row["text"].strip() or len(row["text"].encode()) > 1200:
-            raise ValueError("invalid_fragment")
+        validate_fragment(row, index)
     if not isinstance(context["title"], str) or len(context["title"]) > 400:
         raise ValueError("invalid_title")
+    checksum = context["source_sha256"]
+    if not isinstance(checksum, str) or len(checksum) != 64 or any(c not in "0123456789abcdef" for c in checksum):
+        raise ValueError("invalid_source_checksum")
+    if context["coverage"] != "bounded_excerpt_only" or context["whole_document_reviewed"] is not False:
+        raise ValueError("invalid_coverage")
+    return rows
+
+
+def model_select(engine, runtime, context):
+    rows = validate_context(context)
     prompt = json.dumps({"title": context["title"], "fragments": rows}, ensure_ascii=False)
     # Count actual model tokens and reserve room for chat template and output.
     if len(engine.tokenize(contract.SYSTEM_PROMPT + prompt)) + 256 > MAX_CONTEXT_TOKENS:
@@ -55,7 +69,7 @@ def model_select(engine, runtime, context):
             extra_context={"enable_thinking": False}) as conversation:
         response = conversation.send_message(prompt)
     content = response.get("content") if isinstance(response, dict) else None
-    if not isinstance(content, list) or len(content) != 1 or content[0].get("type") != "text":
+    if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict) or content[0].get("type") != "text":
         raise ValueError("local_response_invalid")
     raw = content[0].get("text")
     contract.decode_selection(raw, context)
@@ -87,7 +101,7 @@ class Handler(BaseHTTPRequestHandler):
             signal.alarm(15)
             output = model_select(self.server.engine, self.server.runtime, context).encode()
             signal.alarm(0)
-        except (ValueError, TypeError, RuntimeError, OSError, RecursionError):
+        except (ValueError, TypeError, RuntimeError, OSError):
             signal.alarm(0)
             self.send_error(503)
             return

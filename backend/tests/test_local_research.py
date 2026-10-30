@@ -28,8 +28,9 @@ def test_model_cannot_author_a_number_or_free_text():
     '{"selected":[[0]]}', '{"selected":[0,1,2,3]}', '```json\n{"selected":[0]}\n```',
 ])
 def test_invalid_or_invented_selection_rejected(raw):
+    context = subject.packet("Отчёт", "Выручка 100 млн рублей.")
     with pytest.raises(subject.LocalResearchError):
-        subject.decode_selection(raw, subject.packet("Отчёт", "Выручка 100 млн рублей."))
+        subject.decode_selection(raw, context)
 
 
 def test_abstention_is_valid_and_never_filled_with_guesses():
