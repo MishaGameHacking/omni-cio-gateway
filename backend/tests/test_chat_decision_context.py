@@ -97,6 +97,69 @@ def test_empty_or_mismatched_scope_never_falls_back_to_whole_portfolio(recorded,
     assert project(recorded, **context) is None
 
 
+@pytest.mark.parametrize("context", [
+    {"account_id": "private-account-a"},
+    {"mode": "instrument", "instrument_uid": "instrument-a"},
+    {"explanation": {"kind": "candidate", "id": "instrument-a"}},
+])
+def test_preview_for_b_cannot_be_assigned_to_blocked_a(recorded, context):
+    receipt = recorded[0]
+    receipt["state"] = "preview_available"
+    receipt["blockers"] = [{"code": "real_order_execution_disabled"}]
+    receipt["candidates"][1].update(preview_eligible=True, decision_blockers=[])
+    receipt["proposed_action"] = deepcopy(receipt["candidates"][1])
+    fact, _ = project(recorded, **context)
+    assert fact["value"]["state"] == "blocked"
+    assert "no_whole_lot_within_target_and_reserve" in codes(fact)
+    other, _ = project(recorded, mode="instrument", instrument_uid="instrument-b")
+    assert other["value"]["state"] == "preview_available"
+
+
+def test_eligible_candidate_without_matching_proposal_is_waiting(recorded):
+    receipt = recorded[0]
+    receipt["state"] = "preview_available"
+    receipt["blockers"] = [{"code": "real_order_execution_disabled"}]
+    for candidate in receipt["candidates"]:
+        candidate.update(preview_eligible=True, decision_blockers=[])
+    receipt["proposed_action"] = deepcopy(receipt["candidates"][1])
+    fact, _ = project(recorded, mode="instrument", instrument_uid="instrument-a")
+    assert fact["value"]["state"] == "waiting"
+    receipt["proposed_action"] = deepcopy(receipt["candidates"][0])
+    fact, _ = project(recorded, mode="instrument", instrument_uid="instrument-a")
+    assert fact["value"]["state"] == "preview_available"
+    receipt["candidates"][0]["preview_eligible"] = False
+    fact, _ = project(recorded, mode="instrument", instrument_uid="instrument-a")
+    assert fact["value"]["state"] == "waiting"
+
+
+@pytest.mark.parametrize("context,visible", [
+    ({}, True),
+    ({"account_id": "private-account-a"}, True),
+    ({"account_id": "private-account-b"}, False),
+    ({"mode": "instrument", "instrument_uid": "instrument-a"}, False),
+    ({"mode": "instrument", "instrument_uid": "instrument-a", "account_id": "private-account-a"}, True),
+])
+def test_cash_floor_reason_is_bound_to_selected_mandate_account(recorded, context, visible):
+    receipt = recorded[0]
+    receipt["blockers"].append({"code": "cash_floor_breached", "message": "PRIVATE STORED ACCOUNT DATA"})
+    # Candidate-local text cannot override the mandate binding.
+    receipt["candidates"][1]["decision_blockers"].append("cash_floor_breached")
+    fact, _ = project(recorded, **context)
+    assert ("cash_floor_breached" in codes(fact)) is visible
+    assert "PRIVATE STORED ACCOUNT DATA" not in json.dumps(fact)
+    if visible:
+        reason = next(row for row in fact["value"]["blockers"] if row["code"] == "cash_floor_breached")
+        assert "4 999" in reason["message"]
+
+
+def test_cash_floor_cannot_rebind_to_changed_mandate(recorded):
+    recorded[0]["blockers"].append({"code": "cash_floor_breached"})
+    recorded[2]["version"] += 1
+    fact, _ = project(recorded, account_id="private-account-a")
+    assert "cash_floor_breached" not in codes(fact)
+    assert fact["value"]["current"] is False
+
+
 def test_account_without_candidates_uses_only_same_mandate_system_reasons(recorded):
     recorded[0]["candidates"] = []
     fact, _ = project(recorded, account_id="private-account-a")
@@ -205,7 +268,8 @@ def test_real_fact_packet_reads_saved_cycle_without_network_model_or_writes(fixt
     model_context = json.loads(messages[1]["content"])["context"]
     assert any(row["id"] == fact["id"] for row in model_context["facts"])
     model_text = messages[1]["content"]
-    assert "owned-account-a" not in model_text and "owned-account-b" not in model_text
+    assert "owned-account-a" not in model_text
+    assert "owned-account-b" not in model_text
     assert state.broker_key(user) not in model_text
     assert "только сохранённый статус расчёта" in messages[0]["content"]
     assert "не подтверждает инвестиционную пригодность" in messages[0]["content"]

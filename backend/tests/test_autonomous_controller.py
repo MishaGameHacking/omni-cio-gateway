@@ -153,7 +153,8 @@ def test_first_observation_is_once_and_never_claims_trade_or_model(fixture):
         controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
         controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
     result = controller.decisions(fixture["user"])
-    assert [row["kind"] for row in result["events"]] == ["initial_observation"]
+    assert sorted(row["kind"] for row in result["events"]) == ["initial_observation", "portfolio_decision"]
+    assert result["decision_cycle"]["execution"]["real_orders_enabled"] is False
     assert result["discovery"]["state"] == "blocked"
     assert result["discovery"]["reasons"][0]["code"] == "strategy_required"
     with closing(backend.connect()) as db:
@@ -512,7 +513,7 @@ def test_blocked_zero_candidate_cycle_is_persisted_and_notified_once(fixture):
         assert "strategy_required" in {row["code"] for row in cycle["blockers"]}
         assert db.execute("SELECT count(*) FROM workspace_notification_outbox WHERE user_id=?", (user["id"],)).fetchone()[0] == 1
         discovery = json.loads(db.execute("SELECT result_json FROM automation_discovery WHERE user_id=?", (user["id"],)).fetchone()[0])
-        prepared = controller._prepare_decision(user, discovery, int(time.time()))
+        prepared = controller._prepare_decision(user, discovery, datetime.now(timezone.utc))
         db.execute("BEGIN IMMEDIATE")
         controller._persist_decision_in(db, user, prepared, int(time.time()))
         db.commit()
@@ -574,7 +575,8 @@ def test_cycle_evaluation_runs_without_write_lock_and_uses_completion_clock(fixt
     fixture["patch"].setattr(controller.decision_cycle, "evaluate", checked)
     before = int(time.time())
     controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
-    assert len(calls) == 1 and calls[0] >= before
+    assert len(calls) == 1
+    assert calls[0] >= before
 
 
 def test_inputs_changed_before_commit_persists_explicit_blocked_receipt(fixture):

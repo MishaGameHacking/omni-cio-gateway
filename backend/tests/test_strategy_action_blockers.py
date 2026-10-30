@@ -57,7 +57,8 @@ def market(monkeypatch, price="100"):
 
 
 def assert_pending(result):
-    assert result["observed_at"] and result["as_of"]
+    assert result["observed_at"]
+    assert result["as_of"]
     assert result["action"] == "wait"
     assert result["suggested_lots"] == 0
     assert result["constraints_passed"] is False

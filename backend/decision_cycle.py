@@ -412,7 +412,9 @@ def evaluate(active, snapshot, discovery, evidence_revision, now, broker_key):
         raise DecisionCycleError("decision_candidate_count_invalid")
     candidates = [_candidate(row, lineage, account, cash, snapshot, now) for row in rows]
     proposed = _select_proposed(candidates, discovery, blockers)
-    state = "preview_available" if proposed else "blocked" if blockers else "waiting"
+    state = "blocked" if blockers else "waiting"
+    if proposed:
+        state = "preview_available"
     result = {"schema_version": VERSION, "input_digest": _hash(lineage), "evaluated_at": _iso(now),
               "expires_at": _decision_expiry(observed, proposed, candidates, now),
               "lineage": lineage, "state": state, "no_op": True,

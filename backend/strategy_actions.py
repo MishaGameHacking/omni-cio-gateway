@@ -251,6 +251,17 @@ def _assess_addition(user, item, account, active, snapshot, budget, base):
     return base
 
 
+def _assess_reduction(user, item, account, active, snapshot, desired, base):
+    try:
+        from .strategy_sales import assess_reduction
+    except ImportError:
+        from strategy_sales import assess_reduction
+    reduction = assess_reduction(user, item, account, active, snapshot, desired, base)
+    if reduction.get("expires_at"):
+        reduction["quote_as_of"] = reduction.get("as_of")
+    return reduction
+
+
 @financial_context
 def assess_candidate(user, item, account, active, snapshot):
     uid, kind, config = item["uid"], item["instrument_type"], active["config"]
@@ -265,14 +276,7 @@ def assess_candidate(user, item, account, active, snapshot):
         base["budget_diagnostics"] = budget_diagnostics(total=total, current=current, held_class=held_class, cash=cash,
             config=config, kind=kind)
         if current > desired and not allocation_policy(config)["missing"]:
-            try:
-                from .strategy_sales import assess_reduction
-            except ImportError:
-                from strategy_sales import assess_reduction
-            reduction = assess_reduction(user, item, account, active, snapshot, desired, base)
-            if reduction.get("expires_at"):
-                reduction["quote_as_of"] = reduction.get("as_of")
-            return reduction
+            return _assess_reduction(user, item, account, active, snapshot, desired, base)
         if not (config.get("construction") or {}).get("reinvest", True):
             # Cash has no provenance after settlement. Without a verified
             # withdrawal/reserve ledger it must not be silently reinvested.

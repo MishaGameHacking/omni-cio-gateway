@@ -49,9 +49,12 @@ def assert_never_ready(result):
 
 def test_own_5000_all_in_9999_is_exact_floor_but_never_credit_approval():
     result = evaluate_buy(observation(), quote(), tariff(), now=NOW)
-    assert CASH_FLOOR_RUB == Decimal("-4999.00")
-    assert Decimal(result["projected_cash_rub"]) == Decimal("-4999")
-    assert Decimal(result["projected_breach_amount_rub"]) == 0
+    actual_floor = CASH_FLOOR_RUB
+    projected_cash = Decimal(result["projected_cash_rub"])
+    projected_breach = Decimal(result["projected_breach_amount_rub"])
+    assert actual_floor == Decimal("-4999.00")
+    assert projected_cash == Decimal("-4999")
+    assert projected_breach == 0
     assert result["arithmetic_policy_passed"] is True
     assert result["reasons"] == ["broker_margin_check_required"]
     assert_never_ready(result)
@@ -61,8 +64,9 @@ def test_one_kopeck_over_floor_is_rejected_including_fee_and_accrued_interest():
     cost = quote(total="9999.01")
     cost["other_charges_rub"] = "0.01"
     result = evaluate_buy(observation(), cost, tariff(), now=NOW)
+    projected_cash = Decimal(result["projected_cash_rub"])
     assert result["arithmetic_policy_passed"] is False
-    assert Decimal(result["projected_cash_rub"]) == Decimal("-4999.01")
+    assert projected_cash == Decimal("-4999.01")
     assert result["required_repayment_if_executed_rub"] == "0.01"
     assert "margin_proposed_buy_breaches_floor" in result["reasons"]
     assert_never_ready(result)
@@ -70,9 +74,11 @@ def test_one_kopeck_over_floor_is_rejected_including_fee_and_accrued_interest():
 
 def test_existing_borrowing_is_already_in_signed_cash_not_added_again():
     current = evaluate_current(observation(cash="-1000"), now=NOW)
-    assert Decimal(current["maximum_all_in_buy_rub"]) == 3999
+    available_all_in = Decimal(current["maximum_all_in_buy_rub"])
+    assert available_all_in == 3999
     result = evaluate_buy(observation(cash="-1000"), quote("3999", "3970"), tariff(), now=NOW)
-    assert Decimal(result["projected_cash_rub"]) == -4999
+    projected_cash = Decimal(result["projected_cash_rub"])
+    assert projected_cash == -4999
     assert result["arithmetic_policy_passed"] is True
     assert_never_ready(result)
 
@@ -81,15 +87,19 @@ def test_existing_borrowing_is_already_in_signed_cash_not_added_again():
 def test_pending_amount_is_counted_once_and_reflected_cash_is_not_debited_twice(included, expected_capacity):
     pending = debit(included=included)
     result = evaluate_current(observation(pending=[pending, deepcopy(pending)]), now=NOW)
-    assert Decimal(result["maximum_all_in_buy_rub"]) == Decimal(expected_capacity)
-    assert Decimal(result["unreflected_pending_debits_rub"]) == (0 if included else 100)
+    available_all_in = Decimal(result["maximum_all_in_buy_rub"])
+    unreflected_pending = Decimal(result["unreflected_pending_debits_rub"])
+    assert available_all_in == Decimal(expected_capacity)
+    assert unreflected_pending == (0 if included else 100)
     assert_never_ready(result)
 
 
 def test_unreflected_pending_charge_reduces_new_purchase_capacity():
     result = evaluate_buy(observation(pending=[debit()]), quote(), tariff(), now=NOW)
-    assert Decimal(result["cash_after_commitments_rub"]) == 4900
-    assert Decimal(result["projected_cash_rub"]) == -5099
+    cash_after_commitments = Decimal(result["cash_after_commitments_rub"])
+    projected_cash = Decimal(result["projected_cash_rub"])
+    assert cash_after_commitments == 4900
+    assert projected_cash == -5099
     assert result["required_repayment_if_executed_rub"] == "100.00"
     assert result["arithmetic_policy_passed"] is False
 
@@ -232,14 +242,17 @@ def test_decimal_precision_is_isolated_and_inputs_are_unchanged():
     with localcontext() as context:
         context.prec = 3
         result = evaluate_buy(snapshot, cost, evidence, now=NOW)
-    assert Decimal(result["projected_cash_rub"]) == Decimal("-4999")
+    projected_cash = Decimal(result["projected_cash_rub"])
+    assert projected_cash == Decimal("-4999")
     assert result["arithmetic_policy_passed"] is True
     assert (snapshot, cost, evidence) == original
 
 
 def test_naive_clock_is_rejected():
+    snapshot = observation()
+    naive_now = NOW.replace(tzinfo=None)
     with pytest.raises(ValueError, match="margin_aware_clock_required"):
-        evaluate_current(observation(), now=NOW.replace(tzinfo=None))
+        evaluate_current(snapshot, now=naive_now)
 
 
 def portfolio(cash="-5000"):

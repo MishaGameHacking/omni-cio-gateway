@@ -168,10 +168,13 @@ def observe_portfolio(snapshot: dict, account_id: str, *, now: datetime | None =
         reasons.append("margin_portfolio_observation_stale_or_future")
     fresh = cash is not None and not reasons
     _, shortfall = _repayment(cash if fresh else None)
+    observation_state = "unknown"
+    if cash is not None:
+        observation_state = "observed" if fresh else "stale"
     return {"schema_version": 1, "account_id": account_id if _identifier(account_id) else None,
         "basis": "persisted_native_ruble_cash_only", "currency": "RUB",
         "cash_floor_rub": _text(CASH_FLOOR_RUB), "evaluated_at": now.isoformat(),
-        "state": "unknown" if cash is None else "observed" if fresh else "stale",
+        "state": observation_state,
         "observed_cash_rub": _text(cash), "as_of": observed.isoformat() if observed else None,
         "fresh": fresh, "max_age_seconds": PORTFOLIO_MAX_AGE_SECONDS,
         "observed_floor_breached": cash < CASH_FLOOR_RUB if fresh else None,
@@ -195,7 +198,10 @@ def evaluate_current(snapshot: dict, *, now: datetime | None = None) -> dict:
     trusted = not reasons
     breach, repayment = _repayment(effective if trusted else None)
     result = _base(account, now)
-    result.update(state="unknown" if not trusted else "breached" if breach > 0 else "within_requested_floor",
+    current_state = "unknown"
+    if trusted:
+        current_state = "breached" if breach > 0 else "within_requested_floor"
+    result.update(state=current_state,
         observed_cash_rub=_text(cash), unreflected_pending_debits_rub=_text(pending),
         cash_after_commitments_rub=_text(effective if trusted else None),
         observed_cash_breaches_floor=cash < CASH_FLOOR_RUB if trusted else None,

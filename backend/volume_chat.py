@@ -88,7 +88,7 @@ _DECISION_CODES = frozenset({
     "no_candidates_reviewed", "no_action_required", "candidate_input_invalid", "discovery_incomplete",
     "market_price_polling_paused", "limit_trading_unavailable", "broker_purchase_unavailable",
     "strategy_rebalance_cooldown", "strategy_turnover_limit", "issuer_rating_required", "issue_rating_required",
-    "share_issuer_aaa_required", "rating_below_owner_mandate", "commission_not_verified",
+    "share_issuer_aaa_required", "rating_below_owner_mandate", "commission_not_verified", "cash_floor_breached",
 })
 _DECISION_GLOBAL_CODES = frozenset({
     "real_order_execution_disabled", "strategy_required", "automation_paused", "broker_connection_required",
@@ -107,64 +107,101 @@ def _saved_decision_cycle(user):
     return autonomous_controller._latest_decision(user, int(datetime.now(timezone.utc).timestamp()))
 
 
-def _decision_fact(receipt, snapshot, active, context):
-    """Allowlisted algorithm observation; never an order or financial assertion."""
+def _decision_moment(value):
+    if not isinstance(value, str) or len(value) > 40:
+        return None
+    try:
+        return timestamp(value)
+    except ValueError:
+        return None
+
+
+def _bounded_decision_rows(value):
+    return isinstance(value, list) and len(value) <= 100
+
+
+def _read_only_decision(receipt):
+    execution = receipt.get("execution")
+    if not isinstance(execution, dict):
+        return False
+    return (execution.get("mode") == "read_only" and execution.get("real_orders_enabled") is False
+            and receipt.get("no_op") is True and type(receipt.get("current")) is bool)
+
+
+def _decision_header_valid(receipt):
     if not isinstance(receipt, dict):
-        return None
-    cycle_id = receipt.get("cycle_id")
-    if not isinstance(cycle_id, str) or re.fullmatch(r"[0-9a-f]{64}", cycle_id) is None:
-        return None
-    execution, lineage = receipt.get("execution"), receipt.get("lineage")
-    if (not isinstance(execution, dict) or not isinstance(lineage, dict)
-            or execution.get("mode") != "read_only" or execution.get("real_orders_enabled") is not False
-            or receipt.get("no_op") is not True or type(receipt.get("current")) is not bool
-            or not isinstance(receipt.get("state"), str)
-            or receipt.get("state") not in {"blocked", "waiting", "preview_available"}):
-        return None
-    observed = receipt.get("evaluated_at")
-    if not isinstance(observed, str) or len(observed) > 40:
-        return None
-    try:
-        observed_at = timestamp(observed)
-    except ValueError:
-        return None
-    expiry = receipt.get("expires_at")
-    try:
-        expiry_at = timestamp(expiry) if isinstance(expiry, str) and len(expiry) <= 40 else None
-    except ValueError:
-        expiry_at = None
-    if expiry_at is None:
-        expiry = None
-    blockers = receipt.get("blockers")
-    candidates = receipt.get("candidates")
-    if not isinstance(blockers, list) or len(blockers) > 100 or not isinstance(candidates, list) or len(candidates) > 100:
-        return None
-    codes = {row.get("code") for row in blockers if isinstance(row, dict) and isinstance(row.get("code"), str)}
-    account = context.get("account_id")
-    target = context.get("explanation") or {}
+        return False
+    identifier = receipt.get("cycle_id")
+    if not isinstance(identifier, str) or re.fullmatch(r"[0-9a-f]{64}", identifier) is None:
+        return False
+    if not isinstance(receipt.get("state"), str) or receipt["state"] not in {"blocked", "waiting", "preview_available"}:
+        return False
+    return (_read_only_decision(receipt) and isinstance(receipt.get("lineage"), dict)
+            and _bounded_decision_rows(receipt.get("blockers")) and _bounded_decision_rows(receipt.get("candidates")))
+
+
+def _decision_scope_ids(context):
+    target = context.get("explanation")
     instrument = context.get("instrument_uid") if context.get("mode") == "instrument" else None
     if isinstance(target, dict) and target.get("kind") == "candidate":
         instrument = target.get("id")
-    scoped = bool(account or instrument)
-    matching = [row for row in candidates if isinstance(row, dict)
-                and (not account or row.get("account_id") == account)
-                and (not instrument or row.get("instrument_uid") == instrument)]
-    if scoped:
-        # A stale strategy must not bind its former account to a new mandate.
-        config = (active or {}).get("config") or {}
-        mandate = config.get("mandate") if isinstance(config, dict) else None
-        same_account = (account and isinstance(mandate, dict) and mandate.get("account_id") == account
-                        and lineage.get("strategy_version") == (active or {}).get("version")
-                        and "strategy_changed" not in codes)
-        if not matching and (instrument or not same_account):
-            return None
-        scoped_codes = set()
-        for row in matching:
-            values = row.get("decision_blockers")
-            if isinstance(values, list) and len(values) <= 100:
-                scoped_codes.update(value for value in values if isinstance(value, str))
-        codes = scoped_codes | (codes & _DECISION_GLOBAL_CODES)
+    return context.get("account_id"), instrument
+
+
+def _candidate_in_chat_scope(row, account, instrument):
+    return (isinstance(row, dict) and (not account or row.get("account_id") == account)
+            and (not instrument or row.get("instrument_uid") == instrument))
+
+
+def _decision_mandate_matches(active, lineage, account, codes):
+    config = (active or {}).get("config")
+    mandate = config.get("mandate") if isinstance(config, dict) else None
+    # A stale strategy must not bind its former account to a new mandate.
+    return (bool(account) and isinstance(mandate, dict) and mandate.get("account_id") == account
+            and lineage.get("strategy_version") == (active or {}).get("version") and "strategy_changed" not in codes)
+
+
+def _scoped_decision_codes(codes, matching, same_account):
+    result = codes & _DECISION_GLOBAL_CODES
+    for row in matching:
+        values = row.get("decision_blockers")
+        if _bounded_decision_rows(values):
+            result.update(value for value in values if isinstance(value, str))
+    # The cash-floor observation belongs to the mandate's account. A candidate
+    # code alone cannot make it a verified observation about another account.
+    result.discard("cash_floor_breached")
+    if same_account and "cash_floor_breached" in codes:
+        result.add("cash_floor_breached")
+    return result
+
+
+def _decision_proposal_in_scope(receipt, matching):
+    proposal = receipt.get("proposed_action")
+    if receipt["state"] != "preview_available" or not isinstance(proposal, dict):
+        return False
+    return any(row.get("preview_eligible") is True
+               and row.get("instrument_uid") == proposal.get("instrument_uid")
+               and row.get("account_id") == proposal.get("account_id") for row in matching)
+
+
+def _decision_scope(receipt, active, context, codes):
+    account, instrument = _decision_scope_ids(context)
+    if not account and not instrument:
+        return "portfolio", receipt["state"], codes
+    matching = [row for row in receipt["candidates"] if _candidate_in_chat_scope(row, account, instrument)]
+    same_account = _decision_mandate_matches(active, receipt["lineage"], account, codes)
+    if not matching and (instrument or not same_account):
+        return None
+    scoped_codes = _scoped_decision_codes(codes, matching, same_account)
+    scoped_state = "blocked" if scoped_codes - {"real_order_execution_disabled"} else "waiting"
+    if _decision_proposal_in_scope(receipt, matching):
+        scoped_state = "preview_available"
+    return "selected_instrument" if instrument else "selected_account", scoped_state, scoped_codes
+
+
+def _decision_current(receipt, snapshot, active, codes, observed_at, expiry_at):
     current = receipt["current"]
+    lineage = receipt["lineage"]
     if lineage.get("snapshot_id") != snapshot.get("snapshot_id"):
         current = False
         codes.add("snapshot_changed")
@@ -177,6 +214,10 @@ def _decision_fact(receipt, snapshot, active, context):
     if expiry_at is None or expiry_at <= now or observed_at > now:
         current = False
         codes.add("decision_expired")
+    return current
+
+
+def _decision_reasons(codes):
     try:
         from .decision_cycle import reason
     except ImportError:
@@ -186,10 +227,28 @@ def _decision_fact(receipt, snapshot, active, context):
     reasons = [reason(code) for code in sorted(safe_codes)]
     if codes - _DECISION_CODES:
         reasons.append({"code": "additional_check_required", "message": "В расчёте есть дополнительная незавершённая проверка."})
-    value = {"cycle_id": cycle_id, "evaluated_at": observed, "expires_at": expiry,
-             "state": receipt["state"] if current else "blocked", "current": current,
-             "scope": "selected_instrument" if instrument else "selected_account" if account else "portfolio",
-             "blockers": reasons, "real_orders_enabled": False, "orders_sent_by_this_cycle": False,
+    return reasons
+
+
+def _decision_fact(receipt, snapshot, active, context):
+    """Allowlisted algorithm observation; never an order or financial assertion."""
+    if not _decision_header_valid(receipt):
+        return None
+    observed_at = _decision_moment(receipt.get("evaluated_at"))
+    if observed_at is None:
+        return None
+    codes = {row.get("code") for row in receipt["blockers"] if isinstance(row, dict) and isinstance(row.get("code"), str)}
+    scoped = _decision_scope(receipt, active, context, codes)
+    if scoped is None:
+        return None
+    scope, scoped_state, codes = scoped
+    expiry_at = _decision_moment(receipt.get("expires_at"))
+    current = _decision_current(receipt, snapshot, active, codes, observed_at, expiry_at)
+    cycle_id, observed = receipt["cycle_id"], receipt["evaluated_at"]
+    value = {"cycle_id": cycle_id, "evaluated_at": observed,
+             "expires_at": receipt.get("expires_at") if expiry_at is not None else None,
+             "state": scoped_state if current else "blocked", "current": current, "scope": scope,
+             "blockers": _decision_reasons(codes), "real_orders_enabled": False, "orders_sent_by_this_cycle": False,
              "basis": "recorded_algorithm_status_not_trade_or_financial_truth", "financial_verification": False}
     ref = source("portfolio_decision_cycle", cycle_id, observed,
                  provider="Analyst AI: сохранённый результат алгоритма", ttl=0)
