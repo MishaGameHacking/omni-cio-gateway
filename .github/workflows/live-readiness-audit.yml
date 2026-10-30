@@ -10,8 +10,8 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_TOOLS_SHA: '11d5489aadf2df294fc8a0d87a3b921d3013a35f'
-  EXPECTED_TOOLS_RUN: '41065699345'
+  EXPECTED_TOOLS_SHA: '09e9ff076bf9707251a35f90cfd61ae0d515a8bd'
+  EXPECTED_TOOLS_RUN: '41067603168'
 jobs:
   observe:
     runs-on: ubuntu-24.04
