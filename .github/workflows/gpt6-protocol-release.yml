@@ -1,0 +1,118 @@
+name: Deliver verified GPT-6 protocol and diagnostics update to existing Timeweb
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/gpt6-protocol-release.yml]
+permissions:
+  contents: read
+  actions: read
+  checks: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: '68e0fb73feddf178c29d990633edae42aa7adda3'
+  EXPECTED_TEST_RUN: '41067450491'
+  EXPECTED_ARTIFACT_SHA256: '993ceeb4561904c81a2e0411a5cec72f8386f5f99f18c572e5822370ed72762e'
+  EXPECTED_BUNDLE_SHA256: '2be6bd1487791cf5d258d259651ead9645a30bf588f1c3af4657b09e20ee196e'
+  EXPECTED_TOOLS_SHA: '538a992e77a8db4973a7ef510c7ce7065f0eb1ab'
+  EXPECTED_TOOLS_RUN: '41068082083'
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Reject unset identities and require exact successful laptop runs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            for(const key of ['EXPECTED_SOURCE_SHA','EXPECTED_TOOLS_SHA'])
+              if(!/^[a-f0-9]{40}$/.test(e[key])||/^0+$/.test(e[key])) throw new Error('Unset source identity: '+key);
+            for(const key of ['EXPECTED_TEST_RUN','EXPECTED_TOOLS_RUN'])
+              if(!/^[1-9][0-9]{7,19}$/.test(e[key])) throw new Error('Unset run identity: '+key);
+            for(const key of ['EXPECTED_ARTIFACT_SHA256','EXPECTED_BUNDLE_SHA256'])
+              if(!/^[a-f0-9]{64}$/.test(e[key])||/^0+$/.test(e[key])) throw new Error('Unset artifact identity: '+key);
+            for(const [sha,id,path,branch] of [
+              [e.EXPECTED_SOURCE_SHA,e.EXPECTED_TEST_RUN,'.github/workflows/gpt6-analysis-routing.yml','codex/gpt6-analysis-routing-2026-10-30'],
+              [e.EXPECTED_TOOLS_SHA,e.EXPECTED_TOOLS_RUN,'.github/workflows/gpt6-protocol-tools.yml','codex/timeweb-owner-prepare-2026-10-23']]) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(id)});
+              if(r.head_sha!==sha||r.path!==path||r.head_branch!==branch||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success')
+                throw new Error('Exact laptop verification did not pass: '+path);
+              const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:Number(id),per_page:100});
+              const matches=jobs.filter(j=>j.name==='verify');
+              if(matches.length!==1||matches[0].status!=='completed'||matches[0].conclusion!=='success') throw new Error('Missing successful verify job');
+            }
+            for(const path of ['deploy/gpt6_protocol_release.py','deploy/test_gpt6_protocol_release.py','tools/check_gpt6_protocol_release.py','tools/prepare_gpt6_protocol_transport.py','.github/workflows/gpt6-protocol-tools.yml']) {
+              const {data:tested}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_TOOLS_SHA});
+              const {data:current}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(tested.sha!==current.sha) throw new Error('Tested release tool changed: '+path);
+            }
+            const {data:transport}=await github.rest.repos.getContent({...context.repo,path:'tools/owner_plan_transport_20261027.py',ref:context.sha});
+            if(transport.sha!=='7478ac9850fe1deeb729d1ccbc8fb0f28b849124') throw new Error('Reviewed transport changed');
+            // Source can change only server code, CI, documentation and contributor instructions.
+            // In particular app, Android resources, signing and build roots must match APK57 source.
+            const {data:baseline}=await github.rest.git.getTree({...context.repo,tree_sha:'c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f'});
+            const {data:candidate}=await github.rest.git.getTree({...context.repo,tree_sha:e.EXPECTED_SOURCE_SHA});
+            const allowed=new Set(['backend','.github','docs','AGENTS.md']);
+            const identity=t=>JSON.stringify(t.tree.filter(x=>!allowed.has(x.path)).map(x=>[x.path,x.mode,x.type,x.sha]).sort());
+            if(baseline.truncated||candidate.truncated||identity(baseline)!==identity(candidate)) throw new Error('Non-server source changed; client verification required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Require clean exact-source Sonar
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {newestSonarCheck,assertCleanSonar}=require('./.github/scripts/require_clean_sonar.cjs');
+            const ref=process.env.EXPECTED_SOURCE_SHA;
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=newestSonarCheck(checks,ref);
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact-source Sonar is not complete');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            for(const note of notes) core.info('SONAR_FINDING='+JSON.stringify({path:note.path,line:note.start_line,title:note.title,message:note.message}));
+            assertCleanSonar(sonar,notes,ref);
+  deploy:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Download exact successful source artifact
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env,run_id=Number(e.EXPECTED_TEST_RUN);
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(r.head_sha!==e.EXPECTED_SOURCE_SHA||r.path!=='.github/workflows/gpt6-analysis-routing.yml'||r.head_branch!=='codex/gpt6-analysis-routing-2026-10-30'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Source verification changed');
+            const artifacts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+            const found=artifacts.filter(a=>a.name==='server-runtime-'+run_id+'-1'&&!a.expired);
+            if(found.length!==1||found[0].digest!=='sha256:'+e.EXPECTED_ARTIFACT_SHA256) throw new Error('Artifact identity changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:found[0].id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(e.RUNNER_TEMP,'server-runtime-artifact.zip'),Buffer.from(archive.data));
+      - name: Verify exact bundle and prepare unchanged administrative transport
+        run: python3 tools/prepare_gpt6_protocol_transport.py
+      - name: Install verified modules on existing Timeweb server
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/owner_plan_transport_20261027.py
+      - name: Preserve source deployment receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: gpt6-protocol-deployment-${{ github.run_id }}
+          path: plan-reports/
+          if-no-files-found: warn
+          retention-days: 7
