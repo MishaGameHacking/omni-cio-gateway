@@ -5,6 +5,7 @@ on:
     paths: [.github/workflows/home-runtime-mobile-snapshot.yml, tools/home_runtime/stage_mobile_release.py]
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: analyst-home-mobile-release-cache
   cancel-in-progress: false
@@ -22,8 +23,26 @@ jobs:
               const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/stage_mobile_release.py'});
               const file=path.join(dir,'stage.py');fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
               const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
-              const p=cp.spawnSync('py.exe',['-3','-I',file],{env,encoding:'utf8',windowsHide:true,timeout:210000});
-              const lines=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_(RELEASE_SNAPSHOT|RELEASE_ERROR|CHANNEL_CHANGED)=/.test(s));
-              lines.forEach(s=>core.info(s.slice(0,900)));
-              if(p.status!==0||!lines.some(s=>s.startsWith('HOME_RELEASE_SNAPSHOT=')))core.setFailed('Mobile update source has not been verified');
+              const crypto=require('node:crypto');
+              function run(args) {
+                const p=cp.spawnSync('py.exe',['-3','-I',file,...args],{env,encoding:'utf8',windowsHide:true,timeout:250000});
+                const lines=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_(RELEASE_SNAPSHOT|RELEASE_ERROR|ORIGIN_ROUTE)=/.test(s));
+                lines.forEach(s=>core.info(s.slice(0,1250)));
+                if(p.status===0&&!lines.some(s=>s.startsWith('HOME_RELEASE_SNAPSHOT=')))throw Error('Missing on-disk verification');
+                return p.status;
+              }
+              let code=run([]);
+              if(code===4) {
+                const expected='e3ffcd2cfc819acfa6e9de9e8201f40270e25a3bde842befd3fd37836ab25af0';
+                const {data:artifact}=await github.rest.actions.getArtifact({...context.repo,artifact_id:12963628069});
+                if(artifact.id!==12963628069||artifact.expired||artifact.workflow_run?.id!==41024346794||
+                   artifact.name!=='server-version-client-41024346794-1'||artifact.digest!=='sha256:'+expected||
+                   artifact.size_in_bytes!==44953509)throw Error('Unexpected verified build artifact');
+                const result=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:artifact.id,archive_format:'zip'});
+                const data=Buffer.from(result.data);
+                if(data.length!==artifact.size_in_bytes||crypto.createHash('sha256').update(data).digest('hex')!==expected)throw Error('Build archive hash mismatch');
+                const archive=path.join(dir,'verified-build.zip');fs.writeFileSync(archive,data,{flag:'wx'});
+                code=run(['from-build',archive]);
+              }
+              if(code!==0)core.setFailed('Verified public Android release not preserved on the Lenovo');
             } finally {fs.rmSync(dir,{recursive:true,force:true});}
