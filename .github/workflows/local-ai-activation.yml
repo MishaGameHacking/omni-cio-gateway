@@ -58,6 +58,20 @@ jobs:
           ref: cd1866ee944ccea2259669f4293379241fd4ee02
           path: .transport-admin
           persist-credentials: false
+      - name: Require the owner-tested key propagation and release tools before accessing the guest
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const sha='b1d47d217e9d9fdd6dd6b629d48f1a361602811c',run_id=41098399765;
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(r.head_sha!==sha||r.path!=='.github/workflows/local-report-delivery-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Owner WSL delivery verification required');
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id,per_page:100});
+            if(jobs.filter(j=>j.name==='verify'&&j.conclusion==='success'&&j.status==='completed').length!==1) throw new Error('WSL verification job missing');
+            for(const path of ["deploy/local_report_route_release.py","deploy/test_local_report_delivery.py","tools/prepare_local_report_release.py","tools/timeweb_registered_ssh.py","tools/check_local_report_delivery.py",".github/workflows/local-report-delivery-tools.yml","deploy/gpt6_protocol_release.py","tools/prepare_gpt6_protocol_transport.py","tools/observe_ssh_handshake.py","tools/owner_plan_transport_20261027.py"]) {
+              const {data:a}=await github.rest.repos.getContent({...context.repo,path,ref:sha});
+              const {data:b}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(!a.sha||a.sha!==b.sha) throw new Error('Tested code changed: '+path);
+            }
       - name: Require completed pinned source and model installation
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
@@ -85,7 +99,7 @@ jobs:
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-        run: python3 tools/observe_ssh_handshake.py
+        run: python3 tools/timeweb_registered_ssh.py
       - name: Preserve sanitized activation evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
