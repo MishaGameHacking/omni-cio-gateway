@@ -1,0 +1,58 @@
+name: Read fixed server guest-agent and boot readiness
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/guest-agent-observation.yml]
+permissions:
+  contents: read
+  actions: read
+env:
+  EXPECTED_TOOLS_SHA: 'e9c49b0f7333ecddb0c25890aabc7804ff6dde8f'
+  EXPECTED_TOOLS_RUN: '41087924449'
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require exact successful owner WSL tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN)});
+            if(r.head_sha!==e.EXPECTED_TOOLS_SHA||r.path!=='.github/workflows/infrastructure-budget-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Exact verification required');
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN),per_page:100});
+            if(jobs.filter(j=>j.name==='verify'&&j.conclusion==='success'&&j.status==='completed').length!==1) throw new Error('Verify job missing');
+            for(const path of ['tools/inspect_infrastructure_budget.py','tools/test_infrastructure_budget.py','tools/check_infrastructure_budget.py','.github/workflows/infrastructure-budget-tools.yml']) {
+              const {data:a}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_TOOLS_SHA});
+              const {data:b}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(a.sha!==b.sha) throw new Error('Tested tool changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read nonsecret guest agent status after temporary-key rejection
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        shell: python
+        run: |
+          import json,os,sys
+          from datetime import datetime,timezone
+          sys.path.insert(0,"tools")
+          import inspect_infrastructure_budget as observed
+          api=observed.ReadOnlyAPI(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          row=api.get(observed.PATHS["server"])["server"]
+          if row.get("id")!=9417611 or row.get("project_id")!=2941515 or row.get("availability_zone")!="ams-1":
+              raise RuntimeError("server_identity_changed")
+          status=row.get("status")
+          boot=row.get("boot_mode")
+          result={"observed_at":datetime.now(timezone.utc).isoformat(),"server_id":9417611,
+              "status":status if status in {"on","off","running","installing","starting","stopped","resizing"} else "other",
+              "boot_mode":boot if boot in {"default","disk","recovery","rescue","normal"} else "other",
+              "qemu_agent_enabled":row.get("is_qemu_agent") if type(row.get("is_qemu_agent")) is bool else None,
+              "provider_support_ssh_enabled":row.get("is_master_ssh") if type(row.get("is_master_ssh")) is bool else None,
+              "cpu":row.get("cpu") if type(row.get("cpu")) is int else None,
+              "memory_mib":row.get("ram") if type(row.get("ram")) is int else None,
+              "configuration_changed":False,"ssh_attempted":False}
+          print("GUEST_AGENT_OBSERVATION="+json.dumps(result))
