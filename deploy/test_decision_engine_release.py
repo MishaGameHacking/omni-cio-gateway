@@ -159,6 +159,31 @@ class ReleaseTests(unittest.TestCase):
         with mock.patch.object(release, 'systemctl', side_effect=['inactive', '9', '0']):
             with self.assertRaises(release.ServiceRollbackBlocked): release.require_stopped_services()
 
+    def test_decision_schema_status_rejects_absent_table_without_creating_it(self):
+        with self.assertRaisesRegex(RuntimeError, 'decision_journal_schema_missing'):
+            release.decision_schema_status(self.database)
+        with closing(sqlite3.connect(self.database)) as db:
+            self.assertIsNone(db.execute("SELECT 1 FROM sqlite_master WHERE name='portfolio_decision_cycles'").fetchone())
+
+    def test_decision_schema_status_requires_index_on_exact_table(self):
+        with sqlite3.connect(self.database) as db:
+            db.execute('CREATE TABLE portfolio_decision_cycles(user_id,broker_key,evaluated_at,payload_json)')
+            db.execute('CREATE INDEX portfolio_decision_cycles_latest ON preserved(value)')
+        with self.assertRaisesRegex(RuntimeError, 'decision_journal_schema_missing'):
+            release.decision_schema_status(self.database)
+
+    def test_decision_schema_status_returns_only_readiness_and_row_count(self):
+        with sqlite3.connect(self.database) as db:
+            db.execute('CREATE TABLE portfolio_decision_cycles(user_id,broker_key,evaluated_at,payload_json)')
+            db.execute('CREATE INDEX portfolio_decision_cycles_latest ON portfolio_decision_cycles(user_id,broker_key,evaluated_at DESC)')
+            db.executemany('INSERT INTO portfolio_decision_cycles VALUES(?,?,?,?)',
+                           [(1, 'synthetic-private-key', 1, 'private-payload'),
+                            (1, 'synthetic-private-key', 2, 'private-payload')])
+        self.assertEqual(release.decision_schema_status(self.database),
+                         {'decision_journal_ready': True, 'decision_journal_rows': 2})
+        with closing(sqlite3.connect(self.database)) as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM portfolio_decision_cycles').fetchone()[0], 2)
+
 
 class ContractTests(unittest.TestCase):
     def test_pinned_baseline_and_module_allowlist(self):

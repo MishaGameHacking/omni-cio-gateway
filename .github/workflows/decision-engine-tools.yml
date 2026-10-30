@@ -1,3 +1,4 @@
+# Verify committed decision-journal table/index and private-free row-count receipt.
 name: Verify decision-engine release tools in owner WSL
 on:
   push:

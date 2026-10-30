@@ -420,6 +420,21 @@ def backup_database(database, target):
     need(owner_binding(target) == owner_binding(database), 'backup_owner_binding_changed')
 
 
+def decision_schema_status(database):
+    """Observe committed decision-journal schema and count; never read its payloads."""
+    table = 'portfolio_decision_cycles'
+    index = 'portfolio_decision_cycles_latest'
+    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=15)) as db:
+        db.execute('PRAGMA query_only=ON')
+        db.execute('BEGIN')
+        objects = set(db.execute('SELECT name,type,tbl_name FROM sqlite_master WHERE name IN (?,?)',
+                                 (table, index)).fetchall())
+        need(objects == {(table, 'table', table), (index, 'index', table)},
+             'decision_journal_schema_missing')
+        rows = db.execute('SELECT count(*) FROM portfolio_decision_cycles').fetchone()[0]
+    return {'decision_journal_ready': True, 'decision_journal_rows': rows}
+
+
 def healthy():
     status, raw = request('/health')
     need(status == 200 and json.loads(raw) == {'status': 'ok'}, 'runtime_health_failed')
@@ -475,6 +490,7 @@ def run(envelope):
         backup.mkdir(mode=0o700)
         (archive / 'source-bundle.json').write_text(json.dumps(bundle), encoding='utf-8')
         vendor = None
+        journal_status = {}
         try:
             systemctl('stop', *SERVICES)
             require_stopped_services()
@@ -511,6 +527,7 @@ def run(envelope):
                     need(owner_binding(database) == binding_before, 'owner_binding_changed')
                     with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=15)) as db:
                         need(db.execute('PRAGMA journal_mode').fetchone()[0] == 'wal', 'database_mode_changed')
+                    journal_status.update(decision_schema_status(database))
 
             install(root, backup, bundle['files'], activate,
                     before_rollback=lambda: protect_compatible_rollback(
@@ -547,7 +564,7 @@ def run(envelope):
                    'owner_password_status': 200, 'owner_password_write_routes_get': 405,
                    'owner_binding_preserved': True, 'owner_configuration_preserved': True,
                    'database_restored': False, 'compatible_password_baseline_preserved': True, 'database_journal_mode': 'wal',
-                   'physical_phone_verified': False}
+                   'physical_phone_verified': False, **journal_status}
         (archive / 'deployment.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
         print(json.dumps(receipt), flush=True)
 
