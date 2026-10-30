@@ -1,0 +1,37 @@
+name: Verify a private restore on Lenovo before any owner migration
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-restore-check.yml, tools/home_runtime/check_restore.py]
+permissions:
+  contents: read
+jobs:
+  restore:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Owner laptop required');
+            const cp=require('node:child_process'),path=require('node:path');
+            const files={};
+            for(const [name,source,ref,hash] of [
+              ['checked_backup.py','deploy/pre_resize_backup.py','06bebaa5b5fd8dbad5d678ccb4cfebe405eb8e44','1e63a193263101418d7416c6dc94847dfa72ea30'],
+              ['checked_auth.py','tools/home_runtime/smoke.py','72e400cda5564ab2922843597ca9c66e20950c8a',null],
+              ['check_restore.py','tools/home_runtime/check_restore.py',context.sha,null]]){
+              const {data}=await github.rest.repos.getContent({...context.repo,path:source,ref});
+              if(data.encoding!=='base64'||(hash&&hash!==data.sha))throw Error('Missing pinned source');
+              files[name]=data.content.replace(/\s/g,'');
+            }
+            const input=['import base64,os,pathlib,runpy,sys,tempfile',
+              'assert os.geteuid()!=0',
+              'with tempfile.TemporaryDirectory(prefix="analyst-local-restore-") as d:',
+              ' files='+JSON.stringify(files),
+              ' for k,v in files.items(): (pathlib.Path(d)/k).write_bytes(base64.b64decode(v,validate=True))',
+              ' sys.path.insert(0,d);runpy.run_path(str(pathlib.Path(d)/"check_restore.py"),run_name="__main__")'].join('\n');
+            const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
+            const p=cp.spawnSync(path.join(process.env.SystemRoot,'System32','wsl.exe'),['-d','AnalystAI-Home','-u','analyst-ai','--exec','/opt/analyst-ai/venv/bin/python','-I','-'],{input,env,windowsHide:true,timeout:220000,encoding:'utf8'});
+            const rows=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_RESTORE_(REHEARSAL|ERROR)=/.test(s));
+            for(const line of rows)core.info(line.slice(0,1200));
+            if(p.status!==0||!rows.some(s=>s.startsWith('HOME_RESTORE_REHEARSAL=')))core.setFailed('Private restore rehearsal incomplete');
