@@ -1,0 +1,90 @@
+name: Identify SQLite write-lock holder without changing application state
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-db-lock-diagnostic.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Require successful exact administration tool tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40954726120});
+            if(r.head_sha!==process.env.EXPECTED_AI_ADMIN_TOOLS_SHA||r.conclusion!=='success'||r.status!=='completed'||
+               r.path!=='.github/workflows/owner-ai-admin-tools55.yml'||r.run_attempt!==1)
+              throw new Error('Exact administration verification required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+      - name: Read credential metadata, throttle counters and filtered response codes only
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import json,sys,urllib.request,urllib.error
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          operation='import json,os,re,sqlite3,subprocess,time\nfrom pathlib import Path\n\ndef inspect():\n    out={\'status\':\'blocked\',\'server_id\':9417611,\'observed_at\':int(time.time()),\'app_pid\':0,\n        \'write_locks\':0,\'write_lock_app\':False,\'write_lock_other\':False,\'writer_pid\':0,\'writer_age_seconds\':0,\n        \'writer_role\':\'none\',\'journal_mode\':\'unknown\',\'db_bytes\':0,\'journal_bytes\':0,\'wal_bytes\':0,\n        \'workspace_running\':0,\'workspace_paid_running\':0,\'analysis_running\':0,\'money_pending\':0,\n        \'latest_lock_error_at\':0,\'lock_error_count\':0,\'schema_startup_errors\':0}\n    try:\n        if os.getuid()!=0:return out\n        path=Path(\'/var/lib/analyst-ai/backend.db\');info=path.stat()\n        if path.resolve(strict=True)!=path:return out\n        out[\'db_bytes\']=info.st_size\n        for suffix,key in [(\'-journal\',\'journal_bytes\'),(\'-wal\',\'wal_bytes\')]:\n            p=Path(str(path)+suffix)\n            if p.is_file():out[key]=p.stat().st_size\n        pid=subprocess.run([\'systemctl\',\'show\',\'analyst-ai-owner.service\',\'--property=MainPID\',\'--value\'],capture_output=True,text=True,timeout=10).stdout.strip()\n        if not pid.isdigit() or int(pid)<=1:return out\n        out[\'app_pid\']=int(pid)\n        for line in Path(\'/proc/locks\').read_text().splitlines():\n            columns=line.split()\n            if len(columns)<8 or columns[3]!=\'WRITE\':continue\n            device=columns[5].split(\':\')\n            if len(device)!=3 or int(device[2])!=info.st_ino or int(device[0],16)!=os.major(info.st_dev) or int(device[1],16)!=os.minor(info.st_dev):continue\n            owner=int(columns[4]);out[\'write_locks\']+=1\n            out[\'write_lock_app\']|=owner==int(pid);out[\'write_lock_other\']|=owner!=int(pid)\n            out[\'writer_pid\']=max(0,owner)\n            if owner>1:\n                args=Path(\'/proc/\'+str(owner)+\'/cmdline\').read_bytes().decode(errors=\'replace\').split(\'\\0\')\n                out[\'writer_role\']=\'app\' if owner==int(pid) else \'administration\' if any(\'owner-plan-operation\' in x or \'owner-diagnostics\' in x or \'ENVELOPE\' in x for x in args) else \'python\' if Path(args[0]).name.startswith(\'python\') else \'other\'\n                age=subprocess.run([\'ps\',\'-p\',str(owner),\'-o\',\'etimes=\'],capture_output=True,text=True,timeout=5).stdout.strip()\n                if age.isdigit():out[\'writer_age_seconds\']=int(age)\n        db=sqlite3.connect(path.as_uri()+\'?mode=ro\',uri=True,timeout=5)\n        db.execute(\'PRAGMA query_only=ON\')\n        try:\n            mode=db.execute(\'PRAGMA journal_mode\').fetchone()[0]\n            if mode in (\'delete\',\'wal\',\'truncate\',\'persist\',\'memory\',\'off\'):out[\'journal_mode\']=mode\n            out[\'workspace_running\']=int(db.execute("SELECT count(*) FROM workspace_jobs WHERE state=\'running\'").fetchone()[0])\n            out[\'workspace_paid_running\']=int(db.execute("SELECT count(*) FROM workspace_jobs WHERE state=\'running\' AND paid_started=1").fetchone()[0])\n            out[\'analysis_running\']=int(db.execute("SELECT count(*) FROM ai_work_jobs WHERE status=\'running\'").fetchone()[0])\n            out[\'money_pending\']=int(db.execute("SELECT count(*) FROM ai_money_reservations WHERE state IN (\'reserved\',\'uncertain\')").fetchone()[0])\n        finally:db.close()\n        logs=subprocess.run([\'journalctl\',\'-u\',\'analyst-ai-owner.service\',\'--since=-8 hours\',\'-n\',\'20000\',\'-o\',\'json\',\'--no-pager\'],capture_output=True,text=True,timeout=20)\n        if logs.returncode==0 and len(logs.stdout)<=32*1024**2:\n            for line in logs.stdout.splitlines():\n                try:value=json.loads(line)\n                except ValueError:continue\n                m=value.get(\'MESSAGE\',\'\')\n                if not isinstance(m,str):continue\n                if \'database is locked\' in m:\n                    out[\'lock_error_count\']+=1;out[\'latest_lock_error_at\']=int(value.get(\'__REALTIME_TIMESTAMP\',\'0\'))//1000000\n                out[\'schema_startup_errors\']+=int(\'init_autonomous_db\' in m)\n        out[\'status\']=\'inspected\'\n    except Exception:pass\n    return out\nprint(json.dumps(inspect()),flush=True)\n'
+          contract={'status':{'blocked','inspected'},'writer_role':{'none','app','administration','python','other'},'journal_mode':{'unknown','delete','wal','truncate','persist','memory','off'}}
+          for name in ('server_id','observed_at','app_pid','write_locks','writer_pid','writer_age_seconds','db_bytes','journal_bytes','wal_bytes','workspace_running','workspace_paid_running','analysis_running','money_pending','latest_lock_error_at','lock_error_count','schema_startup_errors'):contract[name]=int
+          for name in ('write_lock_app','write_lock_other'):contract[name]=bool
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{},None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'blocked','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:
+              receipt={'status':'blocked','error_code':'diagnostic_preflight_failed'}
+          public={'status_code':0,'configured':None}
+          try:
+              from owner_plan_transport_20261027 import p
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              request=urllib.request.Request('https://analyst-ai-2941515.twc1.net/auth/owner/status',headers={'Cache-Control':'no-cache'})
+              with opener.open(request,timeout=20) as response:
+                  raw=response.read(8193)
+                  if len(raw)>8192:raise ValueError('response size')
+                  value=json.loads(raw)
+                  public={'status_code':response.status,'configured':value.get('configured') if type(value.get('configured')) is bool else None}
+          except urllib.error.HTTPError as exc:public['status_code']=exc.code
+          except Exception:pass
+          result={'inspection':receipt,'public_status':public,'read_only':True,'passwords_read':False,'login_requests_sent':False}
+          Path('plan-reports').mkdir(exist_ok=True)
+          Path('plan-reports/owner57-db-lock-diagnostic.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('OWNER_DB_LOCK_DIAGNOSTIC='+json.dumps(result,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='inspected' else 1)
+          PY
+      - name: Preserve non-secret diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-db-lock-diagnostic-${{ github.run_id }}
+          path: supplied-owner-ai55/plan-reports/
+          retention-days: 3
+          if-no-files-found: warn
