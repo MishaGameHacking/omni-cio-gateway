@@ -1,5 +1,6 @@
 name: Verify the phone's current public API and preserve its authentic update policy on Lenovo
 on:
+  workflow_dispatch:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
     paths: [.github/workflows/home-runtime-public-policy.yml]
