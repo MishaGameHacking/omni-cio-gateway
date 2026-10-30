@@ -1,0 +1,72 @@
+name: Reclaim verified completed Android build intermediates on the owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-project-reclaim.yml, tools/home_host/reclaim.py]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: analyst-home-storage-maintenance
+  cancel-in-progress: false
+jobs:
+  reclaim:
+    if: github.event.before == '3f7152f0a31e8f211947ca0e5ea092f72ce636c4' && github.run_attempt == 1
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    steps:
+      - name: Reclaim only regenerated files from completed owner jobs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 2
+          script: |
+            const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+            const {spawnSync} = require('node:child_process');
+            if(process.platform !== 'win32' || process.env.COMPUTERNAME !== 'LAPTOP-NPSGA016') throw Error('Wrong host');
+            const dir = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP, 'home-space-tool-'));
+            try {
+              for (const [name,file,ref] of [
+                ['reclaim.py','tools/home_host/reclaim.py',context.sha],
+                ['storage.py','tools/home_host/storage.py','3f7152f0a31e8f211947ca0e5ea092f72ce636c4'],
+                ['emulator_lease.py','.github/scripts/emulator_lease.py','853090e11dcefef693366159c97316e55045c4c9']
+              ]) {
+                const {data} = await github.rest.repos.getContent({...context.repo,path:file,ref});
+                if(data.type !== 'file' || data.encoding !== 'base64') throw Error('Missing reviewed script');
+                fs.writeFileSync(path.join(dir,name), Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              function command(file,args,options={}) {
+                return spawnSync(file,args,{encoding:'utf8',timeout:12000,maxBuffer:200000,windowsHide:true,...options});
+              }
+              function run(mode,list) {
+                const x=command('py.exe',['-3','-I',path.join(dir,'reclaim.py'),mode],{timeout:650000,input:JSON.stringify(list||[])});
+                if(x.status!==0) throw Error('Maintenance '+mode+' failed: '+(x.error?.code||x.status));
+                return JSON.parse(x.stdout);
+              }
+              const plan=run('list').runs; const allowed=[]; const status=new Map();
+              for (const [rid,attempt] of plan) {
+                if(!/^\d{10,12}$/.test(rid) || !Number.isInteger(attempt)) throw Error('Invalid checkout identifier');
+                if(!status.has(rid)) {
+                  try { const {data}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(rid)}); status.set(rid,data); }
+                  catch(e) { if(e.status !== 404) throw e; status.set(rid,null); }
+                }
+                const r=status.get(rid);
+                if(r && r.repository.full_name===context.repo.owner+'/'+context.repo.repo &&
+                   r.event==='push' && r.status==='completed' && r.run_attempt>=attempt &&
+                   Date.now()-Date.parse(r.updated_at)>86400000) allowed.push([rid,attempt]);
+              }
+              const cleaned=run('apply',allowed);
+              const system=path.join(process.env.SystemRoot,'System32');
+              const wsl=command(path.join(system,'wsl.exe'),['-d','Ubuntu-24.04','-u','analyst-ci','--exec','python3','-I','-c',
+                "import sqlite3;print(sqlite3.connect(':memory:').execute('select 1').fetchone()[0])"],{timeout:25000});
+              const tools={windows_python:command('py.exe',['-3','-V']).status===0,git:command('git.exe',['--version']).status===0,
+                android_adb:command('C:\\actions-runner-2\\_work\\_tool\\AndroidSdk\\sdk\\platform-tools\\adb.exe',['version']).status===0,
+                ubuntu_sqlite:wsl.status===0 && wsl.stdout.trim()==='1'};
+              const report={run:context.runId,sha:context.sha,at:new Date().toISOString(),planned_attempts:plan.length,cleaned,tools};
+              const secret=crypto.randomBytes(32),iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',secret,iv);
+              const data=Buffer.concat([cipher.update(JSON.stringify(report),'utf8'),cipher.final()]);
+              const publicKey=crypto.createPublicKey({key:Buffer.from('MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0slElljuCS+i/PbObZsjl9UuIfnf62YDAiR5Wn/uHZ9QikUeoSuplse/laSqX7edDjUX3LVfSCElJGYmzGfTOhBzs/5oM1vBr3mTjDy8XsVbPr8I6dwBHOHKn8bxe2nZPSwD6d7wKFsMUHi4VpdyIomEWIb/yjTiPbDFQbjm4curKz1x01RX63BOpbNmRCt2dW4LNSckIqRK1hADmGNAz/2ge/hyY+R+GHDXo8Pg3+mokzQk456DS7xRwvGZ6BXVoj0mJg6t2hNL+/k6GqBGuRwjs/++zR05NtnGnU7LRjpl8h9GZNI0j+FxvPnjae6mM26VSk++tesQxsq/Wn1tyPsqSFQ/ehWqxR2hZu26GBN2rJBsEjld4G8MFvOHmwP2odhkHHdxYzc0SN6aNBak/frz1HJieBRFOjjzJwtFgE5Jue7C+6eVTsJbfK5CScgEJ8/dmerdK6iNX8Ne3DBawXD6/XBLszXiRfiV52AlxY9a0bTN1/o/AMYDWifMmQW1AgMBAAE=','base64'),format:'der',type:'spki'});
+              const k=crypto.publicEncrypt({key:publicKey,oaepHash:'sha256'},secret);
+              core.info('HOME_STORAGE_RESULT='+JSON.stringify({k:k.toString('base64'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),data:data.toString('base64')}));
+              if(Object.values(tools).some(x=>!x)) core.setFailed('Tool verification incomplete; see private receipt');
+            } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+
