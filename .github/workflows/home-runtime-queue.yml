@@ -1,0 +1,31 @@
+name: Observe home-runner scheduling and existing mobile entry
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-queue.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 2
+          script: |
+            const {owner,repo}=context.repo;
+            let runners=null,registryStatus=200;
+            try{
+              const {data}=await github.request('GET /repos/{owner}/{repo}/actions/runners',{owner,repo,per_page:100});
+              const owned=data.runners.filter(x=>x.labels.some(l=>l.name==='omni-cio-ci')&&x.labels.some(l=>l.name.toLowerCase()==='windows'));
+              runners={matching:owned.length,online:owned.filter(x=>x.status==='online').length,busy:owned.filter(x=>x.busy).length};
+            }catch(e){registryStatus=e.status||0;}
+            const {data:{jobs}}=await github.rest.actions.listJobsForWorkflowRun({owner,repo,run_id:41121631706});
+            async function probe(p){try{const r=await fetch('https://analyst-ai-2941515.twc1.net'+p,{redirect:'error',signal:AbortSignal.timeout(8000)});
+              if(p==='/health')return {code:r.status,healthy:(await r.json()).status==='ok'};
+              return {code:r.status};}catch{return {code:0};}}
+            const [health,auth]=await Promise.all([probe('/health'),probe('/me')]);
+            core.info('HOME_QUEUE_STATUS='+JSON.stringify({checked_at:new Date().toISOString(),registryStatus,runners,job:jobs[0]?.status,
+              assigned:Boolean(jobs[0]?.runner_name),health,auth}));
