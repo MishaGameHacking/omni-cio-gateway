@@ -1,0 +1,96 @@
+name: Package a verified public research release for the owner Linux console
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - deploy/console_research/__main__.py
+      - tools/package_console_research.py
+      - tools/test_console_research.py
+      - tools/check_console_research.py
+      - .github/workflows/console-research-kit.yml
+permissions:
+  contents: read
+  actions: read
+  checks: read
+jobs:
+  package:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: console-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/emulator_lease.py
+            deploy/activate_local_research.py
+            deploy/gpt6_protocol_release.py
+            deploy/local_report_route_release.py
+            deploy/console_research/__main__.py
+            tools/prepare_gpt6_protocol_transport.py
+            tools/prepare_local_report_release.py
+            tools/package_console_research.py
+            tools/test_console_research.py
+            tools/check_console_research.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 853090e11dcefef693366159c97316e55045c4c9
+          path: console-${{ github.run_id }}-${{ github.run_attempt }}/app-checks
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Verify source, qualifications, Sonar and exact owner-built artifact
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 3
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+            const dir=path.join(process.env.GITHUB_WORKSPACE,'console-'+context.runId+'-'+process.env.GITHUB_RUN_ATTEMPT);
+            const src='853090e11dcefef693366159c97316e55045c4c9';
+            for(const [run_id,sha,file,branch] of [[41088491538,"853090e11dcefef693366159c97316e55045c4c9",".github/workflows/gpt6-analysis-routing.yml","codex/gpt6-analysis-routing-2026-10-30"],[41088491694,"853090e11dcefef693366159c97316e55045c4c9",".github/workflows/local-research-evaluation.yml","codex/gpt6-analysis-routing-2026-10-30"],[41096599909,"4447c357a28d774fc1383216ced010dd0cc38f09",".github/workflows/local-ai-activation-tools.yml","codex/timeweb-owner-prepare-2026-10-23"],[41098399765,"b1d47d217e9d9fdd6dd6b629d48f1a361602811c",".github/workflows/local-report-delivery-tools.yml","codex/timeweb-owner-prepare-2026-10-23"]]) {
+              const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(r.head_sha!==sha||r.path!==file||r.head_branch!==branch||r.event!=='push'||r.status!=='completed'||r.conclusion!=='success'||r.run_attempt!==1) throw new Error('Qualification changed: '+file);
+            }
+            const {data:old}=await github.rest.git.getTree({...context.repo,tree_sha:'c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f'});
+            const {data:app}=await github.rest.git.getTree({...context.repo,tree_sha:src});
+            const allowed=new Set(['backend','.github','docs','AGENTS.md','tools','deploy']);
+            const unchanged=t=>JSON.stringify(t.tree.filter(x=>!allowed.has(x.path)).map(x=>[x.path,x.mode,x.type,x.sha]).sort());
+            if(old.truncated||app.truncated||unchanged(old)!==unchanged(app)) throw new Error('Client source differs');
+            const {newestSonarCheck,assertCleanSonar}=require(path.join(dir,'app-checks','.github','scripts','require_clean_sonar.cjs'));
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref:src,per_page:100});
+            const sonar=newestSonarCheck(checks,src);
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact-source Sonar missing');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,src);
+            const artifact_id=12994245356, digest='34a1f99d1ef04784be4f939deaac2a8ba14dfc38c20ac310c03c09a8cce91cbd';
+            const {data:a}=await github.rest.actions.getArtifact({...context.repo,artifact_id});
+            if(a.expired||a.workflow_run?.id!==41088491538||a.digest!=='sha256:'+digest||a.name!=='server-runtime-41088491538-1') throw new Error('Backend artifact changed');
+            const download=await github.rest.actions.downloadArtifact({...context.repo,artifact_id,archive_format:'zip'});
+            const bytes=Buffer.from(download.data);
+            if(bytes.length!==487040||crypto.createHash('sha256').update(bytes).digest('hex')!==digest) throw new Error('Wrong archive bytes');
+            fs.writeFileSync(path.join(dir,'server-runtime-artifact.zip'),bytes,{flag:'wx'});
+      - name: Exercise the console entry point and recovery guards on owner WSL
+        shell: cmd
+        working-directory: console-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_console_research.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner-console-research-${{ github.run_id }}-${{ github.run_attempt }}
+          path: console-${{ github.run_id }}-${{ github.run_attempt }}/console-out/
+          if-no-files-found: error
+          retention-days: 7
