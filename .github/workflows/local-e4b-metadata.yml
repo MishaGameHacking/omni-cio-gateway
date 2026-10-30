@@ -1,0 +1,38 @@
+name: Inspect pinned E4B model metadata
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/local-e4b-metadata.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read public publisher metadata without credentials
+        shell: py -3 {0}
+        run: |
+          import json, os, re, urllib.request
+          from datetime import datetime, timezone
+          assert os.environ.get("COMPUTERNAME") == "LAPTOP-NPSGA016"
+          repo = "litert-community/gemma-4-E4B-it-litert-lm"
+          url = "https://huggingface.co/api/models/" + repo + "?blobs=true"
+          with urllib.request.urlopen(url, timeout=30) as response:
+              raw = response.read(1024 * 1024 + 1)
+          assert len(raw) <= 1024 * 1024
+          value = json.loads(raw)
+          assert value["id"] == repo and re.fullmatch("[a-f0-9]{40}", value["sha"])
+          files = []
+          for row in value["siblings"]:
+              if row.get("rfilename") != "gemma-4-E4B-it.litertlm":
+                  continue
+              lfs = row.get("lfs", {})
+              assert type(lfs.get("size")) is int and 0 < lfs["size"] <= 8_000_000_000
+              assert re.fullmatch("[a-f0-9]{64}", lfs.get("sha256", ""))
+              files.append({"name": row["rfilename"], "sha256": lfs["sha256"], "bytes": lfs["size"]})
+          assert len(files) == 1
+          card = value.get("cardData") or {}
+          license_name = card.get("license")
+          assert isinstance(license_name, str) and re.fullmatch("[a-zA-Z0-9._-]{1,80}", license_name)
+          print("LOCAL_E4B_METADATA=" + json.dumps({"observed_at": datetime.now(timezone.utc).isoformat(), "repository": repo, "revision": value["sha"], "license": license_name, "files": files, "weights_downloaded": False, "inference_called": False}))
