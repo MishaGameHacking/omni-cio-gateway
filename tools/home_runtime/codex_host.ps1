@@ -90,8 +90,11 @@ import json, os, pathlib, pwd, re, shutil, subprocess
 home=pathlib.Path.home()
 paths=[shutil.which('codex'), '/usr/local/bin/codex', '/usr/bin/codex',home/'.local/bin/codex',home/'.npm-global/bin/codex',*sorted(home.glob('.nvm/versions/node/*/bin/codex'))]
 exe=next((pathlib.Path(x) for x in paths if x and pathlib.Path(x).is_file() and os.access(x,os.X_OK)),None)
-row={'cli':'unavailable','identity':pwd.getpwuid(os.geteuid()).pw_name}
-if exe:
+user=pwd.getpwuid(os.geteuid()).pw_name
+row={'cli':'unavailable','identity':user if user in ('analyst-ai','analyst-ci','root') else 'other-default-user'}
+if exe and os.geteuid()==0:
+    row['cli']='installed_path_only'
+elif exe:
     env=dict(os.environ,PATH=str(exe.parent)+':'+os.environ.get('PATH','/usr/bin:/bin'))
     version=subprocess.run([str(exe),'--version'],capture_output=True,text=True,env=env,timeout=12)
     m=re.search(r'codex(?:-cli)?\s+([0-9][\w.-]{0,45})',version.stdout,re.I)
@@ -105,9 +108,12 @@ print(json.dumps(row))
 $wsl=Join-Path $env:SystemRoot 'System32\wsl.exe'
 $ErrorActionPreference='Continue'
 $list=((& $wsl --list --quiet 2>$null | Out-String) -replace "`0",'') -split '\s+'
-foreach ($target in @(@('AnalystAI-Home','analyst-ai'),@('Ubuntu-24.04','analyst-ci'))) {
+foreach ($target in @(@('AnalystAI-Home','analyst-ai'),@('Ubuntu-24.04','analyst-ci'),@('Ubuntu-24.04',''))) {
     if ($target[0] -notin $list) { continue }
-    $result=$linux | & $wsl -d $target[0] -u $target[1] --exec /usr/bin/python3 -I - 2>$null
+    $options=@('-d',$target[0])
+    if ($target[1]) { $options+=@('-u',$target[1]) }
+    $options+=@('--exec','/usr/bin/python3','-I','-')
+    $result=$linux | & $wsl @options 2>$null
     if ($LASTEXITCODE -eq 0) {
         $obj=$result|ConvertFrom-Json
         $r.linux+=@([ordered]@{distribution=$target[0];details=$obj})
