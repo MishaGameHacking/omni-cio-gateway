@@ -16,6 +16,19 @@ $probe=$script.Substring($start,$end-$start).Split(@([char]10),2)[1].TrimEnd([ch
 $originalArguments='-NoLogo -NoProfile -NonInteractive -EncodedCommand '+[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
 $r=[ordered]@{original_command_chars=($exe.Length+3+$originalArguments.Length);win32_limit_chars=1024;
     profile_service=[string](Get-Service ProfSvc).Status;secondary_logon=[string](Get-Service seclogon).Status;phase='connect';events=@()}
+$base=Join-Path $env:ProgramFiles 'AnalystAI-HomeRuntime'
+$readyToRetry=$false
+try {
+    $journal=Get-Content -Raw -LiteralPath (Join-Path $base 'install-status\status.json') | ConvertFrom-Json
+    if ($journal.package -eq 'd958608239005290f808' -and $journal.stage -match '^(?:[a-z]+-)*[a-z]+$' -and $journal.stage.Length -le 48) {
+        $r.install_stage=[string]$journal.stage
+        $stamp=[DateTimeOffset]$journal.utc
+        $r.install_utc=$stamp.UtcDateTime.ToString('o')
+        if ($journal.code -match '^(?:task-[0-9A-F]{8}|win32--?[0-9]{1,10}|hresult-[0-9A-F]{8})$') { $r.install_code=$journal.code }
+        $readyToRetry=($journal.stage -eq 'waiting-worker' -and ([DateTimeOffset]::UtcNow-$stamp).TotalMinutes -ge 2)
+    }
+} catch { $r.install_stage='unavailable' }
+$r.has_profile=Test-Path -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$identity)
 function NativeCode($err) {
     $e=$err.Exception
     while ($null -ne $e.InnerException) { $e=$e.InnerException }
@@ -23,18 +36,21 @@ function NativeCode($err) {
 }
 try {
     $svc=New-Object -ComObject 'Schedule.Service';$svc.Connect()
+    $r.phase='folder'
+    $folder=$svc.GetFolder('\')
     $r.phase='lookup'
-    $registered=$svc.GetFolder('\').GetTask('AnalystAI-HomeRuntime')
+    $registered=$folder.GetTask('AnalystAI-HomeRuntime')
     $d=$registered.Definition
     $expected='-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$program+'"'
     if ($d.Actions.Count -ne 1 -or $d.Actions.Item(1).Path -ne $exe -or $d.Actions.Item(1).Arguments -ne $expected -or
         $d.Principal.UserId -notin @($identity,($env:COMPUTERNAME+'\AnalystAIHost'),'AnalystAIHost') -or
         $d.Principal.RunLevel -ne 0 -or $d.Principal.LogonType -ne 1 -or $d.Triggers.Count -ne 1 -or $d.Triggers.Item(1).Type -ne 8) { throw 'Task identity mismatch' }
     $r.last_result=('0x{0:X8}' -f ([long]$registered.LastTaskResult -band 4294967295L));$r.task_state=[int]$registered.State
-    if ($registered.State -eq 3) { $r.phase='run';$null=$registered.Run($null);$r.phase='requested' }
+    if ($registered.State -eq 3 -and $r.has_profile -and $readyToRetry) { $r.phase='run';$null=$registered.Run($null);$r.phase='requested' }
     else { $r.phase='observed' }
 } catch { $r.code=NativeCode $_ }
 try {
+    $r.task_history_enabled=[bool](Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational').IsEnabled
     $query="*[System[TimeCreated[timediff(@SystemTime) <= 3600000]] and EventData[Data[@Name='TaskName']='\AnalystAI-HomeRuntime']]"
     $items=@(Get-WinEvent -LogName 'Microsoft-Windows-TaskScheduler/Operational' -FilterXPath $query -MaxEvents 12 -ErrorAction Stop)
     foreach($item in $items) {
