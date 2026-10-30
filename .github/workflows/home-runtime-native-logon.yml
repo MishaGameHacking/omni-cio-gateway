@@ -1,0 +1,29 @@
+name: Test the actual Windows alternate-logon command boundary on Lenovo
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-native-logon.yml, tools/home_runtime/check_winlogon_bound.ps1, tools/home_runtime/Install-AnalystAIHome.ps1]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-logon-contract-'));
+            try{
+              for(const n of ['check_winlogon_bound.ps1','Install-AnalystAIHome.ps1']){
+                const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+n});
+                fs.writeFileSync(path.join(dir,n),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
+              const args=['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(dir,'check_winlogon_bound.ps1'),path.join(dir,'Install-AnalystAIHome.ps1')];
+              const p=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),args,{env,encoding:'utf8',windowsHide:true,timeout:150000});
+              const rows=(p.stdout||'').split(/\r?\n/).filter(s=>s.startsWith('HOME_NATIVE_LENGTH='));
+              rows.forEach(s=>core.info(s.slice(0,900)));
+              if(p.status!==0||rows.length!==1)core.setFailed('Native Windows command-length verification failed');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
