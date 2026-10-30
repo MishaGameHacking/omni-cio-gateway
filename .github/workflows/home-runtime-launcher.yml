@@ -16,7 +16,7 @@ jobs:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
-            const fs=require('node:fs'),path=require('node:path'),os=require('node:os'),cp=require('node:child_process'),crypto=require('node:crypto');
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process'),crypto=require('node:crypto');
             if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong machine');
             const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-start-check-'));
             try{
@@ -29,16 +29,20 @@ jobs:
               const check=cp.spawnSync('py.exe',['-3','-I','-c',[
                 'import pathlib,zipfile,sys',
                 "d=pathlib.Path(sys.argv[1]);z=zipfile.ZipFile(d/'Start-AnalystAIHome.zip')",
-                "names=['Start-AnalystAIHome.cmd','Start-AnalystAIHome.ps1']",
-                'assert sorted(z.namelist())==names and all(z.read(n)==(d/n).read_bytes() for n in names)',
-                "target=d/'verified'; target.mkdir();z.extractall(target)"
+                "member='Fix-AnalystAIHome.cmd'; assert z.namelist()==[member]",
+                "content=z.read(member); assert content==(d/'Start-AnalystAIHome.cmd').read_bytes()",
+                "script=content.decode('ascii').splitlines(); idx=script.index('# Analyst AI PowerShell')",
+                "assert script[idx+1:]==(d/'Start-AnalystAIHome.ps1').read_text('ascii').splitlines()",
+                "target=d/'verified'; target.mkdir(); (target/member).write_bytes(content)"
               ].join('\n'),dir],{env,windowsHide:true,encoding:'utf8'});
               if(check.status!==0)throw Error('Packaged launcher/source mismatch');
-              const executable=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-              const probe=cp.spawnSync(executable,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(dir,'verified','Start-AnalystAIHome.ps1'),'-Verify'],{env,windowsHide:true,encoding:'utf8',timeout:230000});
+              const executable=path.join(process.env.SystemRoot,'System32','cmd.exe');
+              const probe=cp.spawnSync(executable,['/d','/c','Fix-AnalystAIHome.cmd'],{cwd:path.join(dir,'verified'),
+                env:{...env,ANALYST_HOME_TEST_LAUNCHER:'1'},windowsHide:true,encoding:'utf8',timeout:230000});
               if(probe.status!==0)throw Error('Reviewed launcher did not validate installed materials');
-              const result=JSON.parse(probe.stdout.trim());
-              if(result.items!==7||result.media_sha256!=='verified'||result.powershell_syntax!=='valid')throw Error('Missing verification');
+              const result=JSON.parse(probe.stdout.trim().split(/\r?\n/).at(-1));
+              if(result.items!==7||result.media_sha256!=='verified'||result.account_whatif!==true||
+                 result.description_chars!==23||result.description_limit!==48)throw Error('Missing native Windows account validation');
               const zip=fs.readFileSync(path.join(dir,'Start-AnalystAIHome.zip')),sha=crypto.createHash('sha256').update(zip).digest('hex');
-              core.info('HOME_LAUNCHER_VERIFIED='+JSON.stringify({package:result.package,zip_sha256:sha,bytes:zip.length,entrypoints:2,verified_files:result.items,elevation_performed:false}));
+              core.info('HOME_LAUNCHER_VERIFIED='+JSON.stringify({package:result.package,zip_sha256:sha,bytes:zip.length,entrypoints:1,verified_files:result.items,description_chars:result.description_chars,elevation_performed:false}));
             }finally{fs.rmSync(dir,{recursive:true,force:true});}

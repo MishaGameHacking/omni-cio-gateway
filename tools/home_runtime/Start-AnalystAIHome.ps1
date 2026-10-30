@@ -6,13 +6,15 @@ $checked={
     $ErrorActionPreference='Stop'
     try {
         if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'This package belongs to another computer.' }
-        $file=Join-Path $env:SystemRoot 'ServiceProfiles\NetworkService\AppData\Local\AnalystAI-HomeLab\enroll-d958608239005290f808\Install-AnalystAIHome.ps1'
+        $expected='cf7cd33acc01a6df8d00f9d67ee84682f0b331dfcb93ffbc2db20f8f0b7c315d'
+        $spool=Join-Path $env:SystemRoot 'ServiceProfiles/NetworkService/AppData/Local/AnalystAI-HomeLab'
+        $file=Join-Path $spool ('installer-'+$expected+'/Install-AnalystAIHome.ps1')
         # Hash the same in-memory bytes that PowerShell will execute. Never elevate a mutable CI file by its path.
         $bytes=[IO.File]::ReadAllBytes($file)
         $h=[Security.Cryptography.SHA256]::Create()
         try { $actual=[BitConverter]::ToString($h.ComputeHash($bytes)).Replace('-','').ToLowerInvariant() }
         finally { $h.Dispose() }
-        if ($actual -ne '4467cbb38bccba54eda5e0ba000d864f51f3fd0fb9bde98d67c4aefc232be8bc') { throw 'The staged installer does not match the pinned release.' }
+        if ($actual -ne $expected) { throw 'The staged installer does not match the pinned release.' }
         $install=[ScriptBlock]::Create([Text.Encoding]::UTF8.GetString($bytes))
         if ($env:ANALYST_HOME_VERIFY_ONLY -eq '1') { & $install -VerifyOnly; return }
         & $install
