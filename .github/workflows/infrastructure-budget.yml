@@ -7,8 +7,8 @@ permissions:
   contents: read
   actions: read
 env:
-  EXPECTED_TOOLS_SHA: '9c696221517833a8e33bec254d97ae5c6ff819fc'
-  EXPECTED_TOOLS_RUN: '41085552637'
+  EXPECTED_TOOLS_SHA: '34ece97db5b949ff59b137cd326952214cc7168d'
+  EXPECTED_TOOLS_RUN: '41086276686'
 jobs:
   observe:
     runs-on: ubuntu-24.04
