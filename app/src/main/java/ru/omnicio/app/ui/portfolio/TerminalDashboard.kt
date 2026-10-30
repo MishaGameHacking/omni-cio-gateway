@@ -28,6 +28,8 @@ import ru.omnicio.app.data.portfolio.*
 import ru.omnicio.app.ui.terminal.*
 import ru.omnicio.app.ui.workspace.*
 
+private const val HIDDEN_AMOUNTS = "Суммы скрыты"
+
 /** Authenticated readers feed a single dashboard; charts themselves perform no network work. */
 @Composable
 internal fun TerminalDashboard(state: PortfolioUiState, currency: PortfolioCurrency, refreshing: Boolean,
@@ -63,7 +65,8 @@ internal fun TerminalDashboard(state: PortfolioUiState, currency: PortfolioCurre
         { picker=true },refreshing,error ?: (state as? PortfolioUiState.Error)?.message,
         state==PortfolioUiState.NotConnected,corpus,automation,
         LocalWorkspaceSnapshot.current?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data"),
-        { refresh(); corpus.refresh(); automation.refresh() },settings,connect)
+        { refresh(); corpus.refresh(); automation.refresh() },settings,connect,
+        ChatContext(accountId=accountId,start=selectedPeriod.start,end=selectedPeriod.end))
     if(picker) WorkspaceDialog("Счета",{ picker=false }) {
         TerminalAction("Все счета",{ accountId=null; picker=false },Modifier.fillMaxWidth(),selected=accountId==null)
         snapshot?.accounts.orEmpty().forEach { account ->
@@ -76,7 +79,7 @@ internal fun TerminalDashboard(state: PortfolioUiState, currency: PortfolioCurre
 internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: List<AccountData>, payments: List<AccountData>,
     period: Int, selectPeriod: (Int)->Unit, accountName: String, chooseAccount: ()->Unit,
     refreshing: Boolean, error: String?, disconnected: Boolean, corpus: WorkspaceResource, automation: WorkspaceResource,
-    ai: JSONObject?, refresh: ()->Unit, settings: ()->Unit, connect: ()->Unit) {
+    ai: JSONObject?, refresh: ()->Unit, settings: ()->Unit, connect: ()->Unit, context: ChatContext = ChatContext()) {
     val navigate=LocalWorkspaceNavigator.current
     val ask=LocalAskAnalyst.current
     var currencyPicker by rememberSaveable { mutableStateOf(false) }
@@ -108,14 +111,14 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
                 val ready=snapshot != null && requests.size==snapshot.accounts.size && requests.isNotEmpty() &&
                     requests.all { it.json!=null && it.error==null && !it.showingPreviousQuery && it.json.optString("currency").equals(snapshot.totalValue.currency,true) }
                 when {
-                    privacy -> TerminalChartEmpty("Суммы скрыты")
-                    ready -> TerminalValuePlot(joinedAnalyticsHistory(requests.mapNotNull { it.json }),snapshot!!.totalValue.currency)
+                    privacy -> TerminalChartEmpty(HIDDEN_AMOUNTS)
+                    ready -> TerminalValuePlot(joinedAnalyticsHistory(requests.mapNotNull { it.json }),snapshot.totalValue.currency)
                     requests.any { it.error!=null } -> TerminalChartEmpty("История недоступна · обновите данные")
                     requests.any { it.showingPreviousQuery } -> TerminalChartEmpty("Получаем выбранный период…")
                     snapshot==null -> TerminalChartEmpty("История появится после получения портфеля")
                     else -> TerminalChartEmpty("Получаем сохранённую историю…")
                 }
-                TerminalAction("Объяснить динамику ↗",{ ask(ChatContext(title="Динамика портфеля")) })
+                TerminalAction("Объяснить динамику ↗",{ ask(context.copy(title="Динамика портфеля")) })
             }
         }
         item("allocation") { TerminalStructure(snapshot,privacy) }
@@ -127,7 +130,7 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
                 Text("Разобрать портфель, изменения и риски по сохранённым данным.",style=MaterialTheme.typography.bodySmall,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                    TerminalAction("Спросить ИИ ↗",{ ask(ChatContext()) })
+                    TerminalAction("Спросить ИИ ↗",{ ask(context) })
                     TerminalAction("Стратегия",{ navigate(WorkspaceRoute.Strategies) })
                 }
             }
@@ -186,7 +189,7 @@ private fun TerminalMetric(title: String,value: String,color: Color) {
 private fun TerminalStructure(snapshot: PortfolioSnapshot?, hidden: Boolean) {
     TerminalPanel("СТРУКТУРА АКТИВОВ") {
         val rows=snapshot?.let { terminalAllocation(it.allocations) }
-        if(hidden) TerminalChartEmpty("Суммы скрыты")
+        if(hidden) TerminalChartEmpty(HIDDEN_AMOUNTS)
         else if(rows==null) TerminalChartEmpty("Распределение пока не получено")
         else BoxWithConstraints(Modifier.fillMaxWidth()) {
             val legend: @Composable ()->Unit={
@@ -240,7 +243,7 @@ private fun TerminalHoldings(snapshot: PortfolioSnapshot?) {
 private fun TerminalPaymentPanel(requests: List<AccountData>,hidden: Boolean) {
     TerminalPanel("ОЖИДАЕМЫЕ ВЫПЛАТЫ") {
         val ready=requests.isNotEmpty() && requests.all { it.json!=null && it.error==null && !it.showingPreviousQuery }
-        if(hidden) TerminalChartEmpty("Суммы скрыты")
+        if(hidden) TerminalChartEmpty(HIDDEN_AMOUNTS)
         else if(!ready) TerminalChartEmpty(if(requests.any { it.error!=null }) "Календарь временно недоступен" else "Получаем календарь выплат…")
         else {
             val data=terminalPayments(requests.mapNotNull { it.json })
@@ -257,7 +260,8 @@ private fun TerminalSystem(corpus: WorkspaceResource, automation: WorkspaceResou
     val navigate=LocalWorkspaceNavigator.current
     TerminalPanel("ДАННЫЕ И АНАЛИЗ",trailing={ TerminalAction("Подробнее ↗",{ navigate(WorkspaceRoute.AnalysisTimeline) }) }) {
         val sources=corpus.data?.records("sources").orEmpty()
-        val checked=sources.count { it.text("state","") in setOf("ready", "not_modified") && !it.optBoolean("stale") && it.optInt("target_failures")==0 }
+        val checked=sources.count { it.text("state","") in setOf("ready", "not_modified") && !it.optBoolean("stale") && it.optInt("target_failures")==0 &&
+            it.optJSONObject("coverage")?.optBoolean("truncated")!=true && it.optJSONObject("coverage")?.optBoolean("empty_index")!=true }
         val docs=corpus.data?.opt("documents")?.toString()?.takeUnless { it=="null" }
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
             TerminalMetric("МАТЕРИАЛЫ В БАЗЕ",docs ?: "Нет данных",TerminalCyan)

@@ -7,10 +7,10 @@ import ru.omnicio.app.ui.spatial.SpatialIcon
 
 @Immutable
 enum class SpectrumLiveFeature(val description: String, internal val asset: String) {
-    Charts("Объёмные графики", "charts"),
-    Indicators("Объёмные индикаторы", "pulse"),
-    Spatial("Живые 2D-иллюстрации", "orbit"),
-    RgbEffects("Цветные анимированные иконки", "brand"),
+    Charts("Графики наблюдений", "charts"),
+    Indicators("Индикаторы данных", "pulse"),
+    Spatial("Структура портфеля", "orbit"),
+    RgbEffects("Линейные значки", "brand"),
     Assistant("Интерактивный ИИ-ассистент", "avatar"),
     Notifications("Умные уведомления", "notifications"),
     Recommendations("Персональные рекомендации", "goal"),
@@ -28,4 +28,5 @@ fun SpectrumLiveFeatureIcon(
     SpatialIcon(feature.asset, modifier, tint = LocalSpectrumPalette.current.cyan,
         motionAllowed = motionAllowed, description = feature.description)
 }
+
 
