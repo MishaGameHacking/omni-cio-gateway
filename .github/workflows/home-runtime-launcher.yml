@@ -29,7 +29,7 @@ jobs:
               const check=cp.spawnSync('py.exe',['-3','-I','-c',[
                 'import hashlib,pathlib,re,zipfile,sys',
                 "d=pathlib.Path(sys.argv[1]);z=zipfile.ZipFile(d/'Start-AnalystAIHome.zip')",
-                "member='Start-AnalystAI-Service.cmd'; assert z.namelist()==[member]",
+                "member='Repair-AnalystAI-Logon.cmd'; assert z.namelist()==[member]",
                 "content=z.read(member); assert content==(d/'Start-AnalystAIHome.cmd').read_bytes()",
                 "script=content.decode('ascii').splitlines(); idx=script.index('# Analyst AI PowerShell')",
                 "assert script[idx+1:]==(d/'Start-AnalystAIHome.ps1').read_text('ascii').splitlines()",
@@ -39,7 +39,7 @@ jobs:
               ].join('\n'),dir],{env,windowsHide:true,encoding:'utf8'});
               if(check.status!==0)throw Error('Packaged launcher/source mismatch');
               const executable=path.join(process.env.SystemRoot,'System32','cmd.exe');
-              const probe=cp.spawnSync(executable,['/d','/c','Start-AnalystAI-Service.cmd'],{cwd:path.join(dir,'verified'),
+              const probe=cp.spawnSync(executable,['/d','/c','Repair-AnalystAI-Logon.cmd'],{cwd:path.join(dir,'verified'),
                 env:{...env,ANALYST_HOME_TEST_LAUNCHER:'1'},windowsHide:true,encoding:'utf8',timeout:230000});
               if(probe.status!==0)throw Error('Reviewed launcher did not validate installed materials');
               const result=JSON.parse(probe.stdout.trim().split(/\r?\n/).at(-1));
