@@ -22,6 +22,7 @@ PATHS = {
     "project": f"/api/v1/projects/{PROJECT_ID}/resources",
     "finances": "/api/v1/account/finances",
     "presets": "/api/v1/presets/servers",
+    "service_costs": "/api/v1/account/services/cost",
 }
 INFRA_CAP = Decimal("10000")
 AI_CAP = Decimal("3000")
@@ -118,11 +119,37 @@ def server_summary(document):
     if not isinstance(row, dict) or type(row.get("id")) is not int or row["id"] != SERVER_ID:
         raise InspectionError("unexpected_server_identity")
     result = {"server_id": SERVER_ID}
-    for name in ("cpu", "ram", "gpu", "preset_id"):
+    for name in ("cpu", "ram", "gpu", "preset_id", "configurator_id"):
         result[name] = integer(row.get(name))
     result["ram_unit"] = "MiB_as_reported_by_provider"
     result["hardware_complete"] = all(result[name] is not None for name in ("cpu", "ram", "gpu"))
     return result
+
+
+def service_cost_summary(document):
+    rows, meta = document.get("services_costs"), document.get("meta")
+    if not isinstance(rows, list) or len(rows) > 10000:
+        return {"complete": False, "target_services": []}
+    complete = isinstance(meta, dict) and type(meta.get("total")) is int and meta["total"] == len(rows)
+    target = []
+    for row in rows:
+        if not isinstance(row, dict):
+            complete = False
+            continue
+        if row.get("service_id") != SERVER_ID or row.get("project_id") != PROJECT_ID:
+            continue
+        cost, total = number(row.get("cost")), number(row.get("total_cost"))
+        if cost is None or total is None:
+            complete = False
+        config = row.get("configuration")
+        config = config if isinstance(config, dict) else {}
+        target.append({"base_cost_reported": money(cost) if cost is not None else None,
+                       "including_addons_reported": money(total) if total is not None else None,
+                       "configuration": {name: integer(config.get(name)) for name in ("cpu", "ram", "disk")}})
+    return {"complete": complete, "target_services": target,
+            "service_id": SERVER_ID, "project_id": PROJECT_ID,
+            "billing_period_verified": False, "resize_quote": False,
+            "future_addons_included": False}
 
 
 def project_summary(document):
@@ -176,6 +203,7 @@ def inspect(api):
     return {"schema": 1, "observed_at": datetime.now(timezone.utc).isoformat(),
             "server": server_summary(documents["server"]), "project": project_summary(documents["project"]),
             "budget": costs(documents["finances"]), "presets": preset_summary(documents["presets"]),
+            "service_costs": service_cost_summary(documents["service_costs"]),
             "read_only": True, "resource_changes": False, "model_inference_called": False}
 
 

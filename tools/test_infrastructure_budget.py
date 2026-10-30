@@ -108,7 +108,7 @@ class ProjectionTests(unittest.TestCase):
         rows = [{**base, **change} for change in ({"price": "10001"}, {"ram": 4096}, {"price": "NaN"}, {"cpu": True})]
         self.assertEqual(subject.preset_summary({"meta": {"total": 4}, "server_presets": rows})["candidates"], [])
 
-    def test_only_four_fixed_get_calls(self):
+    def test_only_fixed_get_calls(self):
         api = MagicMock()
         def get(path):
             return {subject.PATHS["server"]: {"server": {"id": subject.SERVER_ID}},
@@ -118,6 +118,32 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual([call.args[0] for call in api.get.call_args_list], list(subject.PATHS.values()))
         self.assertFalse(report["resource_changes"])
         self.assertFalse(report["model_inference_called"])
+
+    def test_service_costs_exclude_other_resources_and_private_descriptions(self):
+        rows = [{"service_id": subject.SERVER_ID, "project_id": subject.PROJECT_ID,
+                 "cost": "1000", "total_cost": "1100", "info": {"name": "PRIVATE"},
+                 "services": [{"description": "PRIVATE"}],
+                 "configuration": {"cpu": 2, "ram": 4096, "disk": 40}},
+                {"service_id": 1, "project_id": 2, "cost": "PRIVATE"}]
+        result = subject.service_cost_summary({"services_costs": rows, "meta": {"total": 2}})
+        self.assertTrue(result["complete"])
+        self.assertEqual(len(result["target_services"]), 1)
+        self.assertEqual(result["target_services"][0]["including_addons_reported"], "1100.00")
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertFalse(result["billing_period_verified"])
+        self.assertFalse(result["resize_quote"])
+
+    def test_service_cost_missing_or_partial_is_not_complete(self):
+        for raw in ({}, {"services_costs": [], "meta": {"total": 2}},
+                    {"services_costs": [None], "meta": {"total": 1}}):
+            self.assertFalse(subject.service_cost_summary(raw)["complete"])
+
+    def test_unknown_service_cost_is_not_zero(self):
+        row = {"service_id": subject.SERVER_ID, "project_id": subject.PROJECT_ID,
+               "cost": "NaN", "total_cost": True}
+        result = subject.service_cost_summary({"services_costs": [row], "meta": {"total": 1}})
+        self.assertFalse(result["complete"])
+        self.assertIsNone(result["target_services"][0]["including_addons_reported"])
 
     def test_transport_method_and_host_are_fixed(self):
         api = subject.ReadOnlyAPI("TEST_SENTINEL")
