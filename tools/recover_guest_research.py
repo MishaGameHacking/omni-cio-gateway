@@ -82,6 +82,8 @@ class Resumption:
         # after the provider accepted it. Never retry an ambiguous POST.
         self.reboot_attempted = True
         status, _ = self.api("POST", API_SERVER + "/reboot")
+        report("provider_reboot_response", http_status=status,
+               documented_acknowledgement=status == 204, request_repeated=False)
         if status != 204:
             raise RuntimeError("ordinary_reboot_not_confirmed")
         report("ordinary_reboot_accepted", password_reset=False, boot_mode_changed=False)
