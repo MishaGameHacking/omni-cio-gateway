@@ -1,0 +1,121 @@
+{
+  "status": "evaluated",
+  "reference_commit": "af51ba32a85683419087760cf2b549176d7d58e5",
+  "production_activated": false,
+  "cloud_inference_called": false,
+  "synthetic_fixtures_only": true,
+  "trade_permission": false,
+  "preflight": {
+    "mem_available_mib": 7396,
+    "disk_free_mib": 960544
+  },
+  "dependencies": [
+    {
+      "name": "litert-lm-api",
+      "version": "0.18.1",
+      "sha256": "b2fe9b9a87afe991a7b0d29615b0bfc3d41c7a0ac28e9c54436676482bca2e5b"
+    }
+  ],
+  "schema": 1,
+  "model": "litert-community/gemma-4-E4B-it-litert-lm",
+  "revision": "e6a3892a8c22cf87ff99583996149cf3cb32452b",
+  "model_sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0",
+  "runtime_version": "0.18.1",
+  "selector_sha256": "4bcc429dee99740c29cdfe773e6f7b53e5bffe10cc50ced8c6fb899ce2a233db",
+  "cpu_threads": 1,
+  "context_tokens": 2048,
+  "peak_rss_mib": 3685.98,
+  "cases": [
+    {
+      "case": "report_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.595
+    },
+    {
+      "case": "credit_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.448
+    },
+    {
+      "case": "dividend_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.293
+    },
+    {
+      "case": "irrelevant_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 10.862
+    },
+    {
+      "case": "unknown_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.187
+    },
+    {
+      "case": "report_en",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.559
+    },
+    {
+      "case": "injection_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.553
+    },
+    {
+      "case": "loss_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.105
+    },
+    {
+      "case": "missing_profit_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.545
+    },
+    {
+      "case": "missing_report_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.181
+    },
+    {
+      "case": "unknown_en",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.474
+    },
+    {
+      "case": "injected_number_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 11.233
+    }
+  ],
+  "quality_gate_passed": true,
+  "resource_gate_passed": true,
+  "resource_profiles": {
+    "current_4GiB": {
+      "model_budget_mib": 1800,
+      "passed": false
+    },
+    "candidate_8GiB": {
+      "model_budget_mib": 5120,
+      "reserved_for_application_mib": 3072,
+      "passed": true
+    }
+  },
+  "evaluation_run_id": "41085300857",
+  "evaluation_job_id": "124164762738",
+  "adapter_commit": "7177367188f799515be3161f25b70019961e76df",
+  "measured_at": "2026-10-30",
+  "installation_status": "not_installed",
+  "scope": "bounded_public_document_excerpt_selection_only"
+}
