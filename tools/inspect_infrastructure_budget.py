@@ -25,6 +25,7 @@ PATHS = {
     "presets": "/api/v1/presets/servers",
     "service_costs": "/api/v1/account/services/cost",
     "configurators": "/api/v1/configurator/servers",
+    "dedicated_presets": "/api/v1/presets/dedicated-servers",
 }
 INFRA_CAP = Decimal("11000")
 AI_CAP = Decimal("3000")
@@ -268,6 +269,38 @@ def configurator_summary(document, server):
     return result
 
 
+def dedicated_summary(document):
+    rows, meta = document.get("dedicated_servers_presets"), document.get("meta")
+    if not isinstance(rows, list) or len(rows) > 10000:
+        return {"complete": False, "candidates": []}
+    complete = isinstance(meta, dict) and type(meta.get("total")) is int and meta["total"] == len(rows)
+    candidates = []
+    for row in rows:
+        if not isinstance(row, dict):
+            complete = False
+            continue
+        price = number(row.get("price"))
+        identifier = integer(row.get("id"), 1)
+        if price is None or not 0 < price <= 14000 or identifier is None:
+            continue
+        cpu, memory, disk = (row.get(name) for name in ("cpu", "memory", "disk"))
+        cpu = cpu if isinstance(cpu, dict) else {}
+        memory = memory if isinstance(memory, dict) else {}
+        disk = disk if isinstance(disk, dict) else {}
+        short = cpu.get("description_short")
+        short = short if isinstance(short, str) and re.fullmatch(r"[A-Za-z0-9 .,/()+-]{1,120}", short) else None
+        candidates.append({"id": identifier, "catalogue_price_rub": money(price),
+            "location": label(row.get("location")), "cpu_description": short,
+            "cpu_count_reported": integer(cpu.get("count")), "memory_size_mb_reported": integer(memory.get("size")),
+            "memory_count_reported": integer(memory.get("count")), "disk_count_reported": integer(disk.get("count")),
+            "disk_total_size_reported": integer(disk.get("total_size")), "disk_type": label(disk.get("type")),
+            "is_pre_installed": row.get("is_pre_installed") if type(row.get("is_pre_installed")) is bool else None,
+            "within_hybrid_base_cap": price <= INFRA_CAP})
+    return {"complete": complete, "candidates": sorted(candidates, key=lambda item: Decimal(item["catalogue_price_rub"]))[:12],
+            "availability_verified": False, "addons_included_verified": False, "gpu_verified": False,
+            "billing_period_verified": False}
+
+
 def inspect(api):
     documents = {name: api.get(path) for name, path in PATHS.items()}
     server = server_summary(documents["server"])
@@ -275,6 +308,7 @@ def inspect(api):
             "server": server, "project": project_summary(documents["project"]),
             "budget": costs(documents["finances"]), "presets": preset_summary(documents["presets"], server),
             "configurator": configurator_summary(documents["configurators"], server),
+            "dedicated": dedicated_summary(documents["dedicated_presets"]),
             "service_costs": service_cost_summary(documents["service_costs"]),
             "read_only": True, "resource_changes": False, "model_inference_called": False}
 

@@ -179,6 +179,29 @@ class ProjectionTests(unittest.TestCase):
         for value in (True, "NaN", "Infinity", "-1", "PRIVATE", [], None):
             self.assertNotIn("number_reported", subject.public_numeric_shape(value))
 
+    def test_dedicated_catalogue_distinguishes_hybrid_and_local_caps(self):
+        rows = [{"id": i + 1, "price": amount, "location": "ru-1",
+                 "cpu": {"count": 4, "description_short": "Xeon E3-1240"},
+                 "memory": {"size": 8192, "count": 2}} for i, amount in enumerate(("11000", "14000", "14001"))]
+        result = subject.dedicated_summary({"dedicated_servers_presets": rows, "meta": {"total": 3}})
+        self.assertTrue(result["complete"])
+        self.assertEqual([row["within_hybrid_base_cap"] for row in result["candidates"]], [True, False])
+        self.assertEqual(result["candidates"][0]["memory_size_mb_reported"], 8192)
+        self.assertFalse(result["availability_verified"])
+        self.assertFalse(result["addons_included_verified"])
+
+    def test_dedicated_missing_or_invalid_prices_are_not_free(self):
+        rows = [{"id": i + 1, "price": amount} for i, amount in enumerate(("NaN", "-1", 0, True, None))]
+        self.assertEqual(subject.dedicated_summary({"dedicated_servers_presets": rows})["candidates"], [])
+
+    def test_dedicated_private_or_unknown_strings_excluded(self):
+        row = {"id": 1, "price": "9000", "description": "PRIVATE", "cpu": {"description": "PRIVATE"},
+               "memory": {"description": "PRIVATE"}, "disk": {"description": "PRIVATE"}}
+        result = subject.dedicated_summary({"dedicated_servers_presets": [row], "meta": {"total": 2}})
+        self.assertFalse(result["complete"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertFalse(result["gpu_verified"])
+
     def test_expensive_small_and_malformed_candidates_excluded(self):
         base = {"id": 1, "cpu": 4, "ram": 16384, "gpu": 0, "disk": 100000, "price": "5000"}
         rows = [{**base, **change} for change in ({"price": "11001"}, {"ram": 4096}, {"price": "NaN"}, {"cpu": True})]
