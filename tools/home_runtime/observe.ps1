@@ -115,6 +115,20 @@ function Service-State {
     } catch { }
     return $result
 }
+function Personal-LauncherState {
+    # Only file metadata is observed, never personal Codex transcripts, keys or content.
+    $root=Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)) 'AnalystAI-Codex'
+    try {
+        $signal=Join-Path $root 'session-status'
+        foreach ($p in @($root,$signal,(Join-Path $signal 'local.json'))) {
+            $item=Get-Item -LiteralPath $p -Force -ErrorAction Stop
+            if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return @{state='unavailable'} }
+        }
+        if ($item -isnot [IO.FileInfo] -or $item.Length -le 0 -or $item.Length -gt 512) { return @{state='unavailable'} }
+        return @{state='entry-opened';written_utc=$item.LastWriteTimeUtc.ToString('o')}
+    } catch [Management.Automation.ItemNotFoundException] { return @{state='not_observed'} }
+      catch { return @{state='unavailable'} }
+}
 function Observe {
     try {
         $row=Get-Content -ErrorAction Stop -Raw -LiteralPath $file | ConvertFrom-Json
@@ -125,14 +139,14 @@ function Observe {
     } catch [Management.Automation.ItemNotFoundException] { $phase='awaiting_enrollment' }
       catch [UnauthorizedAccessException] { $phase='status_not_readable' }
       catch { $phase='status_unavailable' }
-    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);profile=(Profile-State);service=(Service-State);scheduler=(Scheduler-State);installer=(Installer-State);windows_reboot=(Subsequent-Boot);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
+    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);profile=(Profile-State);service=(Service-State);scheduler=(Scheduler-State);installer=(Installer-State);personal_entry=(Personal-LauncherState);windows_reboot=(Subsequent-Boot);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
 }
 $deadline=[DateTime]::UtcNow.AddMinutes(3)
 $last=''
 $healthy=0
 do {
     $status=Observe
-    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.installer.stage)/$($status.installer.written_utc)/$($status.service.registration)/$($status.service.state)/$($status.health)/$($status.anonymous)"
+    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.installer.stage)/$($status.installer.written_utc)/$($status.service.registration)/$($status.service.state)/$($status.personal_entry.state)/$($status.health)/$($status.anonymous)"
     if ($last -ne $key) { Write-Output ('HOME_PROTECTED_OBSERVATION='+($status | ConvertTo-Json -Compress)) }
     $last=$key
     $taskReady=($status.scheduler.state -eq 'Running' -and $status.scheduler.boot_trigger -and $status.scheduler.limited)
