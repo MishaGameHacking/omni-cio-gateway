@@ -6,7 +6,7 @@ $checked={
     $ErrorActionPreference='Stop'
     try {
         if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'This package belongs to another computer.' }
-        $expected='97d88ea4a28ea241a24f03f4ef06caa1d48480db864e8b16dbd343806eda96d6'
+        $expected='62eab414a3ceb2aceabb63d056a05dbeb9fbbeba5dcdefb481ca5d6e2aea85ed'
         $spool=Join-Path $env:SystemRoot 'ServiceProfiles/NetworkService/AppData/Local/AnalystAI-HomeLab'
         $file=Join-Path $spool ('installer-'+$expected+'/Install-AnalystAIHome.ps1')
         # Hash the same in-memory bytes that PowerShell will execute. Never elevate a mutable CI file by its path.
