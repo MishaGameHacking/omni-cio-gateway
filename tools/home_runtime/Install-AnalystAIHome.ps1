@@ -24,7 +24,8 @@ $name = 'AnalystAIHost'
 $task = 'AnalystAI-HomeRuntime'
 $machine = $env:COMPUTERNAME
 $localUser = "$machine\$name"
-$description = 'Dedicated account for the Analyst AI home deployment.'
+$description = 'Analyst AI home runtime'
+$accountOptions = @{Name=$name; Description=$description; PasswordNeverExpires=$true; UserMayNotChangePassword=$true}
 $systemSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-18')
 $adminsSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
 $networkSid = [Security.Principal.SecurityIdentifier]::new('S-1-5-20')
@@ -66,6 +67,19 @@ function Lock-Directory([string]$path,[Security.Principal.SecurityIdentifier]$si
     }
     Set-Acl -LiteralPath $path -AclObject $acl
 }
+function Stage-Payload {
+    foreach ($file in $expected.Keys) {
+        $dest=Join-Path $root $file
+        if (-not [IO.File]::Exists($dest)) {
+            $tmp=Join-Path $root ('verified-'+[Guid]::NewGuid().ToString('N'))
+            try {
+                [IO.File]::Copy((Source $file),$tmp,$false)
+                Check-File $tmp $expected[$file]
+                [IO.File]::Move($tmp,$dest)
+            } finally { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } }
+        } else { Check-File $dest $expected[$file] }
+    }
+}
 function Read-Enrollment {
     Plain $root
     Plain $receipt
@@ -78,6 +92,12 @@ function Save-Enrollment($info) {
     [IO.File]::WriteAllText($tmp,($info | ConvertTo-Json -Compress))
     if ([IO.File]::Exists($receipt)) { [IO.File]::Replace($tmp,$receipt,[NullString]::Value) } else { [IO.File]::Move($tmp,$receipt) }
 }
+function Home-TaskOptions {
+    $action=New-ScheduledTaskAction -Execute $winPS -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+(Join-Path $root 'Run-AnalystAIHome.ps1')+'"')
+    $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 2)
+    return @{TaskPath='\'; TaskName=$task; Action=$action; Trigger=(New-ScheduledTaskTrigger -AtStartup)
+             Settings=$settings; User=$localUser; RunLevel='Limited'; Description=$description}
+}
 function Verify-Task($t,$sid) {
     $action=@($t.Actions)
     $target=Join-Path $root 'Run-AnalystAIHome.ps1'
@@ -88,11 +108,18 @@ function Verify-Task($t,$sid) {
           $t.Triggers[0].CimClass.CimClassName -eq 'MSFT_TaskBootTrigger') 'Unexpected task identity or trigger'
 }
 $winPS=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+# Apply Windows' actual validation contract before touching protected resources.
+$descriptionRule=@((Get-Command Microsoft.PowerShell.LocalAccounts\New-LocalUser).Parameters['Description'].Attributes | Where-Object { $_ -is [Management.Automation.ValidateLengthAttribute] })
+Need ($descriptionRule.Count -eq 1 -and $description.Length -ge $descriptionRule[0].MinLength -and
+      $description.Length -le $descriptionRule[0].MaxLength) 'Local account description exceeds the installed Windows limit'
 if ($VerifyOnly) {
+    $probePassword=ConvertTo-SecureString ('Aa1!'+[Guid]::NewGuid().ToString('N')) -AsPlainText -Force
+    try { Microsoft.PowerShell.LocalAccounts\New-LocalUser @accountOptions -Password $probePassword -WhatIf }
+    finally { $probePassword.Dispose() }
     foreach ($file in $expected.Keys) { Check-File (Source $file) $expected[$file] }
     Check-Scripts $stage
     Need ([IO.FileInfo]::new((Source 'model.litertlm')).Length -eq 3659530240) 'Incorrect model size'
-    [PSCustomObject]@{package=$PackageCode;items=$expected.Count;media_sha256='verified';powershell_syntax='valid';requires_admin_for_boot=$true} | ConvertTo-Json -Compress
+    [PSCustomObject]@{package=$PackageCode;items=$expected.Count;media_sha256='verified';powershell_syntax='valid';requires_admin_for_boot=$true;description_chars=$description.Length;description_limit=$descriptionRule[0].MaxLength;account_whatif=$true} | ConvertTo-Json -Compress
     return
 }
 $caller=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
@@ -124,17 +151,7 @@ if ($info.sid) {
 } else {
     Need (-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) 'The local account name is occupied'
 }
-foreach ($file in $expected.Keys) {
-    $dest=Join-Path $root $file
-    if (-not [IO.File]::Exists($dest)) {
-        $tmp=Join-Path $root ('verified-'+[Guid]::NewGuid().ToString('N'))
-        try {
-            [IO.File]::Copy((Source $file),$tmp,$false)
-            Check-File $tmp $expected[$file]
-            [IO.File]::Move($tmp,$dest)
-        } finally { if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) } }
-    } else { Check-File $dest $expected[$file] }
-}
+Stage-Payload
 Check-Scripts $root
 # The only password exists in this process and in the Windows scheduler credential store.
 $bytes=New-Object byte[] 48
@@ -145,7 +162,7 @@ $plainPassword='Aa1!'+[Convert]::ToBase64String($bytes)
 $secret=ConvertTo-SecureString -AsPlainText $plainPassword -Force
 try {
     if (-not $info.sid) {
-        $account=New-LocalUser -Name $name -Password $secret -PasswordNeverExpires -UserMayNotChangePassword -Description $description
+        $account=Microsoft.PowerShell.LocalAccounts\New-LocalUser @accountOptions -Password $secret
         $info.sid=$account.SID.Value
         Save-Enrollment $info
     } else {
@@ -173,9 +190,8 @@ public static extern int CreateProfile(string sid,string user,System.Text.String
         $hr=[AnalystHome.UserEnvironment]::CreateProfile($account.SID.Value,$name,$buffer,1024)
         Need ($hr -eq 0 -or (Test-Path -LiteralPath $profileKey)) 'Could not create the dedicated WSL user profile'
     }
-    $action=New-ScheduledTaskAction -Execute $winPS -Argument ('-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+(Join-Path $root 'Run-AnalystAIHome.ps1')+'"')
-    $settings=New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 2)
-    $null=Register-ScheduledTask -TaskPath '\' -TaskName $task -Action $action -Trigger (New-ScheduledTaskTrigger -AtStartup) -Settings $settings -User $localUser -Password $plainPassword -RunLevel Limited -Description $description
+    $taskOptions=Home-TaskOptions
+    $null=Register-ScheduledTask @taskOptions -Password $plainPassword
     $created=Get-ScheduledTask -TaskPath '\' -TaskName $task
     Verify-Task $created $account.SID
     Start-ScheduledTask -TaskPath '\' -TaskName $task
