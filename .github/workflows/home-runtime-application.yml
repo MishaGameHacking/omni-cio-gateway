@@ -1,0 +1,40 @@
+name: Run the verified Analyst AI source and local model on the owner laptop
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-application.yml, tools/home_runtime/guest_setup.py, tools/home_runtime/deploy_home.py]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-home-runtime-install
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 65
+    steps:
+      - name: Stage public source, run owner API, verify model and start isolated local worker
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 2
+          script: |
+            const cp=require('node:child_process'),path=require('node:path'),fs=require('node:fs');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-home-installer-'));
+            try{
+              for(const [name,file,ref] of [
+                ['deploy_home.py','tools/home_runtime/deploy_home.py',context.sha],
+                ['guest_setup.py','tools/home_runtime/guest_setup.py',context.sha],
+                ['platform.py','tools/home_runtime/platform.py',context.sha],
+                ['upstream_prepare.py','deploy/prepare_local_ai_runtime.py','06bebaa5b5fd8dbad5d678ccb4cfebe405eb8e44'],
+                ['emulator_lease.py','.github/scripts/emulator_lease.py','853090e11dcefef693366159c97316e55045c4c9']]){
+                const {data}=await github.rest.repos.getContent({...context.repo,path:file,ref});
+                if(data.encoding!=='base64')throw Error('Missing reviewed source');
+                fs.writeFileSync(path.join(dir,name),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','PROGRAMDATA','PROGRAMFILES','PROGRAMFILES(X86)','PUBLIC','USERNAME','USERDOMAIN'].includes(k.toUpperCase())));
+              const done=await new Promise(resolve=>{const child=cp.spawn('py.exe',['-3','-I',path.join(dir,'deploy_home.py'),context.sha],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
+                const rl=require('node:readline').createInterface({input:child.stdout});rl.on('line',line=>{if(/^HOME_(API_RESULT|WEIGHTS_RESULT|WORKER_RESULT|INSTALL_ERROR)=/.test(line))core.info(line.slice(0,1400));});
+                child.stderr.resume();child.on('error',()=>resolve(1));child.on('exit',code=>resolve(code));});
+              if(done!==0)core.setFailed('Home application installation incomplete');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
