@@ -13,8 +13,8 @@ concurrency:
   group: workspace-redesign-visual
   cancel-in-progress: false
 env:
-  RENDER_SOURCE_SHA: b459ddc06127a0b54b1ffc8ad33d16a1ca6adf6f
-  EXPECTED_CLIENT_RUN: '41014980768'
+  RENDER_SOURCE_SHA: a5e386d950a8200474e69a69907c092df062c032
+  EXPECTED_CLIENT_RUN: '41015587633'
 jobs:
   ready:
     runs-on: ubuntu-24.04
@@ -84,7 +84,7 @@ jobs:
       - name: Checkout the exact compiled application source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b459ddc06127a0b54b1ffc8ad33d16a1ca6adf6f
+          ref: a5e386d950a8200474e69a69907c092df062c032
           path: visual-source-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Render production Compose screens with synthetic data and restore references
