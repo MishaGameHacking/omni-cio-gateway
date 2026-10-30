@@ -1,0 +1,38 @@
+name: Qualify the limited-user Windows boot enrollment on Lenovo
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [tools/home_runtime/Install-AnalystAIHome.ps1, tools/home_runtime/Run-AnalystAIHome.ps1, tools/home_runtime/protected_guest.py, tools/home_runtime/enrollment_check.py, .github/workflows/home-runtime-enrollment.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-home-runtime-install
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 20
+    steps:
+      - name: Verify package hashes, Windows PowerShell, binary WSL transport and foreground health
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong owner host');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-enrollment-'));
+            try{
+              const files=['Install-AnalystAIHome.ps1','Run-AnalystAIHome.ps1','protected_guest.py','guest_setup.py','smoke.py','enrollment_check.py'];
+              for(const f of files.concat('upstream_prepare.py')){
+                const vendor=f==='upstream_prepare.py';
+                const {data}=await github.rest.repos.getContent({...context.repo,path:vendor?'deploy/prepare_local_ai_runtime.py':'tools/home_runtime/'+f,
+                  ref:vendor?'06bebaa5b5fd8dbad5d678ccb4cfebe405eb8e44':context.sha});
+                fs.writeFileSync(path.join(dir,f),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','PROGRAMDATA','PROGRAMFILES','PROGRAMFILES(X86)','USERNAME','USERDOMAIN','PSMODULEPATH'].includes(k.toUpperCase())));
+              await new Promise((resolve,reject)=>{
+                const p=cp.spawn('py.exe',['-3','-I',path.join(dir,'enrollment_check.py')],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
+                require('node:readline').createInterface({input:p.stdout}).on('line',v=>{if(/^HOME_(ENROLLMENT_KIT|ENROLLMENT_ERROR|FOREGROUND_OBSERVED)=/.test(v))core.info(v.slice(0,1100));});
+                p.stderr.resume();p.on('error',()=>reject(Error('Windows qualification failed to start')));
+                p.on('close',code=>code===0?resolve():reject(Error('Windows qualification incomplete')));
+              });
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}

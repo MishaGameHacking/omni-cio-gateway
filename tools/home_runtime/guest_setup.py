@@ -28,7 +28,8 @@ RELEASE=Path('/opt/analyst-source')/COMMIT
 ETC=Path('/etc/analyst-ai')
 DB=Path('/var/lib/analyst-ai')
 UNITS=Path('/etc/systemd/system')
-BASE='http://127.0.0.1:18157'
+PORT=18158 if Path('/etc/analyst-protected-home').is_file() else 18157
+BASE=f'http://127.0.0.1:{PORT}'
 ENV={'PATH':'/usr/sbin:/usr/bin:/sbin:/bin','LANG':'C.UTF-8','DEBIAN_FRONTEND':'noninteractive',
      'NEEDRESTART_MODE':'l','PIP_CONFIG_FILE':'/dev/null','PIP_DISABLE_PIP_VERSION_CHECK':'1',
      'GIT_TERMINAL_PROMPT':'0','PYTHONDONTWRITEBYTECODE':'1'}
@@ -185,7 +186,7 @@ def install_api():
     drop=UNITS/(name+'.d')
     directory(drop)
     override=('[Service]\nWorkingDirectory='+str(source/'backend')+'\nExecStart=\nExecStart='+str(ROOT/'venv/bin/uvicorn')+
-              ' owner_app:create_app --factory --host 127.0.0.1 --port 18157 --workers 1 --no-access-log\n')
+              f' owner_app:create_app --factory --host 127.0.0.1 --port {PORT} --workers 1 --no-access-log\n')
     contents(drop/'home.conf',override.encode())
     command(['systemctl','daemon-reload'],'systemd_reload')
     command(['systemctl','enable','--now',name],'owner_start')
