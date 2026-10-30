@@ -52,4 +52,22 @@ try {
     $t=Get-ScheduledTask -TaskName 'AnalystAI-HomeRuntime' -TaskPath '\' -ErrorAction Stop
     $info.task=[string]$t.State
 } catch { $info.task=if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound*') { 'not_listed' } else { 'unavailable' } }
+try {
+    $runners=@(Get-CimInstance Win32_Service -Filter "Name LIKE 'actions.runner.%' AND State='Running'")
+    $info.runner_contexts=[ordered]@{total=$runners.Count;network_service=@($runners | Where-Object { ($_.StartName -replace '[\s_]','') -match '(?i)NETWORKSERVICE$' }).Count;
+        system=@($runners | Where-Object { $_.StartName -in 'LocalSystem','NT AUTHORITY\SYSTEM' }).Count}
+} catch { $info.runner_contexts='unavailable' }
+try {
+    # Inspect only failed logons naming the project account. No account or event text leaves Windows.
+    $q="*[System[(EventID=4625) and TimeCreated[timediff(@SystemTime) <= 3600000]] and EventData[Data[@Name='TargetUserName']='AnalystAIHost']]"
+    $matches=@(Get-WinEvent -LogName Security -FilterXPath $q -MaxEvents 4 -ErrorAction Stop)
+    $info.batch_errors=@(foreach ($entry in $matches) {
+        $known=@{}
+        foreach ($n in @(([xml]$entry.ToXml()).Event.EventData.Data)) {
+            $k=$n.GetAttribute('Name')
+            if ($k -in 'Status','SubStatus','LogonType' -and $n.InnerText -match '^(?:0x[0-9A-Fa-f]{1,8}|[0-9]{1,3})$') { $known[$k]=$n.InnerText }
+        }
+        if ($known.LogonType -eq '4') { [ordered]@{status=$known.Status;substatus=$known.SubStatus;utc=$entry.TimeCreated.ToUniversalTime().ToString('o')} }
+    })
+} catch { $info.batch_errors=if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') { 'none' } else { 'unavailable' } }
 Write-Output ('HOME_PROFILE_DIAG='+($info | ConvertTo-Json -Depth 5 -Compress))
