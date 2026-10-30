@@ -1,0 +1,98 @@
+name: Diagnose owner57 login HTTP handling without credential attempts
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-login-http-diagnostic.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Require successful exact administration tool tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40954726120});
+            if(r.head_sha!==process.env.EXPECTED_AI_ADMIN_TOOLS_SHA||r.conclusion!=='success'||r.status!=='completed'||
+               r.path!=='.github/workflows/owner-ai-admin-tools55.yml'||r.run_attempt!==1)
+              throw new Error('Exact administration verification required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+      - name: Read credential metadata, throttle counters and filtered response codes only
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import json,sys,urllib.request,urllib.error
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          operation='import json,os,re,sqlite3,subprocess,time,urllib.request,urllib.error\nfrom pathlib import Path\n\nEXCEPTIONS=(\'OperationalError\',\'IntegrityError\',\'ValueError\',\'TypeError\',\'KeyError\',\'MemoryError\',\'AttributeError\',\'RuntimeError\',\'OSError\',\'HTTPException\')\nCODES={200:\'ok\',400:\'bad_request\',401:\'denied\',403:\'forbidden\',404:\'missing\',405:\'method\',409:\'conflict\',422:\'invalid\',426:\'upgrade\',429:\'throttled\',500:\'error\',502:\'gateway\',503:\'unavailable\',504:\'timeout\'}\ndef inspect():\n    out={\'status\':\'blocked\',\'server_id\':9417611,\'observed_at\':int(time.time()),\'log_entries\':0,\n        \'auth_log_entries\':0,\'access_log_disabled\':False,\'trace_owner_password\':False,\'trace_password_routes\':False,\n        \'trace_database_locked\':False,\'trace_schema_mismatch\':False,\'trace_scrypt_memory\':False,\n        \'trace_owner_line\':0,\'last_exception\':\'none\',\'local_status_code\':0,\'local_status_configured\':False,\n        \'local_empty_login_code\':0,\'local_empty_login_expected\':False,\'journal_exception_count\':0,\n        \'sessions_columns\':0,\'devices_columns\':0,\'password_sessions_columns\':0,\'login_failures\':0,\n        \'login_wait_seconds\':0,\'active_session_count\':0,\'nginx_auth_entries\':0,\'nginx_last_code\':0,\n        \'nginx_last_at\':0,\'nginx_gateway_timeout\':0,\'nginx_connection_refused\':0}\n    for label in CODES.values():out[\'auth_\'+label]=0\n    try:\n        if os.getuid()!=0:return out\n        path=Path(\'/var/lib/analyst-ai/backend.db\')\n        if path.resolve(strict=True)!=path:return out\n        db=sqlite3.connect(path.as_uri()+\'?mode=ro\',uri=True,timeout=5)\n        db.execute(\'PRAGMA query_only=ON\')\n        try:\n            for table,label in [(\'sessions\',\'sessions_columns\'),(\'workspace_session_devices\',\'devices_columns\'),(\'owner_password_sessions\',\'password_sessions_columns\')]:\n                out[label]=len(db.execute(\'PRAGMA table_info(\'+table+\')\').fetchall())\n            row=db.execute(\'SELECT failures,locked_until FROM owner_password_attempts WHERE singleton=1\').fetchone()\n            if row:out[\'login_failures\'],out[\'login_wait_seconds\']=int(row[0]),max(0,int(row[1])-out[\'observed_at\'])\n            out[\'active_session_count\']=int(db.execute(\'SELECT count(*) FROM sessions WHERE expires_at>=?\',(out[\'observed_at\'],)).fetchone()[0])\n        finally:db.close()\n        pid=subprocess.run([\'systemctl\',\'show\',\'analyst-ai-owner.service\',\'--property=MainPID\',\'--value\'],capture_output=True,text=True,timeout=10).stdout.strip()\n        if not pid.isdigit() or int(pid)<=1:return out\n        args=Path(\'/proc/\'+pid+\'/cmdline\').read_bytes().decode().split(\'\\0\')\n        out[\'access_log_disabled\']=\'--no-access-log\' in args\n        port=8000\n        if \'--port\' in args:port=int(args[args.index(\'--port\')+1])\n        if not 1<=port<=65535:return out\n        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))\n        for key,route,body in [(\'local_status\',\'/auth/owner/status\',None),(\'local_empty_login\',\'/auth/owner/login\',b\'{}\')]:\n            try:\n                req=urllib.request.Request(\'http://127.0.0.1:\'+str(port)+route,data=body,headers={\'Accept\':\'application/json\',\'Content-Type\':\'application/json\'})\n                with opener.open(req,timeout=12) as response:\n                    code=response.status;raw=response.read(8193)\n            except urllib.error.HTTPError as error:code=error.code;raw=error.read(8193)\n            except Exception:continue\n            out[key+\'_code\']=code\n            try:value=json.loads(raw)\n            except ValueError:value={}\n            if key==\'local_status\':out[\'local_status_configured\']=value.get(\'configured\') is True\n            else:out[\'local_empty_login_expected\']=code==422 and value.get(\'detail\')==\'owner_auth_payload_invalid\'\n        logs=subprocess.run([\'journalctl\',\'-u\',\'analyst-ai-owner.service\',\'--since=-4 hours\',\'-n\',\'15000\',\'-o\',\'json\',\'--no-pager\'],capture_output=True,text=True,timeout=20)\n        if logs.returncode==0 and len(logs.stdout)<=24*1024**2:\n            for line in logs.stdout.splitlines():\n                try:entry=json.loads(line)\n                except ValueError:continue\n                message=entry.get(\'MESSAGE\',\'\');out[\'log_entries\']+=1\n                if not isinstance(message,str):continue\n                match=re.search(r\'"(?:POST|GET) /auth/owner/(?:login|status|setup|password) HTTP/[0-9.]+" ([0-9]{3})\',message)\n                if match:\n                    out[\'auth_log_entries\']+=1\n                    key=\'auth_\'+CODES.get(int(match[1]),\'other\')\n                    if key in out:out[key]+=1\n                out[\'trace_owner_password\']|=\'owner_password.py\' in message\n                out[\'trace_password_routes\']|=\'owner_password_routes.py\' in message\n                out[\'trace_database_locked\']|=\'database is locked\' in message\n                out[\'trace_schema_mismatch\']|=bool(re.search(r\'(?:no such (?:column|table)|table .{1,64} has [0-9]+ columns but [0-9]+ values)\',message))\n                out[\'trace_scrypt_memory\']|=\'memory limit exceeded\' in message\n                match=re.search(r\'owner_password\\.py", line ([0-9]+)\',message)\n                if match:out[\'trace_owner_line\']=int(match[1])\n                for name in EXCEPTIONS:\n                    if name+\':\' in message:\n                        out[\'last_exception\']=name;out[\'journal_exception_count\']+=1\n        access=Path(\'/var/log/nginx/access.log\')\n        if access.is_file():\n            with access.open(\'rb\') as stream:\n                stream.seek(max(0,access.stat().st_size-4*1024**2));raw=stream.read(4*1024**2)\n            for line in raw.decode(errors=\'replace\').splitlines():\n                match=re.search(r\'\\[([^]]+)\\] "POST /auth/owner/login HTTP/[0-9.]+" ([0-9]{3})\',line)\n                if match:\n                    out[\'nginx_auth_entries\']+=1;out[\'nginx_last_code\']=int(match[2])\n                    try:\n                        from datetime import datetime\n                        out[\'nginx_last_at\']=int(datetime.strptime(match[1],\'%d/%b/%Y:%H:%M:%S %z\').timestamp())\n                    except ValueError:pass\n        errorlog=Path(\'/var/log/nginx/error.log\')\n        if errorlog.is_file():\n            with errorlog.open(\'rb\') as stream:\n                stream.seek(max(0,errorlog.stat().st_size-1024**2));raw=stream.read(1024**2)\n            for line in raw.decode(errors=\'replace\').splitlines():\n                if \'/auth/owner/\' in line:\n                    out[\'nginx_gateway_timeout\']+=int(\'upstream timed out\' in line)\n                    out[\'nginx_connection_refused\']+=int(\'Connection refused\' in line)\n        out[\'status\']=\'inspected\'\n    except Exception:pass\n    return out\nprint(json.dumps(inspect()),flush=True)\n'
+          contract={'status':{'blocked','inspected'},'last_exception':{'none','OperationalError','IntegrityError','ValueError','TypeError','KeyError','MemoryError','AttributeError','RuntimeError','OSError','HTTPException'}}
+          for name in ('server_id','observed_at','log_entries','auth_log_entries','trace_owner_line','local_status_code','local_empty_login_code','journal_exception_count','sessions_columns','devices_columns','password_sessions_columns','login_failures','login_wait_seconds','active_session_count','nginx_auth_entries','nginx_last_code','nginx_last_at','nginx_gateway_timeout','nginx_connection_refused'):
+              contract[name]=int
+          for name in ('access_log_disabled','trace_owner_password','trace_password_routes','trace_database_locked','trace_schema_mismatch','trace_scrypt_memory','local_status_configured','local_empty_login_expected'):
+              contract[name]=bool
+          for label in ('ok','bad_request','denied','forbidden','missing','method','conflict','invalid','upgrade','throttled','error','gateway','unavailable','timeout'):contract['auth_'+label]=int
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{},None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'blocked','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:
+              receipt={'status':'blocked','error_code':'diagnostic_preflight_failed'}
+          from owner_plan_transport_20261027 import p
+          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+          public={}
+          for label,route,body in [('status','/auth/owner/status',None),('empty_login','/auth/owner/login',b'{}')]:
+              result={'code':0,'configured':False,'expected_validation':False}
+              try:
+                  request=urllib.request.Request('https://analyst-ai-2941515.twc1.net'+route,data=body,headers={'Accept':'application/json','Content-Type':'application/json','Cache-Control':'no-cache'})
+                  try:
+                      with opener.open(request,timeout=20) as response:code=response.status;raw=response.read(8193)
+                  except urllib.error.HTTPError as exc:code=exc.code;raw=exc.read(8193)
+                  result['code']=code
+                  try:value=json.loads(raw)
+                  except ValueError:value={}
+                  result['configured']=value.get('configured') is True
+                  result['expected_validation']=code==422 and value.get('detail')=='owner_auth_payload_invalid'
+              except Exception:pass
+              public[label]=result
+          result={'inspection':receipt,'public':public,'credentials_read':False,'password_attempts_sent':False,'malformed_request_validation_only':True}
+          Path('plan-reports').mkdir(exist_ok=True)
+          Path('plan-reports/owner57-login-http-diagnostic.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('OWNER_LOGIN_HTTP_DIAGNOSTIC='+json.dumps(result,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='inspected' else 1)
+          PY
+      - name: Preserve non-secret diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-login-http-diagnostic-${{ github.run_id }}
+          path: supplied-owner-ai55/plan-reports/
+          retention-days: 3
+          if-no-files-found: warn
