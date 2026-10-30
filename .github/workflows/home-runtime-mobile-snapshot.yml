@@ -1,0 +1,29 @@
+name: Preserve the published Android channel on the Lenovo
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-mobile-snapshot.yml, tools/home_runtime/stage_mobile_release.py]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-home-mobile-release-cache
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 6
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-release-preflight-'));
+            try {
+              const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/stage_mobile_release.py'});
+              const file=path.join(dir,'stage.py');fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
+              const p=cp.spawnSync('py.exe',['-3','-I',file],{env,encoding:'utf8',windowsHide:true,timeout:210000});
+              const lines=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_(RELEASE_SNAPSHOT|RELEASE_ERROR|CHANNEL_CHANGED)=/.test(s));
+              lines.forEach(s=>core.info(s.slice(0,900)));
+              if(p.status!==0||!lines.some(s=>s.startsWith('HOME_RELEASE_SNAPSHOT=')))core.setFailed('Mobile update source has not been verified');
+            } finally {fs.rmSync(dir,{recursive:true,force:true});}
