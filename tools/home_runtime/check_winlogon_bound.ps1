@@ -62,5 +62,7 @@ try {
     $row=[ordered]@{old_chars=$winPS.Length+3+$oldArgs.Length;new_production_chars=$liveLength;win32_limit=1024;
         old_native=$oldResult;short_native=$newResult;logon_mode='network_only_local_identity';real_account_credentials_used=$false}
     Write-Output ('HOME_NATIVE_LENGTH='+($row | ConvertTo-Json -Compress))
-    if ($newResult.StartsWith('exit-') -and $newResult -ne 'exit-0') { throw 'Short native proof failed locally' }
+    # Accept ERROR_INVALID_PARAMETER as a Win32 code or a signed HRESULT.
+    if ($oldResult -notin @('win32-87','win32--2147024809')) { throw 'Original native failure was not reproduced' }
+    if ($newResult -ne 'exit-0') { throw 'Short native proof did not complete successfully' }
 } finally { $testSecret=$null; [IO.Directory]::Delete($folder,$true) }
