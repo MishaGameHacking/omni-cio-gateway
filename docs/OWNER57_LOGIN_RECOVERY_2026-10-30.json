@@ -1,0 +1,97 @@
+{
+  "status": "server_recovered_phone_login_unverified",
+  "date": "2026-10-30",
+  "server_id": 9417611,
+  "runtime_source": "a9574656fcac4507660c872ebcc22641154a3c8a",
+  "apk_version_code": 57,
+  "diagnostic_runs": [
+    41032638882,
+    41033257605,
+    41033654073
+  ],
+  "repair_sha": "893efd611a9c372f9e05fb3a249bf584cd570bf9",
+  "repair_run": 41035723845,
+  "tests": {
+    "environment": "LAPTOP-NPSGA016 / Ubuntu-24.04 WSL",
+    "passed": 6,
+    "failed": 0,
+    "job_id": 123995941555
+  },
+  "repair": {
+    "apk_changed": false,
+    "checks_passed": 6,
+    "database_backup_created": true,
+    "database_rows_preserved": true,
+    "failure": "none",
+    "integrity_checked": true,
+    "journal_mode": "wal",
+    "maintenance_stage": "completed",
+    "maximum_write_wait_ms": 0,
+    "observed_at": 1793353567,
+    "owner_configuration_preserved": true,
+    "passwords_changed": false,
+    "previous_mode": "delete",
+    "previous_running_kind": "none",
+    "previous_running_stage": "none",
+    "server_id": 9417611,
+    "services_active": true,
+    "status": "repaired",
+    "write_checks_passed": 6
+  },
+  "public": {
+    "health": 200,
+    "owner": 200,
+    "password_changed": false,
+    "actual_phone_login_verified": false
+  },
+  "followup_run": 41036102592,
+  "followup": {
+    "inspection": {
+      "analysis_running": 0,
+      "app_pid": 112852,
+      "db_bytes": 57090048,
+      "journal_bytes": 0,
+      "journal_mode": "wal",
+      "latest_lock_error_at": 1793352558,
+      "lock_error_count": 86,
+      "money_pending": 0,
+      "observed_at": 1793353745,
+      "running_age_seconds": 0,
+      "running_kind": "none",
+      "running_stage": "none",
+      "running_update_age_seconds": 0,
+      "schema_startup_errors": 0,
+      "server_id": 9417611,
+      "status": "inspected",
+      "wal_bytes": 0,
+      "workspace_paid_running": 0,
+      "workspace_running": 0,
+      "write_lock_app": false,
+      "write_lock_other": false,
+      "write_locks": 0,
+      "write_probe_ms": 0,
+      "write_probe_ok": true,
+      "writer_age_seconds": 0,
+      "writer_pid": 0,
+      "writer_role": "none"
+    },
+    "login_requests_sent": false,
+    "passwords_read": false,
+    "public_status": {
+      "configured": true,
+      "status_code": 200
+    },
+    "read_only": true
+  },
+  "latest_lock_error_precedes_repair": true,
+  "backup_path": "/var/lib/analyst-ai-login-wal-41035723845/before.sqlite3",
+  "artifact": {
+    "id": 12967229436,
+    "sha256": "a9927af9768c82d931516611cc4cae6301cd42613d64d7a04dddda2a74314a0a"
+  },
+  "limits": [
+    "Actual phone login requires the owner to retry with the unchanged password.",
+    "WAL separates readers from writers; concurrent writes remain serialized.",
+    "The observed failure is the SQLite lock at owner_password BEGIN IMMEDIATE. The exact background write call was not isolated."
+  ]
+}
