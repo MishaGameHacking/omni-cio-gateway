@@ -253,7 +253,8 @@ def run(envelope):
     import fcntl
     need(os.getuid() == 0 and envelope.get('payload') == {'source_commit': SOURCE}, 'diagnostic_scope_invalid')
     # Existing lock only; no creation, no changes to service, configuration, DB or application files.
-    with regular(Path('/var/lock/analyst-ai-plan-development.lock')).open('rb') as lock:
+    # Ubuntu's /var/lock aliases /run/lock; use the canonical inode path here.
+    with regular(Path('/run/lock/analyst-ai-plan-development.lock')).open('rb') as lock:
         fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         verify_source(Path('/opt/analyst-ai/backend'))
         now = int(time.time())
