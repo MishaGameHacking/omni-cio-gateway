@@ -50,6 +50,24 @@ class ModelUsage:
     total_tokens: int
 
 
+class IncompleteModelResponse(GuardError):
+    """Non-content diagnostics after usage has been validated and accounted."""
+    def __init__(self, finish_reason, usage: ModelUsage, max_output_tokens: int):
+        super().__init__('ai_incomplete_response')
+        allowed = {'length', 'content_filter', 'tool_calls', 'function_call'}
+        self.finish_reason = finish_reason if isinstance(finish_reason, str) and finish_reason in allowed else 'unknown'
+        self.usage = usage
+        self.max_output_tokens = max_output_tokens
+
+    def diagnostics(self) -> dict:
+        # Never retain response text, reasoning, tool arguments, raw exceptions,
+        # headers or arbitrary provider-controlled finish_reason strings.
+        return {'finish_reason': self.finish_reason, 'max_output_tokens': self.max_output_tokens,
+                'prompt_tokens': self.usage.prompt_tokens, 'completion_tokens': self.usage.completion_tokens,
+                'total_tokens': self.usage.total_tokens, 'usage_accounted': True,
+                'answer_published': False, 'automatic_retry': False}
+
+
 @dataclass(frozen=True)
 class ModelResult:
     model: str
@@ -235,10 +253,11 @@ def _encoded_messages(messages, max_output_tokens):
     return encoded
 
 
-def _assert_complete_response(response):
+def _assert_complete_response(response, usage: ModelUsage, max_output_tokens: int):
     choices = response.get('choices')
-    if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or choices[0].get('finish_reason') != 'stop':
-        raise GuardError('ai_incomplete_response')
+    finish_reason = choices[0].get('finish_reason') if isinstance(choices, list) and choices and isinstance(choices[0], dict) else None
+    if finish_reason != 'stop':
+        raise IncompleteModelResponse(finish_reason, usage, max_output_tokens)
 
 
 def completion_payload(route: Route, messages, max_output_tokens: int) -> dict:
@@ -334,7 +353,7 @@ class GuardedAIClient:
             response = self._send(route, payload)
             usage, returned = self._account_usage(response, route, reservation, input_bound, max_output_tokens)
             # Accounting happens even if the content/JSON validation below fails.
-            _assert_complete_response(response)
+            _assert_complete_response(response, usage, max_output_tokens)
             content = _result_content(response)
             if job:
                 AnalysisQueue(self.connect).assert_owner(*job)
@@ -409,5 +428,6 @@ class GuardedAIClient:
         if values[0] + values[1] != values[2] or values[0] == 0:
             raise GuardError('ai_usage_inconsistent')
         return ModelUsage(*values)
+
 
 

@@ -129,6 +129,31 @@ def normalized(text: str) -> str:
                             if unicodedata.category(c) != "Cf").casefold().replace("ё", "е").split())
 
 
+def is_introduction(text: str) -> bool:
+    """Exact standalone greetings only; never strip an attached financial task."""
+    return normalized(text).rstrip("?.! ") in INTRODUCTION
+
+
+def response_budget(max_output_tokens: int) -> dict:
+    """Prompt targets leave room for JSON/evidence inside the unchanged cap.
+
+    Character counts are writing targets, not a claim about provider tokenization.
+    The paid request and reservation still use the existing hard token limit.
+    """
+    if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
+        raise ValueError("chat_output_budget_invalid")
+    if max_output_tokens <= LIMITS[AnalysisTier.FAST]:
+        answer, claims, uncertainties = 350, 2, 1
+    elif max_output_tokens <= LIMITS[AnalysisTier.STANDARD]:
+        answer, claims, uncertainties = 700, 3, 2
+    else:
+        answer, claims, uncertainties = 1000, 4, 2
+    return {"max_output_tokens": max_output_tokens, "answer_characters_target": answer,
+            "claims_max": claims, "claim_characters_target": 90,
+            "uncertainties_max": uncertainties, "uncertainty_characters_target": 100,
+            "navigation_items_max": 2}
+
+
 def _outside(text: str) -> bool:
     return bool(OUTSIDE.search(text) or UNRELATED_TASK.search(text) or RETAIL.search(text) or INJECTION.search(text))
 
@@ -183,11 +208,12 @@ def plan_chat(text: str, requested_tier: str = "auto", *, history: Sequence[str]
         raise ChatPolicyError("chat_outside_investment_scope", SCOPE_MESSAGE)
     prior = _financial_history(history)
     follow_up = _follow_up(cleaned)
-    introduction = cleaned.rstrip("?.! ") in INTRODUCTION
+    introduction = is_introduction(text)
     if not introduction and not FINANCE.search(cleaned) and not (follow_up and (verified_context is True or prior)):
         raise ChatPolicyError("chat_investment_scope_unclear", CLARIFY_MESSAGE)
     required = _required_tier(prior if follow_up and prior else cleaned)
     selected = _selected_tier(requested_tier, required)
     return ChatPlan(selected, required, LIMITS[selected],
                     "task_complexity" if requested_tier == "auto" else "explicit_user_tier")
+
 

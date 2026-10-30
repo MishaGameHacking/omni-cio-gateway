@@ -17,6 +17,7 @@ try:
     from .ai_budget import transaction
     from .schema_migrations import execute_schema
     from .ai_jobs import AnalysisQueue
+    from .ai_guarded_client import IncompleteModelResponse
     from .monitoring_access import monitoring_connection, assert_monitoring_access_in
     from .volume_contract import HTTP_ERRORS, digest, error_code, date_range
     from .volume_state import RequestId, StrictModel, encode
@@ -25,6 +26,7 @@ except ImportError:
     from ai_budget import transaction
     from schema_migrations import execute_schema
     from ai_jobs import AnalysisQueue
+    from ai_guarded_client import IncompleteModelResponse
     from monitoring_access import monitoring_connection, assert_monitoring_access_in
     from volume_contract import HTTP_ERRORS, digest, error_code, date_range
     from volume_state import RequestId, StrictModel, encode
@@ -34,6 +36,8 @@ CURRENT_WORKSPACE_JOB: ContextVar[tuple[str, str, int] | None] = ContextVar("vol
 LEASE = 900
 TERMINAL = {"completed", "cancelled", "failed", "uncertain"}
 OWNED_JOB_SQL = "SELECT * FROM workspace_jobs WHERE id=? AND user_id=?"
+CHAT_REQUOTE_ERRORS = frozenset({"ai_chat_policy_changed", "ai_chat_route_or_cost_changed",
+                               "chat_premium_confirmation_required", "chat_tier_insufficient"})
 
 
 class JobStopped(RuntimeError):
@@ -101,6 +105,13 @@ def _job(row, db=None) -> dict:
              "stage": row["stage"], "created_at": _iso(row["created_at"]), "updated_at": _iso(row["updated_at"]),
              "result": result, "error_code": row["error_code"], "cancel_requested": bool(row["cancel_requested"]),
              "can_retry": row["state"] in {"failed", "cancelled"} and not row["paid_started"]}
+    if row["kind"] == "chat":
+        if row["state"] in {"failed", "cancelled", "uncertain"}:
+            # Project old rows consistently too: an ended job is not generating.
+            value["stage"] = row["state"]
+        if row["error_code"] in CHAT_REQUOTE_ERRORS:
+            # The saved quote cannot be refreshed by relinking the same message.
+            value["can_retry"] = False
     progress = json.loads(row["checkpoint_json"]).get("_progress")
     if progress:
         value["progress"] = progress
@@ -306,7 +317,11 @@ def _fail_job(job: dict, error: Exception) -> None:
             return
         pending_money = db.execute("SELECT 1 FROM ai_money_reservations WHERE user_id=? AND state IN ('reserved','uncertain') AND created_at>=?", (job["user_id"], row["created_at"])).fetchone()
         status, code = _failure_state(row, error, pending_money)
-        db.execute("UPDATE workspace_jobs SET state=?,error_code=?,updated_at=? WHERE id=? AND owner=?", (status, code, int(time.time()), job["id"], job["owner"]))
+        diagnostic = (encode({"completion": error.diagnostics()})
+                      if row["kind"] == "chat" and isinstance(error, IncompleteModelResponse) else None)
+        stage = status if row["kind"] == "chat" else row["stage"]
+        db.execute("UPDATE workspace_jobs SET state=?,stage=?,error_code=?,updated_at=?,result_json=COALESCE(?,result_json) WHERE id=? AND owner=?",
+                   (status, stage, code, int(time.time()), diagnostic, job["id"], job["owner"]))
 
 
 def _public_collection(user, payload, checkpoint):
@@ -430,4 +445,5 @@ def retry(identifier: str, payload: RequestId, tasks: BackgroundTasks, user: Any
     result = enqueue(int(user["id"]), payload.request_id, row["kind"], request, checkpoint=checkpoint, before_insert=relink)
     tasks.add_task(run_job, result["job_id"])
     return result
+
 

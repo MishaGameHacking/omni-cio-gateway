@@ -24,7 +24,7 @@ try:
     from .schema_migrations import execute_schema
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
-    from .investment_chat_policy import plan_chat, ChatPolicyError
+    from .investment_chat_policy import plan_chat, ChatPolicyError, is_introduction, response_budget
     from .volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 except ImportError:
     import app as backend
@@ -35,7 +35,7 @@ except ImportError:
     from schema_migrations import execute_schema
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
-    from investment_chat_policy import plan_chat, ChatPolicyError
+    from investment_chat_policy import plan_chat, ChatPolicyError, is_introduction, response_budget
     from volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 
 router = APIRouter(prefix="/workspace/chat", tags=["Verified-context AI conversation"])
@@ -59,6 +59,9 @@ uncertainties:[string],actions:[{type:'open_instrument'|'open_risks'|'open_strat
 claims с пустым fact_ids и не придумывай идентификаторы ради заполнения массива.
 Для общего ответа без переходов верни highlights: [] и actions: [].
 Отделяй вывод от наблюдения, указывай неизвестные значения и давность снимка.
+as_of — время сохранённого наблюдения, а не доказательство актуального состояния
+на момент вопроса. Не называй старый снимок текущим и не подтверждай неизменность
+портфеля после него без отдельного более свежего факта.
 Общие пояснения не должны звучать как новые факты о пользователе.
 Не обещай будущую прибыль, доставку или исполнение. Не включай персональные
 идентификаторы и не предлагай передавать токены. Не меняй пользовательский план.
@@ -72,6 +75,49 @@ claims с пустым fact_ids и не придумывай идентифик�
 счета и инструменты. Отсутствие факта означает отсутствие доступного расчёта,
 а не доказательство того, что торговля или анализ были выполнены.
 """
+
+INTRODUCTION_SYSTEM = """Ты — Analyst AI, русскоязычный инвестиционный помощник.
+На отдельное приветствие ответь одним коротким предложением; на вопрос о своих
+возможностях — двумя. Помогаешь читать данные портфеля и объяснять инвестиционные
+термины. Не заявляй, что управляешь капиталом, уже проверил счёт или совершил сделку.
+В этом запросе финансовые факты и история намеренно не переданы: не сообщай
+персональные сведения, суммы или состояние портфеля. Верни только один завершённый
+JSON-объект с полями answer (строка), claims: [], highlights: [], uncertainties: [],
+actions: []. Без Markdown, рассуждений, дополнительных полей и текста после JSON.
+"""
+
+
+def _response_instruction(max_output_tokens: int, *, impact_request: bool = False) -> str:
+    budget = response_budget(max_output_tokens)
+    instruction = (
+        "\nОграничение всего ответа, включая JSON: " + str(max_output_tokens) + " токенов. "
+        "Сначала выбери главные выводы, затем верни компактный завершённый JSON без Markdown. "
+        "Не перечисляй все facts, не копируй исходные данные и не повторяй answer в claims. "
+        "При нехватке места сократи число выводов, сохрани существенную неопределённость и закрой JSON. "
+        "answer: ориентир до " + str(budget["answer_characters_target"]) + " символов; "
+        "claims: до " + str(budget["claims_max"]) + " элементов, text до 90 символов; "
+        "fact_ids: только необходимые для этого утверждения идентификаторы. "
+        "uncertainties: до " + str(budget["uncertainties_max"]) + " элементов по 100 символов. "
+        "highlights и actions: до 2 элементов каждый, пустые массивы допустимы. "
+        "Не повторяй одинаковую неопределённость в нескольких полях."
+    )
+    if impact_request:
+        instruction += (
+            " Для impact_request оставь место под обязательный impact_hypothesis: ровно 1 канал. "
+            "answer до 120 символов; claims пустой массив, если отдельные наблюдения не нужны. "
+            "mechanism до 120 символов, assumptions ровно 1 короткий пункт, uncertainty до 100 символов. "
+            "Сохрани все обязательные fact_ids канала; сокращай текст, а не основания. "
+            "highlights и actions оставь пустыми. Не дублируй гипотезу в answer или claims."
+        )
+    return instruction
+
+
+def _introduction_packet() -> dict:
+    return {"as_of": None, "snapshot_id": None, "facts": [], "sources": [],
+            "allowed_highlights": [], "tools_used": [], "impact_context": None,
+            "explanation_context": None, "coverage": {"purpose": "introduction_only",
+            "financial_context_included": False}, "strategy_version": None,
+            "tool_permissions": {"broker": "none", "orders": False, "external_messages": False}}
 
 # This allowlist is a privacy boundary: never forward arbitrary persisted code
 # strings or messages to the model. Messages are reconstructed from trusted code.
@@ -503,7 +549,8 @@ def fact_packet(user: Any, context: dict) -> dict:
             "tool_permissions": {"broker": "read_only", "strategy": "preview_requires_separate_confirmation", "orders": False, "external_messages": False}}
 
 
-def model_messages(user: Any, text: str, context: dict, thread_id: str | None = None, before_job_id: str | None = None) -> tuple[list[dict], dict]:
+def model_messages(user: Any, text: str, context: dict, thread_id: str | None = None, before_job_id: str | None = None,
+                   *, max_output_tokens: int = MAX_OUTPUT) -> tuple[list[dict], dict]:
     packet = fact_packet(user, context)
     history = []
     if thread_id:
@@ -514,6 +561,13 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
                 AND (? IS NULL OR rowid<?) ORDER BY rowid DESC LIMIT 4""",
                 (thread_id, int(user["id"]), boundary, boundary)).fetchall()
         history = [{"role": row["role"], "text": row["text"][:4000]} for row in reversed(rows)]
+    # Keep the same context/thread ownership checks, but a standalone greeting
+    # has no financial task. Past analyses must not inflate it into another one.
+    if is_introduction(text):
+        packet = _introduction_packet()
+        messages = [{"role": "system", "content": INTRODUCTION_SYSTEM + _response_instruction(max_output_tokens)},
+                    {"role": "user", "content": state.encode({"question": text})}]
+        return messages, packet
     # Navigation metadata is bound by the server for the user's device. Account
     # IDs and source subject IDs are unnecessary for the paid model call.
     model_packet = {key: value for key, value in packet.items() if key not in {"sources", "allowed_highlights", "impact_context"}}
@@ -529,6 +583,7 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
     if packet.get("impact_context") is not None:
         model_packet["impact_request"] = packet["impact_context"]["model_request"]
         instructions += impact.MODEL_INSTRUCTION
+    instructions += _response_instruction(max_output_tokens, impact_request=packet.get("impact_context") is not None)
     contents = {"question": text, "context": model_packet, "recent_conversation": history}
     messages = [{"role": "system", "content": instructions}, {"role": "user", "content": state.encode(contents)}]
     if len(json.dumps(messages, ensure_ascii=False).encode()) > 110_000:
@@ -608,7 +663,8 @@ def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> di
     try:
         plan = _chat_plan(int(user["id"]), payload.text, payload.tier, payload.thread_id,
                           context=payload.context.model_dump(mode="json"))
-        messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id)
+        messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id,
+                                          max_output_tokens=plan.max_output_tokens)
         _, route = ready(int(user["id"]), plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
         selected = _route_snapshot(plan, route, _encoded_size(messages))
         from decimal import Decimal
@@ -656,7 +712,8 @@ def send_message(identifier: str, payload: MessageCreate, tasks: BackgroundTasks
             raise HTTPException(409, "request_id_payload_conflict")
         return jobs.get_job(user_id, prior["job_id"])
     plan = _admit_send(user_id, identifier, payload)
-    messages, _ = model_messages(user, payload.text, payload.context.model_dump(mode="json"), identifier)
+    messages, _ = model_messages(user, payload.text, payload.context.model_dump(mode="json"), identifier,
+                                 max_output_tokens=plan.max_output_tokens)
     try:
         _, route = ready(user_id, plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
     except GuardError as error:
@@ -734,7 +791,8 @@ def run_message(user: Any, job: dict, payload: dict) -> dict:
     except ChatPolicyError as error:
         raise GuardError(error.code) from None
     selected = _saved_route(user_id, job["id"])
-    messages, packet = model_messages(user, payload["text"], payload["context"], payload["thread_id"], job["id"])
+    messages, packet = model_messages(user, payload["text"], payload["context"], payload["thread_id"], job["id"],
+                                      max_output_tokens=plan.max_output_tokens)
     ready(user_id, plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
     jobs.progress("context_ready")
     client = GuardedAIClient(user_id, backend.connect, attempt_id="workspace:" + job["id"],
