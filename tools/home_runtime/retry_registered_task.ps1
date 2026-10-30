@@ -1,6 +1,12 @@
 # One ordinary, authorization-checked retry of the exact already-enrolled limited boot task.
 # No task/ACL modification, credentials, passwords or private event messages are used.
 $ErrorActionPreference='Stop'
+trap {
+    $why=$_.Exception.GetBaseException()
+    $summary=[ordered]@{phase='diagnostic-fault';line=$_.InvocationInfo.ScriptLineNumber;type=$why.GetType().Name;hresult=('0x{0:X8}' -f ([long]$why.HResult -band 4294967295L))}
+    Write-Output ('HOME_REGISTERED_RETRY='+($summary | ConvertTo-Json -Compress))
+    exit 1
+}
 if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016' -or [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { throw 'Unexpected observer' }
 $identity=(Get-LocalUser -Name AnalystAIHost).SID.Value
 $exe=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
@@ -52,13 +58,26 @@ try {
 if ($r.phase -eq 'lookup' -and $r.code -eq '0x80070005' -and $readyToRetry -and $r.has_profile -and
     $r.install_code -eq 'task-00041303') {
     # Try the registered task by its exact name. The scheduler enforces its execution permission.
-    $command=Join-Path $env:SystemRoot 'System32\schtasks.exe'
-    $oldPreference=$ErrorActionPreference
+    $psi=[Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName=Join-Path $env:SystemRoot 'System32\schtasks.exe'
+    $psi.Arguments='/Run /TN "\AnalystAI-HomeRuntime"'
+    $psi.UseShellExecute=$false
+    $psi.CreateNoWindow=$true
+    $psi.RedirectStandardOutput=$true
+    $psi.RedirectStandardError=$true
+    $command=[Diagnostics.Process]::new()
     try {
-        $ErrorActionPreference='Continue'
-        & $command /Run /TN '\AnalystAI-HomeRuntime' 2>&1 | Out-Null
-        $r.direct_exit=$LASTEXITCODE
-    } finally { $ErrorActionPreference=$oldPreference }
+        $command.StartInfo=$psi
+        $null=$command.Start()
+        $stdout=$command.StandardOutput.ReadToEndAsync()
+        $stderr=$command.StandardError.ReadToEndAsync()
+        if ($command.WaitForExit(12000)) {
+            $null=$stdout.GetAwaiter().GetResult()
+            $message=$stderr.GetAwaiter().GetResult()
+            $r.direct_exit=$command.ExitCode
+            $r.direct_reason=if ($message -match '(?i)access is denied|access denied|0x80070005') { 'access-denied' } else { 'not_classified' }
+        } else { $command.Kill();$r.direct_reason='timeout' }
+    } catch { $r.direct_error=NativeCode $_ } finally { $command.Dispose() }
 }
 try {
     $r.task_history_enabled=[bool](Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational').IsEnabled
@@ -74,3 +93,4 @@ try {
     $r.events_status='inspected'
 } catch { $r.events_status=if ($_.FullyQualifiedErrorId -like 'NoMatchingEventsFound*') {'none'} else {'unavailable'} }
 Write-Output ('HOME_REGISTERED_RETRY='+($r | ConvertTo-Json -Depth 5 -Compress))
+exit 0
