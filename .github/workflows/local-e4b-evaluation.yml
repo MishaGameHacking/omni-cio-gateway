@@ -1,0 +1,57 @@
+name: Measure isolated Gemma E4B candidate on owner WSL
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - tools/evaluate_local_e4b.py
+      - tools/check_local_e4b.py
+      - .github/workflows/local-e4b-evaluation.yml
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: local-e4b-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: af51ba32a85683419087760cf2b549176d7d58e5
+          path: local-e4b-${{ github.run_id }}-${{ github.run_attempt }}/source
+          persist-credentials: false
+          sparse-checkout: |
+            backend/local_research.py
+            deploy/local_research_worker.py
+            tools/evaluate_local_research.py
+          sparse-checkout-cone-mode: false
+      - name: Evaluate synthetic source selection without cloud tokens or production data
+        shell: cmd
+        working-directory: local-e4b-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 -c "import subprocess; assert subprocess.check_output(['git','-C','source','rev-parse','HEAD'],text=True).strip()=='af51ba32a85683419087760cf2b549176d7d58e5'"
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_local_e4b.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: local-e4b-evaluation-${{ github.run_id }}
+          path: local-e4b-${{ github.run_id }}-${{ github.run_attempt }}/local-e4b-evaluation.json
+          if-no-files-found: warn
+          retention-days: 7
