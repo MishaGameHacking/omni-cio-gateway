@@ -57,6 +57,26 @@ def test_document_revision_invalidates_cache():
     assert request.call_count == 2
 
 
+def test_changed_selection_policy_invalidates_cache():
+    with mock.patch.object(subject, "_request", return_value='{"selected":[0]}') as request:
+        first = subject.select_public_fragments("Report", "Revenue was 100 RUB.", enabled=True)
+        with mock.patch.object(subject, "SELECTOR_SHA256", "new_policy"):
+            second = subject.select_public_fragments("Report", "Revenue was 100 RUB.", enabled=True)
+    assert request.call_count == 2
+    assert first["selector_sha256"] != second["selector_sha256"]
+
+
+def test_worker_with_old_policy_rejected_before_reading_model_response():
+    context = subject.packet("Report", "Revenue was 100 RUB.")
+    with mock.patch.object(subject, "_UnixHTTPConnection") as client:
+        response = client.return_value.getresponse.return_value
+        response.status = 200
+        response.getheader.side_effect = lambda key: subject.MODEL_SHA256 if key == "x-model-sha256" else "old_policy"
+        with pytest.raises(subject.LocalResearchError, match="local_worker_policy_changed"):
+            subject._request(context)
+        response.read.assert_not_called()
+
+
 def test_cached_values_are_copied_and_expire_without_extending_lease():
     with mock.patch.object(subject, "_request", return_value='{"selected":[0]}') as request, mock.patch.object(subject.time, "monotonic") as clock:
         clock.return_value = 1

@@ -141,7 +141,7 @@ def _local_report_analysis(item, analysis):
     if selected["status"] != "disabled":
         analysis["local_research"] = selected
     if selected["status"] == "source_excerpt_selection":
-        analysis["version"] += ":local:" + selected["model_sha256"][:16]
+        analysis["version"] += ":local:" + selected["model_sha256"][:16] + ":" + selected["selector_sha256"][:16]
 
 
 def _parse(target, source, raw, final_url, now, window):

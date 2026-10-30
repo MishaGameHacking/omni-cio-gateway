@@ -108,6 +108,7 @@ def evaluate():
     peak_mib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
     result = {"schema": 1, "model": contract.MODEL_ID, "revision": contract.MODEL_REVISION,
               "model_sha256": contract.MODEL_SHA256, "runtime_version": VERSION,
+              "selector_sha256": contract.SELECTOR_SHA256,
               "cpu_threads": 1, "context_tokens": 2048, "peak_rss_mib": round(peak_mib, 2),
               "cases": results, "synthetic_fixtures_only": True,
               "quality_gate_passed": all(item["selection_correct"] for item in results),

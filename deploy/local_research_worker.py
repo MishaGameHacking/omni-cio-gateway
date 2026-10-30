@@ -109,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(output)))
         self.send_header("X-Model-SHA256", contract.MODEL_SHA256)
+        self.send_header("X-Selector-SHA256", contract.SELECTOR_SHA256)
         self.end_headers()
         self.wfile.write(output)
 
