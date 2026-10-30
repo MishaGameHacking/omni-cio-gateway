@@ -107,6 +107,32 @@ function Verify-Task($t,$sid) {
           [string]$t.Principal.LogonType -eq 'Password' -and @($t.Triggers).Count -eq 1 -and
           $t.Triggers[0].CimClass.CimClassName -eq 'MSFT_TaskBootTrigger') 'Unexpected task identity or trigger'
 }
+function Observer-TaskDacl([string]$source) {
+    $d=[Security.AccessControl.CommonSecurityDescriptor]::new($false,$false,$source)
+    Need ($null -ne $d.DiscretionaryAcl -and $d.DiscretionaryAcl.Count -gt 0) 'Empty task access list'
+    $mask=[int]([Security.AccessControl.FileSystemRights]::ReadAndExecute -bor [Security.AccessControl.FileSystemRights]::Synchronize)
+    foreach ($ace in $d.DiscretionaryAcl) {
+        if ($ace -is [Security.AccessControl.CommonAce] -and $ace.SecurityIdentifier.Value -eq $networkSid.Value -and
+            $ace.AceQualifier -eq [Security.AccessControl.AceQualifier]::AccessAllowed -and ($ace.AccessMask -band $mask) -eq $mask) {
+            return $d.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+        }
+    }
+    $d.DiscretionaryAcl.AddAccess([Security.AccessControl.AccessControlType]::Allow,$networkSid,$mask,
+                                  [Security.AccessControl.InheritanceFlags]::None,[Security.AccessControl.PropagationFlags]::None)
+    return $d.GetSddlForm([Security.AccessControl.AccessControlSections]::Access)
+}
+function Permit-LimitedTaskRetry {
+    # Called only after verifying the principal, executable, arguments and boot trigger.
+    try {
+        $service=New-Object -ComObject 'Schedule.Service'; $service.Connect()
+        $registered=$service.GetFolder('\').GetTask($task)
+        $old=$registered.GetSecurityDescriptor(4)
+        $new=Observer-TaskDacl $old
+        if ($new -cne $old) { $registered.SetSecurityDescriptor($new,16) }
+        $actual=$registered.GetSecurityDescriptor(4)
+        Need ((Observer-TaskDacl $actual) -ceq ([Security.AccessControl.CommonSecurityDescriptor]::new($false,$false,$actual)).GetSddlForm([Security.AccessControl.AccessControlSections]::Access)) 'Task retry permission was not retained'
+    } catch { Write-Warning ('Limited task visibility: '+(Error-Code $_)) }
+}
 function Log-Enrollment([string]$step,[string]$code='') {
     if (-not $journalEnabled) { return }
     $directory=Join-Path $root 'install-status'
@@ -119,7 +145,11 @@ function Log-Enrollment([string]$step,[string]$code='') {
 function Error-Code($cause) {
     $e=$cause.Exception
     while ($null -ne $e.InnerException) { $e=$e.InnerException }
-    if ($e -is [ComponentModel.Win32Exception]) { return ('win32-'+$e.NativeErrorCode) }
+    if ($e -is [ComponentModel.Win32Exception]) {
+        $n=[long]$e.NativeErrorCode
+        if ((($n -band 4294901760L) -eq 2147942400L)) { $n=$n -band 65535 }
+        return ('win32-'+$n)
+    }
     return ('hresult-{0:X8}' -f ([long]$e.HResult -band 4294967295L))
 }
 function Read-WorkerPhase([DateTime]$since) {
@@ -141,7 +171,37 @@ function Wait-WorkerPhase([DateTime]$since,[int]$seconds) {
     } while ([DateTime]::UtcNow -lt $until)
     return (Read-WorkerPhase $since)
 }
-function Profile-ChildInfo([string]$probe,[PSCredential]$credential) {
+function Stage-ProfileProof([string]$folder) {
+    # This script lives in the administrator-owned program directory and is readable by the limited service.
+    $proof=@'
+[CmdletBinding()]
+param([Parameter(Mandatory)][string]$ExpectedSid)
+$ErrorActionPreference='Stop'
+if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $ExpectedSid) { exit 41 }
+try {
+    $row=Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$ExpectedSid)
+    $location=[Environment]::ExpandEnvironmentVariables([string]$row.ProfileImagePath)
+    if (-not [IO.Directory]::Exists($location)) { exit 42 }
+    if (-not (Test-Path -LiteralPath ('Registry::HKEY_USERS\'+$ExpectedSid))) { exit 43 }
+} catch { exit 44 }
+[Console]::WriteLine('ANALYST_PROFILE_OK')
+exit 0
+'@
+    Plain $folder
+    $file=Join-Path $folder 'Check-AnalystProfile-v1.ps1'
+    $bytes=[Text.Encoding]::UTF8.GetBytes($proof)
+    if (-not [IO.File]::Exists($file)) {
+        $temp=Join-Path $folder ('proof-'+[Guid]::NewGuid().ToString('N'))
+        try { [IO.File]::WriteAllBytes($temp,$bytes); [IO.File]::Move($temp,$file) }
+        finally { if ([IO.File]::Exists($temp)) { [IO.File]::Delete($temp) } }
+    }
+    Plain $file
+    Need ([Convert]::ToBase64String([IO.File]::ReadAllBytes($file)) -ceq [Convert]::ToBase64String($bytes)) 'Unrecognized profile helper at destination'
+    return $file
+}
+function Profile-ChildInfo([string]$file,[string]$expectedSid,[PSCredential]$credential) {
+    Need ($expectedSid -match '^(?:S-1-5-20|S-1-5-21-(?:[0-9]+-){3}[0-9]+)$') 'Unexpected profile proof SID'
+    Need ([IO.Path]::IsPathRooted($file) -and [IO.Path]::GetFileName($file) -ceq 'Check-AnalystProfile-v1.ps1' -and $file -notmatch '["\r\n]') 'Invalid profile proof file'
     $psi=[Diagnostics.ProcessStartInfo]::new()
     $psi.FileName=$winPS
     $psi.UseShellExecute=$false
@@ -150,7 +210,9 @@ function Profile-ChildInfo([string]$probe,[PSCredential]$credential) {
     $psi.WorkingDirectory=$env:SystemRoot
     $psi.RedirectStandardOutput=$true
     $psi.RedirectStandardError=$true
-    $psi.Arguments='-NoLogo -NoProfile -NonInteractive -EncodedCommand '+[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
+    $psi.Arguments='-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "'+$file+'" -ExpectedSid '+$expectedSid
+    # CreateProcessWithLogonW limits the entire command line, including the executable and its quotes.
+    Need (($psi.FileName.Length+$psi.Arguments.Length+4) -le 1024) 'Alternate-account command exceeds Windows 1024-character limit'
     if ($null -ne $credential) {
         Need ($credential.UserName -eq $localUser) 'Unexpected profile logon target'
         $psi.Domain=$machine
@@ -175,27 +237,90 @@ function Run-ProfileChild([Diagnostics.ProcessStartInfo]$startInfo) {
         Need ($p.ExitCode -eq 0 -and $proof -eq 'ANALYST_PROFILE_OK') ('Profile proof failed, process exit '+$p.ExitCode)
     } finally { $p.Dispose() }
 }
+function Import-ProfileApi {
+    if ('AnalystHome.ProfileLoader' -as [type]) { return }
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Security;
+using System.Security.Principal;
+using Microsoft.Win32;
+namespace AnalystHome {
+    public static class ProfileLoader {
+        [StructLayout(LayoutKind.Sequential)] struct Luid { public uint Low; public int High; }
+        [StructLayout(LayoutKind.Sequential)] struct Privileges { public uint Count; public Luid Id; public uint Attributes; }
+        [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct Profile {
+            public int Size, Flags; public string UserName, Path, DefaultPath, Server, Policy; public IntPtr Hive;
+        }
+        [DllImport("kernel32.dll")] static extern IntPtr GetCurrentProcess();
+        [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+        [DllImport("advapi32.dll",SetLastError=true)] static extern bool OpenProcessToken(IntPtr process,uint access,out IntPtr token);
+        [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool LookupPrivilegeValue(string system,string name,out Luid id);
+        [DllImport("advapi32.dll",SetLastError=true)] static extern bool AdjustTokenPrivileges(IntPtr token,bool all,ref Privileges state,uint length,out Privileges previous,out uint returned);
+        [DllImport("advapi32.dll",EntryPoint="AdjustTokenPrivileges",SetLastError=true)] static extern bool RestorePrivilege(IntPtr token,bool all,ref Privileges state,uint length,IntPtr previous,IntPtr returned);
+        [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true,ExactSpelling=true)] static extern bool LogonUserW(string user,string domain,IntPtr password,uint type,uint provider,out IntPtr token);
+        [DllImport("userenv.dll",CharSet=CharSet.Unicode,SetLastError=true,ExactSpelling=true)] static extern bool LoadUserProfileW(IntPtr token,ref Profile profile);
+        [DllImport("userenv.dll",SetLastError=true,ExactSpelling=true)] static extern bool UnloadUserProfile(IntPtr token,IntPtr hive);
+        static void Check(bool success) { if(!success) throw new Win32Exception(Marshal.GetLastWin32Error()); }
+        static Privileges Enable(IntPtr token,string name) {
+            Privileges desired=new Privileges(), old; uint length;
+            Check(LookupPrivilegeValue(null,name,out desired.Id)); desired.Count=1; desired.Attributes=2;
+            bool result=AdjustTokenPrivileges(token,false,ref desired,(uint)Marshal.SizeOf(typeof(Privileges)),out old,out length);
+            int error=Marshal.GetLastWin32Error(); if(!result || error!=0) throw new Win32Exception(error);
+            return old;
+        }
+        public static int StructureSize { get { return Marshal.SizeOf(typeof(Profile)); } }
+        public static void Load(string domain,string user,SecureString secret,string expectedSid) {
+            if (!String.Equals(domain,Environment.MachineName,StringComparison.OrdinalIgnoreCase) || user!="AnalystAIHost") throw new InvalidOperationException("Unexpected account");
+            IntPtr password=IntPtr.Zero, token=IntPtr.Zero, caller=IntPtr.Zero;
+            Privileges backup=new Privileges(),restore=new Privileges(); bool changedBackup=false, changedRestore=false;
+            try {
+                password=Marshal.SecureStringToGlobalAllocUnicode(secret);
+                Check(LogonUserW(user,domain,password,4,0,out token));
+                Marshal.ZeroFreeGlobalAllocUnicode(password); password=IntPtr.Zero;
+                using (WindowsIdentity identity=new WindowsIdentity(token)) {
+                    if (identity.User.Value!=expectedSid) throw new InvalidOperationException("Service SID mismatch");
+                }
+                Check(OpenProcessToken(GetCurrentProcess(),0x28,out caller));
+                backup=Enable(caller,"SeBackupPrivilege"); changedBackup=true;
+                restore=Enable(caller,"SeRestorePrivilege"); changedRestore=true;
+                Profile p=new Profile();p.Size=StructureSize;p.Flags=1;p.UserName=user;
+                Check(LoadUserProfileW(token,ref p));
+                try {
+                    using(RegistryKey hive=Registry.Users.OpenSubKey(expectedSid)) {
+                        if(hive==null) throw new InvalidOperationException("Dedicated hive proof missing");
+                    }
+                } finally { Check(UnloadUserProfile(token,p.Hive)); }
+            } finally {
+                if(changedRestore && restore.Count!=0) RestorePrivilege(caller,false,ref restore,0,IntPtr.Zero,IntPtr.Zero);
+                if(changedBackup && backup.Count!=0) RestorePrivilege(caller,false,ref backup,0,IntPtr.Zero,IntPtr.Zero);
+                if(caller!=IntPtr.Zero) CloseHandle(caller);
+                if(token!=IntPtr.Zero) CloseHandle(token);
+                if(password!=IntPtr.Zero) Marshal.ZeroFreeGlobalAllocUnicode(password);
+            }
+        }
+    }
+}
+'@
+}
 function Initialize-ByLogon([PSCredential]$credential,[string]$ownerSid) {
     Need ($ownerSid -match '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') 'Unexpected service account SID'
-    $secondary=Get-Service -Name seclogon
-    if ($secondary.Status -ne 'Running') {
-        Start-Service -Name seclogon
-        $secondary.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(25))
+    $proof=Stage-ProfileProof $root
+    $launch=Profile-ChildInfo $proof $ownerSid $credential
+    try {
+        $secondary=Get-Service -Name seclogon
+        if ($secondary.Status -ne 'Running') {
+            Start-Service -Name seclogon
+            $secondary.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(25))
+        }
+        Run-ProfileChild $launch
+    } catch {
+        # Use the Windows batch logon and profile APIs in this same approved process, even when child creation is unavailable.
+        Log-Enrollment 'native-profile-recovery' (Error-Code $_)
+        Import-ProfileApi
+        [AnalystHome.ProfileLoader]::Load($machine,$name,$credential.Password,$ownerSid)
     }
-    # The child runs only a fixed identity/profile check. No password is passed on a command line.
-    $probe=@'
-$ErrorActionPreference='Stop'
-$want='EXPECTED_SID'
-if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $want) { exit 41 }
-$p=Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$want)
-$root=[Environment]::ExpandEnvironmentVariables([string]$p.ProfileImagePath)
-if (-not [IO.Directory]::Exists($root)) { exit 42 }
-if (-not (Test-Path -LiteralPath ('Registry::HKEY_USERS\'+$want))) { exit 43 }
-[Console]::WriteLine('ANALYST_PROFILE_OK')
-exit 0
-'@
-    $probe=$probe.Replace('EXPECTED_SID',$ownerSid)
-    Run-ProfileChild (Profile-ChildInfo $probe $credential)
 }
 function Start-HomeSupervisor([PSCredential]$credential,[string]$ownerSid) {
     $since=[DateTime]::UtcNow
@@ -203,7 +328,7 @@ function Start-HomeSupervisor([PSCredential]$credential,[string]$ownerSid) {
     $profileKey='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$ownerSid
     try {
         Start-ScheduledTask -TaskPath '\' -TaskName $task
-        $phase=Wait-WorkerPhase $since 45
+        $phase=Wait-WorkerPhase $since 35
     } catch {
         if (Test-Path -LiteralPath $profileKey) { throw }
         Log-Enrollment 'start-needs-profile' (Error-Code $_)
@@ -211,10 +336,28 @@ function Start-HomeSupervisor([PSCredential]$credential,[string]$ownerSid) {
     }
     if ((-not $phase -or $phase -in 'windows','failed-windows','failed-import') -and -not (Test-Path -LiteralPath $profileKey)) {
         Log-Enrollment 'loading-profile'
-        Initialize-ByLogon $credential $ownerSid
+        try { Initialize-ByLogon $credential $ownerSid } catch {
+            if (-not (Test-Path -LiteralPath $profileKey)) { throw }
+            $known=Get-ItemProperty -LiteralPath $profileKey
+            $profilePath=[Environment]::ExpandEnvironmentVariables([string]$known.ProfileImagePath)
+            if (-not [IO.Directory]::Exists($profilePath)) { throw }
+            Log-Enrollment 'profile-present-after-logon' (Error-Code $_)
+        }
         Log-Enrollment 'retrying-task'
+        $originalStart=$since
         $since=[DateTime]::UtcNow
         $registered=Get-ScheduledTask -TaskPath '\' -TaskName $task
+        $afterLogon=Read-WorkerPhase $originalStart
+        if ($registered.State -eq 'Running' -and (-not $afterLogon -or $afterLogon -in 'windows','failed-windows','failed-import') -and
+            -not (Test-Path -LiteralPath (Join-Path $root 'state\ready.txt'))) {
+            # A newly enrolled task which never reached import may be holding a session without its new hive.
+            Stop-ScheduledTask -TaskPath '\' -TaskName $task
+            for ($attempt=0;$attempt -lt 10;$attempt++) {
+                $registered=Get-ScheduledTask -TaskPath '\' -TaskName $task
+                if ($registered.State -ne 'Running') { break }
+                Start-Sleep -Seconds 1
+            }
+        }
         if ($registered.State -ne 'Running') { Start-ScheduledTask -TaskPath '\' -TaskName $task }
         $phase=Wait-WorkerPhase $since 65
     }
@@ -284,13 +427,9 @@ if ($info.sid) {
     $current=Get-ScheduledTask -TaskPath '\' -TaskName $task -ErrorAction SilentlyContinue
     if ($current) {
         Verify-Task $current $account.SID
-        if ($current.State -ne 'Running') {
-            Start-ScheduledTask -TaskPath '\' -TaskName $task
-            Start-Sleep -Seconds 3
-            $current=Get-ScheduledTask -TaskPath '\' -TaskName $task
-        }
+        Permit-LimitedTaskRetry
         if ($current.State -eq 'Running') {
-            $previous=Read-WorkerPhase ([DateTime]'2000-01-01')
+            $previous=Read-WorkerPhase ([DateTime]::UtcNow.AddMinutes(-10))
             if ($previous -and $previous -notlike 'failed-*') {
                 Log-Enrollment ('worker-'+$previous)
                 Write-Output ('Owned task is running. Its last guest checkpoint was '+$previous+'.')
@@ -340,6 +479,7 @@ try {
     $null=Register-ScheduledTask @taskOptions -Password $plainPassword
     $created=Get-ScheduledTask -TaskPath '\' -TaskName $task
     Verify-Task $created $account.SID
+    Permit-LimitedTaskRetry
     Log-Enrollment 'task-registered'
     $checkpoint='starting-supervisor'
     $credential=[PSCredential]::new($localUser,$secret)

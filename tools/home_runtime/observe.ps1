@@ -57,7 +57,7 @@ function Installer-State {
         $r=Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
         $label=[string]$r.stage
         $code=[string]$r.code
-        $allowed='^(receipt-verified|task-registered|starting-task|start-needs-profile|loading-profile|retrying-task|waiting-worker|existing-supervisor|registering-task|worker-(?:failed-)?(?:windows|import|configure|application|local-model|login-check|supervising)|failed-(?:entry|service-account|account-access|registering-task|starting-supervisor))$'
+        $allowed='^(receipt-verified|task-registered|starting-task|start-needs-profile|loading-profile|native-profile-recovery|profile-present-after-logon|retrying-task|waiting-worker|existing-supervisor|registering-task|worker-(?:failed-)?(?:windows|import|configure|application|local-model|login-check|supervising)|failed-(?:entry|service-account|account-access|registering-task|starting-supervisor))$'
         if ($r.package -ne 'd958608239005290f808' -or $label -notmatch $allowed -or $code -notmatch '^(?:|win32--?[0-9]{1,10}|hresult-[0-9A-F]{8}|task-[0-9A-F]{8})$') { throw 'Unknown receipt' }
         return [ordered]@{stage=$label;code=$code}
     } catch { return [ordered]@{stage='unavailable';code=''} }
