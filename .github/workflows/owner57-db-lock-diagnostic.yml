@@ -1,3 +1,4 @@
+# Observe availability after WAL repair run 41035723845; preserve all user state.
 name: Identify SQLite write-lock holder without changing application state
 on:
   push:
