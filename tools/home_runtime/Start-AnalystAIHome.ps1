@@ -6,7 +6,7 @@ $checked={
     $ErrorActionPreference='Stop'
     try {
         if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'This package belongs to another computer.' }
-        $expected='cf7cd33acc01a6df8d00f9d67ee84682f0b331dfcb93ffbc2db20f8f0b7c315d'
+        $expected='fb477f21eab4ad72d0b777e3266e60bc49806b812e8f3f2d25910d7168ccd7c4'
         $spool=Join-Path $env:SystemRoot 'ServiceProfiles/NetworkService/AppData/Local/AnalystAI-HomeLab'
         $file=Join-Path $spool ('installer-'+$expected+'/Install-AnalystAIHome.ps1')
         # Hash the same in-memory bytes that PowerShell will execute. Never elevate a mutable CI file by its path.
@@ -20,7 +20,7 @@ $checked={
         & $install
         Start-Sleep -Seconds 5
     } catch {
-        Write-Host ('Enrollment failed. '+$_.Exception.Message) -ForegroundColor Red
+        Write-Host ('Enrollment failed. {0} (0x{1:X8})' -f $_.Exception.Message,([long]$_.Exception.HResult -band 4294967295L)) -ForegroundColor Red
         if ($env:ANALYST_HOME_VERIFY_ONLY -ne '1') { $null=Read-Host 'Press Enter to close' }
         exit 1
     }
