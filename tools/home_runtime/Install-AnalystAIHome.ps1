@@ -141,6 +141,40 @@ function Wait-WorkerPhase([DateTime]$since,[int]$seconds) {
     } while ([DateTime]::UtcNow -lt $until)
     return (Read-WorkerPhase $since)
 }
+function Profile-ChildInfo([string]$probe,[PSCredential]$credential) {
+    $psi=[Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName=$winPS
+    $psi.UseShellExecute=$false
+    $psi.CreateNoWindow=$true
+    $psi.LoadUserProfile=$true
+    $psi.WorkingDirectory=$env:SystemRoot
+    $psi.RedirectStandardOutput=$true
+    $psi.RedirectStandardError=$true
+    $psi.Arguments='-NoLogo -NoProfile -NonInteractive -EncodedCommand '+[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
+    if ($null -ne $credential) {
+        Need ($credential.UserName -eq $localUser) 'Unexpected profile logon target'
+        $psi.Domain=$machine
+        $psi.UserName=$name
+        $psi.Password=$credential.Password
+    }
+    return $psi
+}
+function Run-ProfileChild([Diagnostics.ProcessStartInfo]$startInfo) {
+    $p=[Diagnostics.Process]::new()
+    $p.StartInfo=$startInfo
+    try {
+        Need ($p.Start()) 'Windows could not launch the profile check'
+        $stdout=$p.StandardOutput.ReadToEndAsync()
+        $stderr=$p.StandardError.ReadToEndAsync()
+        if (-not $p.WaitForExit(60000)) {
+            try { $p.Kill() } catch {}
+            throw 'The profile check timed out'
+        }
+        $proof=$stdout.GetAwaiter().GetResult().Trim()
+        $null=$stderr.GetAwaiter().GetResult()
+        Need ($p.ExitCode -eq 0 -and $proof -eq 'ANALYST_PROFILE_OK') ('Profile proof failed, process exit '+$p.ExitCode)
+    } finally { $p.Dispose() }
+}
 function Initialize-ByLogon([PSCredential]$credential,[string]$ownerSid) {
     Need ($ownerSid -match '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') 'Unexpected service account SID'
     $secondary=Get-Service -Name seclogon
@@ -157,15 +191,11 @@ $p=Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVe
 $root=[Environment]::ExpandEnvironmentVariables([string]$p.ProfileImagePath)
 if (-not [IO.Directory]::Exists($root)) { exit 42 }
 if (-not (Test-Path -LiteralPath ('Registry::HKEY_USERS\'+$want))) { exit 43 }
+[Console]::WriteLine('ANALYST_PROFILE_OK')
 exit 0
 '@
     $probe=$probe.Replace('EXPECTED_SID',$ownerSid)
-    $cmd=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
-    $p=Start-Process -FilePath $winPS -ArgumentList ('-NoLogo -NoProfile -NonInteractive -EncodedCommand '+$cmd) -Credential $credential -LoadUserProfile -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru
-    try {
-        if (-not $p.WaitForExit(60000)) { throw 'The dedicated profile logon timed out' }
-        Need ($p.ExitCode -eq 0) ('The dedicated profile check exited with '+$p.ExitCode)
-    } finally { $p.Dispose() }
+    Run-ProfileChild (Profile-ChildInfo $probe $credential)
 }
 function Start-HomeSupervisor([PSCredential]$credential,[string]$ownerSid) {
     $since=[DateTime]::UtcNow

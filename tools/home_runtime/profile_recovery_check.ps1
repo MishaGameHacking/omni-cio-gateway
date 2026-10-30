@@ -13,19 +13,16 @@ $id=(Get-LocalUser -Name 'AnalystAIHost').SID.Value
 $secret=ConvertTo-SecureString ('Fp4!'+[Guid]::NewGuid().ToString('N')) -AsPlainText -Force
 $credential=[PSCredential]::new($localUser,$secret)
 try {
-    # Windows PowerShell 5.1 Start-Process has no WhatIf switch. Validate the credential parameter set
-    # and really start a harmless process as the observer. The cross-account logon is exercised only by Windows enrollment.
-    $needed=@('FilePath','ArgumentList','Credential','LoadUserProfile','WorkingDirectory','WindowStyle','PassThru')
-    $sets=@((Get-Command Microsoft.PowerShell.Management\Start-Process).ParameterSets | Where-Object {
-        $names=@($_.Parameters.Name)
-        @($needed | Where-Object {$_ -notin $names}).Count -eq 0
-    })
-    Need ($sets.Count -ge 1) 'Native profile launch parameter set is unavailable'
-    $probe="if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { exit 21 }; exit 0"
-    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
-    $child=Microsoft.PowerShell.Management\Start-Process -FilePath $winPS -ArgumentList ('-NoProfile -NonInteractive -EncodedCommand '+$encoded) -LoadUserProfile -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru
-    try { Need ($child.WaitForExit(20000) -and $child.ExitCode -eq 0) 'Observer profile launch failed' }
-    finally { $child.Dispose() }
+    # Exercise the very same process transport as the approved logon, without authenticating as another user.
+    $probe="if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { exit 21 }; [Console]::WriteLine('ANALYST_PROFILE_OK'); exit 0"
+    $cross=Profile-ChildInfo $probe $credential
+    Need ($cross.LoadUserProfile -and -not $cross.UseShellExecute -and $cross.Domain -eq $machine -and
+          $cross.UserName -eq $name -and $cross.Password.Length -gt 0) 'Native logon settings are incomplete'
+    Run-ProfileChild (Profile-ChildInfo $probe $null)
+    $negative=$false
+    try { Run-ProfileChild (Profile-ChildInfo 'exit 42' $null) }
+    catch { if ($_.Exception.Message -notmatch 'process exit 42$') { throw }; $negative=$true }
+    Need $negative 'An unsuccessful profile child was accepted'
 
     $astErrors=$null; $tokens=$null
     $ast=[Management.Automation.Language.Parser]::ParseFile($Installer,[ref]$tokens,[ref]$astErrors)
