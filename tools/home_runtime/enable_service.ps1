@@ -73,11 +73,15 @@ function SetServiceAccess {
         Check ($LASTEXITCODE -eq 0) 'Cannot grant the service observer query/start rights'
     }
 }
+function LocalIdentityMatches([string]$actual,[string]$expected) {
+    if ($actual.StartsWith('.\')) { $actual=$env:COMPUTERNAME+$actual.Substring(1) }
+    return $actual -ieq $expected
+}
 function ConfigureService([string]$exe,[string]$account,[PSCredential]$credentials) {
     $entry=Get-CimInstance Win32_Service -Filter "Name='AnalystAIHomeHost'"
     $quoted='"'+$exe+'"'
     if ($entry) {
-        Check ($entry.PathName -ceq $quoted -and $entry.StartName -ieq $account) 'A different service owns this name'
+        Check ($entry.PathName -ceq $quoted -and (LocalIdentityMatches $entry.StartName $account)) 'A different service owns this name'
         if ($entry.State -ne 'Running') {
             $result=Invoke-CimMethod -InputObject $entry -MethodName Change -Arguments @{
                 StartName=$account;StartPassword=$credentials.GetNetworkCredential().Password}
@@ -160,7 +164,7 @@ try {
     $stage='compile';WriteServiceReceipt $stage
     $exe=MakeHost $root $HostSource $workerDigest
     $entry=Get-CimInstance Win32_Service -Filter "Name='AnalystAIHomeHost'"
-    if ($entry) { Check ($entry.PathName -ceq ('"'+$exe+'"') -and $entry.StartName -ieq $account) 'Different service with this name exists' }
+    if ($entry) { Check ($entry.PathName -ceq ('"'+$exe+'"') -and (LocalIdentityMatches $entry.StartName $account)) 'Different service with this name exists' }
     $workerStatus=Join-Path $root 'report\status.json'
     if (-not $entry -and $original.State -eq 'Running' -and [IO.File]::Exists($workerStatus)) {
         $prior=Get-Content -LiteralPath $workerStatus -Raw | ConvertFrom-Json
@@ -201,8 +205,14 @@ try {
     $service=Get-Service -Name $serviceName
     if ($service.Status -ne 'Running') { Start-Service -Name $serviceName }
     $service.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(45))
-    $current=Get-CimInstance Win32_Service -Filter "Name='AnalystAIHomeHost'"
-    Check ($current.State -eq 'Running' -and $current.StartMode -eq 'Auto' -and $current.StartName -ieq $account -and $current.ProcessId -gt 0) 'SCM did not confirm the limited automatic service'
+    $confirmed=$false
+    for ($i=0;$i -lt 12;$i++) {
+        $current=Get-CimInstance Win32_Service -Filter "Name='AnalystAIHomeHost'"
+        $confirmed=($current.State -eq 'Running' -and $current.StartMode -eq 'Auto' -and (LocalIdentityMatches $current.StartName $account) -and $current.ProcessId -gt 0)
+        if ($confirmed) { break }
+        Start-Sleep -Seconds 1
+    }
+    Check $confirmed ('SCM state '+$current.State+', mode '+$current.StartMode+', identity match '+(LocalIdentityMatches $current.StartName $account)+', exit '+$current.ExitCode)
     WriteServiceReceipt 'running'
     Write-Output 'Windows started the Analyst AI service. The Ubuntu worker is now being checked separately.'
 } catch {

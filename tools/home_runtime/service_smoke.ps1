@@ -79,7 +79,7 @@ while ($true) { Start-Sleep 5 }
     Start-Service $service
     $second=Witness $first
     $entry=Get-CimInstance Win32_Service -Filter "Name='AnalystAIHomeHost'"
-    if ($entry.State -ne 'Running' -or $entry.StartMode -ne 'Auto' -or $entry.StartName -ine $account) { throw 'Unexpected service identity or start mode' }
+    if ($entry.State -ne 'Running' -or $entry.StartMode -ne 'Auto' -or $entry.StartName -notin @($account,('.\'+$user))) { throw 'Unexpected service identity or start mode' }
     Write-Output ('HOME_SCM_QA='+(@{registration='real';standard_account=$true;session_zero=$true;profile=$true;automatic=$true;
         observer_mask='0x20015';previous_task_disabled=$true;repeat_kept_process=$true;worker_stopped=$true;restart_new_process=($second -ne $first);
         real_reboot=$false;test_guest='fixture'}|ConvertTo-Json -Compress))
