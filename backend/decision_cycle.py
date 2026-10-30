@@ -30,7 +30,11 @@ _MESSAGES = {
     "automation_paused": "Автоматический анализ приостановлен; прежний расчёт не применяется.",
     "account_outside_mandate": "Счёт отсутствует в подтверждённом снимке или не соответствует стратегии.",
     "candidate_account_unverified": "Расчёт кандидата не привязан к выбранному счёту.",
-    "investment_profile_incomplete": "Инвестиционный профиль и допустимые потери не подтверждены полностью.",
+    "investment_profile_incomplete": "Не все параметры инвестиционного профиля подтверждены; причины перечислены отдельно.",
+    "loss_capacity_not_confirmed": "Не сохранено подтверждение способности переносить инвестиционные потери.",
+    "income_stability_unknown": "В стратегии не указана стабильность дохода.",
+    "loss_capacity_invalid": "Допустимый размер потерь отсутствует или выходит за пределы 0–100%.",
+    "zero_loss_capacity_blocks_new_risk": "В стратегии допустимые потери равны нулю; новые рискованные вложения заблокированы.",
     "fresh_snapshot_required": "Для решения нужен свежий снимок счёта.",
     "portfolio_coverage_incomplete": "Данные портфеля неполные; доступные средства не подтверждены.",
     "broker_connection_required": "Нет действующего подключения брокера.",
@@ -362,10 +366,18 @@ def _profile_blockers(active):
     config = _mapping((active or {}).get("config"))
     construction = _mapping(config.get("construction"))
     capacity = _amount(_mapping(config.get("mandate")).get("loss_capacity_percent"))
-    if (construction.get("loss_capacity_confirmed") is not True or construction.get("income_stability") not in ("stable", "variable")
-            or capacity is None or capacity <= 0):
-        return ["investment_profile_incomplete"]
-    return []
+    reasons = []
+    if construction.get("loss_capacity_confirmed") is not True:
+        reasons.append("loss_capacity_not_confirmed")
+    if construction.get("income_stability") not in ("stable", "variable"):
+        reasons.append("income_stability_unknown")
+    if capacity is None or not 0 <= capacity <= 100:
+        reasons.append("loss_capacity_invalid")
+    if reasons:
+        reasons.insert(0, "investment_profile_incomplete")
+    if capacity == 0:
+        reasons.append("zero_loss_capacity_blocks_new_risk")
+    return reasons
 
 
 def _select_proposed(candidates, discovery, blockers):
@@ -505,3 +517,4 @@ def latest(db, user_id, broker_key, active, snapshot, evidence_revision, now, *,
             candidate["preview_eligible"] = False
         _invalidate_margin(result, invalid)
     return result
+

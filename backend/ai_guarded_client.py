@@ -166,7 +166,27 @@ class Route:
 
     @property
     def identifier(self) -> str:
-        return hashlib.sha256((self.mode + ':' + self.url + ':' + self.model).encode()).hexdigest()
+        identity = self.mode + ':' + self.url + ':' + self.model
+        profile = _completion_profile(self.mode, self.model)
+        if profile:
+            # A queued, priced request cannot silently adopt a changed protocol.
+            identity += ':' + json.dumps(profile, sort_keys=True, separators=(',', ':'))
+        return hashlib.sha256(identity.encode()).hexdigest()
+
+
+def _completion_profile(mode: str, model: str) -> dict:
+    """Exact provider identifiers; this declares protocol, never model access.
+
+    No tool access is passed to these bounded JSON analysis requests. Admission,
+    current prices, evaluation and budgets are separate route checks.
+    """
+    effort = {
+        'openai/gpt-6-luna': 'none',
+        'openai/gpt-6.1-terra': 'none',
+        'openai/gpt-6.1-sol': 'low',
+        'openai/gpt-6-astra': 'low',
+    }.get(model) if mode == 'gateway' else None
+    return {'reasoning_effort': effort, 'response_format': {'type': 'json_object'}} if effort else {}
 
 
 def configured_route(tier, env=None, *, at: int | None = None,
@@ -221,6 +241,8 @@ def _configured_label(label: str, env, now: int) -> Route:
     parameter = env.get(prefix + 'TOKEN_PARAMETER', '')
     if parameter not in {'max_tokens','max_completion_tokens'}:
         reject('ai_token_parameter_required')
+    if _completion_profile(mode, model) and parameter != 'max_completion_tokens':
+        reject('ai_completion_token_budget_required')
     return Route(mode, url, key, model, input_rate, output_rate, allowance, parameter, region, expires_at)
 
 
@@ -264,6 +286,7 @@ def completion_payload(route: Route, messages, max_output_tokens: int) -> dict:
     payload = {'messages': list(messages), 'stream': False, route.token_parameter: max_output_tokens}
     if route.mode == 'gateway':
         payload['model'] = route.model
+        payload.update(_completion_profile(route.mode, route.model))
         if route.model == 'dashscope/qwen3.5-flash':
             # Provider catalogue exposes this exact parameter; avoid hidden
             # reasoning tokens for bounded fact explanations. No model fallback.
