@@ -40,6 +40,16 @@ and request-ID lookup. Pages differ on the response to repeat submission. The
 coordinator therefore never infers that a missing response or missing lookup
 means a new submission is safe.
 
+## Nested cache reliability
+
+Nested dossier loads could acquire cache stripes in opposite order and deadlock.
+Nested cache access now avoids taking a second stripe while preserving outer
+single-flight loading, identity isolation, TTL, defensive copies and the 256-entry
+bound. A concurrent late completion does not overwrite a value published during
+its load. Six bounded concurrency and cache checks cover these properties.
+This source defect is confirmed; attribution of the observed runtime stall to
+this specific defect remains unproven without thread stacks.
+
 ## Remaining boundary
 
 A production broker adapter, executable investment eligibility, exact charges,

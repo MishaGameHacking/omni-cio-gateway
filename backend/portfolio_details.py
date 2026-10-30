@@ -8,7 +8,7 @@ from collections import OrderedDict, defaultdict
 from contextlib import closing
 from datetime import date, datetime, time as day_time, timedelta, timezone
 from decimal import Decimal
-from threading import RLock
+from threading import RLock, local
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -58,6 +58,7 @@ _cache: OrderedDict = OrderedDict()
 _public_cache: OrderedDict = OrderedDict()
 _cache_lock = RLock()
 _request_locks = [RLock() for _ in range(32)]
+_cache_context = local()
 
 
 def number(value: Any) -> Decimal | None:
@@ -89,20 +90,37 @@ def identity(user: Any) -> tuple:
 
 def cached(key: tuple, ttl: int, load):
     """Bounded, identity-scoped cache and single flight for concurrent refreshes."""
+    # A dossier can load an instrument, dashboard and news through this same
+    # cache. Holding stripe A while waiting for stripe B permits an AB/BA
+    # deadlock with another dossier. Nested calls read/store normally but never
+    # wait on a second stripe; only independent top-level loads single-flight.
+    if getattr(_cache_context, "loading", False):
+        return _cached_value(key, ttl, load)
     lock = _request_locks[hash(key) % len(_request_locks)]
     with lock:
-        with _cache_lock:
-            existing = _cache.get(key)
-            if existing and existing[0] > time.monotonic():
-                _cache.move_to_end(key)
-                return copy.deepcopy(existing[1])
-        value = load()
-        with _cache_lock:
+        _cache_context.loading = True
+        try:
+            return _cached_value(key, ttl, load)
+        finally:
+            _cache_context.loading = False
+
+
+def _cached_value(key: tuple, ttl: int, load):
+    with _cache_lock:
+        existing = _cache.get(key)
+        if existing and existing[0] > time.monotonic():
+            _cache.move_to_end(key)
+            return copy.deepcopy(existing[1])
+    value = load()
+    with _cache_lock:
+        # Concurrent nested readers may finish out of order. Do not overwrite
+        # a value another reader published while this load was in progress.
+        if _cache.get(key) is existing:
             _cache[key] = time.monotonic() + ttl, copy.deepcopy(value)
             _cache.move_to_end(key)
             while len(_cache) > 256:
                 _cache.popitem(last=False)
-        return value
+    return value
 
 
 class BrokerReader:
@@ -561,3 +579,4 @@ def load_payments(user: Any, account_id: str) -> dict:
 @router.get("/tinvest/accounts/{account_id}/payments", responses=READ_ERRORS)
 def payments(account_id: str, user: Any = Depends(backend.current_user)) -> dict:
     return cached(("payments", *identity(user), account_id), 60, lambda: load_payments(user, account_id))
+
