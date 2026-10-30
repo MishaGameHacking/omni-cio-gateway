@@ -2,15 +2,21 @@
 import hashlib
 import importlib.util
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
+import zipfile
 from unittest.mock import Mock, patch
 
 spec = importlib.util.spec_from_file_location("preparation", Path(__file__).with_name("prepare_local_ai_runtime.py"))
 subject = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(subject)
+
+transport_spec = importlib.util.spec_from_file_location("staging_transport", Path(__file__).resolve().parents[1] / "tools/prepare_local_ai_runtime_transport.py")
+transport = importlib.util.module_from_spec(transport_spec)
+transport_spec.loader.exec_module(transport)
 
 
 class Response(io.BytesIO):
@@ -19,6 +25,28 @@ class Response(io.BytesIO):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_successful_workflow_without_quality_or_resource_gate_is_rejected(self):
+        report = {"status": "evaluated", "model_sha256": subject.MODEL_SHA,
+            "selector_sha256": "4bcc429dee99740c29cdfe773e6f7b53e5bffe10cc50ced8c6fb899ce2a233db",
+            "quality_gate_passed": True, "resource_gate_passed": True, "cpu_threads": 2,
+            "peak_rss_mib": 3827.93, "cases": [{"schema_valid": True, "selection_correct": True, "seconds": 8}] * 12}
+        for changes in ({}, {"resource_gate_passed": False}, {"quality_gate_passed": False}, {"peak_rss_mib": 6000},
+                        {"cases": []}, {"cases": [{"schema_valid": True, "selection_correct": True, "seconds": 13}] * 12}):
+            buffer = io.BytesIO()
+            with zipfile.ZipFile(buffer, "w") as archive:
+                archive.writestr("local-research-evaluation.json", json.dumps({**report, **changes}))
+            raw = buffer.getvalue()
+            with patch.object(transport, "ARTIFACT_SHA256", hashlib.sha256(raw).hexdigest()):
+                if changes:
+                    with self.assertRaises(ValueError):
+                        transport.verify_evaluation(raw)
+                else:
+                    transport.verify_evaluation(raw)
+
+    def test_model_evidence_checksum_is_mandatory(self):
+        with self.assertRaisesRegex(ValueError, "evaluation_archive_changed"):
+            transport.verify_evaluation(b"not the measured artifact")
+
     def test_stage_accepts_only_exact_source_scope(self):
         with patch.object(subject.os, "getuid", return_value=0), patch.object(subject, "prerequisites") as install:
             for payload in ({}, {"source_commit": "wrong"}, {"source_commit": subject.SOURCE, "command": "untrusted"}):
