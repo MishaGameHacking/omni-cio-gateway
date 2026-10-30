@@ -1,0 +1,29 @@
+name: Observe final backend CI progress
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/local-research-ci-progress.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Read only bounded synthetic CI logs
+        shell: py -3 {0}
+        run: |
+          import json, os
+          from pathlib import Path
+          assert os.environ.get("COMPUTERNAME") == "LAPTOP-NPSGA016"
+          for runner in ("actions-runner", "actions-runner-2", "actions-runner-3", "actions-runner-4"):
+              folder = Path("C:/") / runner / "_work/_temp/backend-ci-41077987609-1"
+              for name in ("linux-backend.log", "python-source-audit.log", "backend-ci-regressions.log"):
+                  path = folder / name
+                  if not path.is_file() or path.is_symlink():
+                      continue
+                  size = path.stat().st_size
+                  with path.open("rb") as source:
+                      source.seek(max(0, size - 5000))
+                      tail = source.read(5000).decode("utf-8", errors="replace")
+                  print("SYNTHETIC_CI_PROGRESS=" + json.dumps({"file": name, "size": size, "tail": tail}))
