@@ -12,6 +12,8 @@ concurrency:
 env:
   EXPECTED_TOOLS_SHA: '37b32928323c0db7761b7462278b5af2f753af34'
   EXPECTED_TOOLS_RUN: '41091495802'
+  EXPECTED_SSH_TOOLS_SHA: '7bd97dcb25778d756b6419887052107933736606'
+  EXPECTED_SSH_TOOLS_RUN: '41093693464'
 jobs:
   observe:
     runs-on: ubuntu-24.04
@@ -35,6 +37,18 @@ jobs:
             }
             const {data:transport}=await github.rest.repos.getContent({...context.repo,path:'tools/owner_plan_transport_20261027.py',ref:context.sha});
             if(transport.sha!=='7478ac9850fe1deeb729d1ccbc8fb0f28b849124') throw new Error('Reviewed transport changed');
+      - name: Require tested private SSH diagnostics
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_SSH_TOOLS_RUN)});
+            if(r.head_sha!==e.EXPECTED_SSH_TOOLS_SHA||r.path!=='.github/workflows/ssh-handshake-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('SSH diagnostic verification required');
+            for(const path of ['tools/observe_ssh_handshake.py','tools/test_observe_ssh_handshake.py','tools/check_ssh_handshake.py','.github/workflows/ssh-handshake-tools.yml']) {
+              const {data:tested}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_SSH_TOOLS_SHA});
+              const {data:current}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(tested.sha!==current.sha) throw new Error('SSH diagnostic source changed');
+            }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ github.sha }}
@@ -63,7 +77,7 @@ jobs:
         env:
           TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
           PYTHONUNBUFFERED: '1'
-        run: python3 tools/owner_plan_transport_20261027.py
+        run: python3 tools/observe_ssh_handshake.py
       - name: Preserve sanitized read-only receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
