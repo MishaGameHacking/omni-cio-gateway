@@ -8,9 +8,9 @@ trap {
     [Console]::WriteLine('HOME_CODEX_HOST='+($r|ConvertTo-Json -Depth 6 -Compress))
     exit 1
 }
-$apps=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='Codex.exe' OR Name='ChatGPT.exe'" -ErrorAction SilentlyContinue)
+$apps=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='Codex.exe' OR Name='ChatGPT.exe' OR Name='codex-app-server.exe' OR Name='codex-x86_64-pc-windows-msvc.exe'" -ErrorAction SilentlyContinue)
 $r.desktop_processes=$apps.Count
-$r.desktop_names=@($apps.Name | Where-Object { $_ -in 'Codex.exe','ChatGPT.exe' } | Sort-Object -Unique)
+$r.desktop_names=@($apps.Name | Where-Object { $_ -in 'Codex.exe','ChatGPT.exe','codex-app-server.exe','codex-x86_64-pc-windows-msvc.exe' } | Sort-Object -Unique)
 function PackageInfo([string]$scope) {
     try {
         $argsFor=@{ErrorAction='Stop'}
@@ -49,6 +49,23 @@ if ($ownerProfile) {
           catch { continue }
         $r.owner_cli_files+=@($record)
     }
+}
+$r.machine_installs=@()
+foreach ($rel in @('OpenAI\Codex\codex.exe','Codex\Codex.exe','WinGet\Links\codex.exe','nodejs\node_modules\@openai\codex\package.json')) {
+    $item=Get-Item -LiteralPath (Join-Path $env:ProgramFiles $rel) -ErrorAction SilentlyContinue
+    if ($item) { $r.machine_installs+=@([IO.Path]::GetFileName($rel)) }
+}
+foreach ($key in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall')) {
+    foreach ($entry in @(Get-ItemProperty ($key+'\*') -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -match '^(?:OpenAI )?(?:ChatGPT|Codex)(?: Desktop| CLI)?$' })) {
+        $r.machine_installs+=$entry.DisplayName
+    }
+}
+if ($ownerProfile) {
+    try {
+        $shellKey='Registry::HKEY_USERS\'+$ownerProfile.SID+'\Software\Microsoft\Windows\CurrentVersion\Lxss'
+        $items=@(Get-ChildItem -LiteralPath $shellKey -ErrorAction Stop)
+        $r.owner_wsl_registrations=$items.Count
+    } catch { $r.owner_wsl_registrations='unavailable' }
 }
 $cmd=Get-Command codex.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($cmd) {
