@@ -32,8 +32,22 @@ function Get-AcSetting([string]$group, [string]$setting) {
     }
     return $null
 }
+$vmService = Get-Service -Name 'vmms' -ErrorAction SilentlyContinue
+$vmCmd = Get-Command Get-VMHost -ErrorAction SilentlyContinue
+$vmRole = $null
+try { $vmRole = $principal.IsInRole([Security.Principal.SecurityIdentifier]::new('S-1-5-32-578')) } catch {}
+$vmHostQuery = 'command_unavailable'
+if ($vmCmd) {
+    try { $null = Get-VMHost -ErrorAction Stop; $vmHostQuery = 'read_ok' }
+    catch { $vmHostQuery = 'query_unavailable' }
+}
 [ordered]@{
     elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    hyperv = @{
+        vm_management_service = $(if ($vmService) { [string]$vmService.Status } else { 'not_visible' })
+        vm_admin_group = $vmRole
+        vmhost_query = $vmHostQuery
+    }
     cpu_model = $cpu.Name.Trim()
     cores = [int]$cpu.NumberOfCores
     threads = [int]$cpu.NumberOfLogicalProcessors
