@@ -200,6 +200,27 @@ def install_api():
     with sqlite3.connect('file:'+str(DB/'home-rehearsal.db')+'?mode=ro',uri=True) as db:
         require(db.execute('select count(*) from users').fetchone()==(0,),'shadow_contains_accounts')
         wal=db.execute('pragma journal_mode').fetchone()[0]
+    if wal!='wal':
+        # The marker and the empty owner-bound database were checked above. Stop only the rehearsal writer.
+        PHASE='rehearsal_wal'
+        command(['systemctl','stop',name],'pause_shadow')
+        try:
+            code=("import os,sqlite3; assert os.geteuid()!=0; "
+                  "c=sqlite3.connect('/var/lib/analyst-ai/home-rehearsal.db',timeout=8); "
+                  "assert c.execute('select count(*) from users').fetchone()==(0,); "
+                  "assert c.execute('select telegram_sub from installation_owner').fetchone()==('home-rehearsal-unbound-v1',); "
+                  "assert c.execute('pragma journal_mode=wal').fetchone()==('wal',); "
+                  "assert c.execute('pragma quick_check').fetchone()==('ok',); c.close()")
+            command(['runuser','-u','analyst-ai','--','/usr/bin/python3','-I','-c',code],'sqlite_wal')
+        finally:
+            command(['systemctl','start',name],'resume_shadow')
+        for _ in range(40):
+            if status('/health')==(200,{'status':'ok'}): break
+            time.sleep(1)
+        require(status('/health')==(200,{'status':'ok'}) and status('/me')[0]==401,'restarted_boundary')
+        with sqlite3.connect('file:'+str(DB/'home-rehearsal.db')+'?mode=ro',uri=True) as db:
+            wal=db.execute('pragma journal_mode').fetchone()[0]
+    require(wal=='wal','journal_not_verified')
     return {'status':'api_ready','source':COMMIT,'tree':TREE,'files':len(files),'installed_packages':installed,
             'health':200,'anonymous_me':401,'production_accounts':0,'journal':wal,'scope':'loopback_rehearsal'}
 

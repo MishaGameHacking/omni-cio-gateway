@@ -1,6 +1,7 @@
 """Stage the real backend and its public model in the owner's independent guest."""
 from contextlib import redirect_stdout
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -15,7 +16,7 @@ REV=sys.argv[1]
 SHA='0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0'
 SIZE=3659530240
 REMOTE='/opt/analyst-home-tools/'+REV
-ALLOWED=('guest_setup.py','upstream_prepare.py')
+ALLOWED=('guest_setup.py','upstream_prepare.py','smoke.py','public_check.py')
 PUSH="""import sys,pathlib,os,hashlib,re
 assert os.geteuid()==0 and pathlib.Path('/etc/analyst-home-stage').read_text().strip()=='analyst-home-public-stage-1'
 assert re.fullmatch('[a-f0-9]{40}',sys.argv[1]) and sys.argv[2] in ('guest_setup.py','upstream_prepare.py','smoke.py','public_check.py','ingress_probe.py')
@@ -101,8 +102,30 @@ with os.fdopen(fd,'rb') as f:
     return result
 
 
+def before_waking_guest():
+    running=p.text_output(p.command([p.WSL,'-l','--running','-q'],code='read_target_state')).split()
+    con=http.client.HTTPConnection('127.0.0.1',18157,timeout=5)
+    try:
+        con.request('GET','/health')
+        res=con.getresponse()
+        healthy=res.status==200 and json.loads(res.read(2048))=={'status':'ok'}
+    except (OSError,ValueError,http.client.HTTPException):
+        healthy=False
+    finally: con.close()
+    return {'was_running':p.DISTRO in running,'windows_loopback_health':healthy}
+
+
+def functional(script):
+    args=[p.WSL,'-d',p.DISTRO,'-u','analyst-ai','--exec','/opt/analyst-ai/venv/bin/python','-I',REMOTE+'/'+script]
+    run=subprocess.run(args,capture_output=True,timeout=170)
+    try: row=json.loads(run.stdout)
+    except ValueError: return {'status':'blocked','reason':'probe_exit_'+str(run.returncode)}
+    return row
+
+
 def main():
     p.require(bool(re.fullmatch('[0-9a-f]{40}',REV)),'invalid_release')
+    print('HOME_CONTINUITY_RESULT='+json.dumps(before_waking_guest()),flush=True)
     status=p.prepare()
     p.require(status['status']=='ready','platform_unavailable')
     for name in ALLOWED: send_script(name)
@@ -111,6 +134,11 @@ def main():
     print('HOME_WEIGHTS_RESULT='+json.dumps(weights()),flush=True)
     worker=report('ai')
     print('HOME_WORKER_RESULT='+json.dumps(worker),flush=True)
+    auth=functional('smoke.py')
+    print('HOME_AUTH_RESULT='+json.dumps(auth),flush=True)
+    research=functional('public_check.py')
+    print('HOME_PUBLIC_RESULT='+json.dumps(research),flush=True)
+    p.require(auth.get('status')=='passed' and research.get('status')=='verified','functional_probe_incomplete')
 
 
 if __name__=='__main__':

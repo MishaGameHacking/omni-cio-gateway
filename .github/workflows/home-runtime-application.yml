@@ -2,7 +2,7 @@ name: Run the verified Analyst AI source and local model on the owner laptop
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [.github/workflows/home-runtime-application.yml, tools/home_runtime/guest_setup.py, tools/home_runtime/deploy_home.py]
+    paths: [.github/workflows/home-runtime-application.yml, tools/home_runtime/guest_setup.py, tools/home_runtime/deploy_home.py, tools/home_runtime/smoke.py, tools/home_runtime/public_check.py]
 permissions:
   contents: read
 concurrency:
@@ -26,6 +26,8 @@ jobs:
                 ['deploy_home.py','tools/home_runtime/deploy_home.py',context.sha],
                 ['guest_setup.py','tools/home_runtime/guest_setup.py',context.sha],
                 ['platform.py','tools/home_runtime/platform.py',context.sha],
+                ['smoke.py','tools/home_runtime/smoke.py',context.sha],
+                ['public_check.py','tools/home_runtime/public_check.py',context.sha],
                 ['upstream_prepare.py','deploy/prepare_local_ai_runtime.py','06bebaa5b5fd8dbad5d678ccb4cfebe405eb8e44'],
                 ['emulator_lease.py','.github/scripts/emulator_lease.py','853090e11dcefef693366159c97316e55045c4c9']]){
                 const {data}=await github.rest.repos.getContent({...context.repo,path:file,ref});
@@ -34,7 +36,7 @@ jobs:
               }
               const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','PROGRAMDATA','PROGRAMFILES','PROGRAMFILES(X86)','PUBLIC','USERNAME','USERDOMAIN'].includes(k.toUpperCase())));
               const done=await new Promise(resolve=>{const child=cp.spawn('py.exe',['-3','-I',path.join(dir,'deploy_home.py'),context.sha],{env,windowsHide:true,stdio:['ignore','pipe','pipe']});
-                const rl=require('node:readline').createInterface({input:child.stdout});rl.on('line',line=>{if(/^HOME_(API_RESULT|WEIGHTS_RESULT|WORKER_RESULT|INSTALL_ERROR)=/.test(line))core.info(line.slice(0,1400));});
+                const rl=require('node:readline').createInterface({input:child.stdout});rl.on('line',line=>{if(/^HOME_(API_RESULT|WEIGHTS_RESULT|WORKER_RESULT|AUTH_RESULT|PUBLIC_RESULT|CONTINUITY_RESULT|INSTALL_ERROR)=/.test(line))core.info(line.slice(0,1400));});
                 child.stderr.resume();child.on('error',()=>resolve(1));child.on('exit',code=>resolve(code));});
               if(done!==0)core.setFailed('Home application installation incomplete');
             }finally{fs.rmSync(dir,{recursive:true,force:true});}
