@@ -240,14 +240,16 @@ def test_unverified_cash_basis_currency_or_account_never_becomes_buying_power(fi
 
 def test_decimal_precision_is_isolated_and_inputs_are_unchanged():
     snapshot, cost, evidence = observation(), quote(), tariff()
-    original = deepcopy((snapshot, cost, evidence))
+    original_snapshot, original_cost, original_evidence = deepcopy((snapshot, cost, evidence))
     with localcontext() as context:
         context.prec = 3
         result = evaluate_buy(snapshot, cost, evidence, now=NOW)
     projected_cash = Decimal(result["projected_cash_rub"])
     assert projected_cash == -4999
     assert result["arithmetic_policy_passed"] is True
-    assert (snapshot, cost, evidence) == original
+    assert snapshot == original_snapshot
+    assert cost == original_cost
+    assert evidence == original_evidence
 
 
 def test_naive_clock_is_rejected():
