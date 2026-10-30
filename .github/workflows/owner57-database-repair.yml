@@ -1,0 +1,138 @@
+name: Verify on laptop and repair SQLite login contention on existing Timeweb
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/owner57-database-repair.yml
+      - deploy/repair_owner57_database.py
+      - deploy/test_owner57_database.py
+      - tools/check_owner57_database.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: owner57-database-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/repair_owner57_database.py
+            deploy/test_owner57_database.py
+            tools/check_owner57_database.py
+            .github/scripts/emulator_lease.py
+          sparse-checkout-cone-mode: false
+      - name: Check exact source and exercise SQLite concurrency and backup in owner WSL
+        shell: cmd
+        working-directory: owner57-database-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME') == 'LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 -m py_compile deploy\repair_owner57_database.py deploy\test_owner57_database.py tools\check_owner57_database.py
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_owner57_database.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
+  repair:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+      OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+    steps:
+      - name: Require tested unchanged administrative transport
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40954726120});
+            if(r.head_sha!==process.env.EXPECTED_AI_ADMIN_TOOLS_SHA||r.conclusion!=='success'||r.status!=='completed'||
+               r.path!=='.github/workflows/owner-ai-admin-tools55.yml'||r.run_attempt!==1)
+              throw new Error('Exact administration verification required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: repair-source
+          persist-credentials: false
+          sparse-checkout: deploy/repair_owner57_database.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+      - name: Back up database, enable WAL and verify login storage availability
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import json,os,sys,urllib.request
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          operation=Path('../repair-source/deploy/repair_owner57_database.py').read_text()
+          contract={'status':{'blocked','repaired'},'previous_mode':{'unknown','delete','wal'},'journal_mode':{'unknown','wal'},
+              'failure':{'none','database_operation_failed','service_timeout','maintenance_failed'},
+              'previous_running_kind':{'none','osint','events','refresh','chat','analysis','reconcile','other'},
+              'previous_running_stage':{'none','osint_collecting','persisting','collecting','running','queued','done','other'}}
+          for k in ('server_id','checks_passed','write_checks_passed','maximum_write_wait_ms','observed_at'):contract[k]=int
+          for k in ('database_backup_created','database_rows_preserved','owner_configuration_preserved','integrity_checked','services_active','passwords_changed','apk_changed'):contract[k]=bool
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{'run_id':os.environ['GITHUB_RUN_ID']},None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'blocked','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:receipt={'status':'blocked','error_code':'repair_preflight_failed'}
+          Path('plan-reports').mkdir(exist_ok=True)
+          Path('plan-reports/owner57-database-repair.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print('OWNER_DATABASE_REPAIR='+json.dumps(receipt,sort_keys=True),flush=True)
+          if receipt['status']!='repaired':raise SystemExit(1)
+          from owner_plan_transport_20261027 import p
+          opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+          public={}
+          for label,route in [('health','/health'),('owner','/auth/owner/status')]:
+              with opener.open('https://analyst-ai-2941515.twc1.net'+route,timeout=20) as response:
+                  value=json.loads(response.read(8192))
+                  if response.status!=200 or (label=='owner' and value.get('configured') is not True) or (label=='health' and value!={'status':'ok'}):
+                      raise RuntimeError('Public verification failed')
+                  public[label]=response.status
+          public['password_changed']=False;public['actual_phone_login_verified']=False
+          Path('plan-reports/owner57-database-public.json').write_text(json.dumps(public,indent=2)+'\n')
+          print('OWNER_DATABASE_PUBLIC='+json.dumps(public),flush=True)
+          PY
+      - name: Preserve repair and public verification receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-database-repair-${{ github.run_id }}
+          path: supplied-owner-ai55/plan-reports/
+          retention-days: 7
+          if-no-files-found: warn
