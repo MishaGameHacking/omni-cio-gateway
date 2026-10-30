@@ -39,7 +39,21 @@ function Scheduler-State {
             limited=([string]$t.Principal.RunLevel -eq 'Limited')}
     } catch {
         $why=if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound*') { 'not_listed' } else { 'unavailable' }
-        return [ordered]@{visibility=$why}
+    }
+    # CIM enumeration can omit a task even when its own ACL permits a direct read.
+    try {
+        $service=New-Object -ComObject 'Schedule.Service'
+        $service.Connect()
+        $task=$service.GetFolder('\').GetTask('AnalystAI-HomeRuntime')
+        $def=$task.Definition
+        $states=@('Unknown','Disabled','Queued','Ready','Running')
+        return [ordered]@{visibility='visible';state=$states[[int]$task.State];
+            last_result=('0x{0:X8}' -f ([long]$task.LastTaskResult -band 4294967295L));
+            boot_trigger=($def.Triggers.Count -eq 1 -and $def.Triggers.Item(1).Type -eq 8);
+            limited=($def.Principal.RunLevel -eq 0)}
+    } catch {
+        $errorDetail=$_.Exception.GetBaseException()
+        return [ordered]@{visibility=$why;direct_read=('0x{0:X8}' -f ([long]$errorDetail.HResult -band 4294967295L))}
     }
 }
 function Profile-State {
@@ -59,7 +73,9 @@ function Installer-State {
         $code=[string]$r.code
         $allowed='^(receipt-verified|task-registered|starting-task|start-needs-profile|loading-profile|native-profile-recovery|profile-present-after-logon|retrying-task|waiting-worker|existing-supervisor|registering-task|worker-(?:failed-)?(?:windows|import|configure|application|local-model|login-check|supervising)|failed-(?:entry|service-account|account-access|registering-task|starting-supervisor))$'
         if ($r.package -ne 'd958608239005290f808' -or $label -notmatch $allowed -or $code -notmatch '^(?:|win32--?[0-9]{1,10}|hresult-[0-9A-F]{8}|task-[0-9A-F]{8})$') { throw 'Unknown receipt' }
-        return [ordered]@{stage=$label;code=$code}
+        if (-not $r.utc) { throw 'Missing journal time' }
+        $stamp=[DateTimeOffset]$r.utc
+        return [ordered]@{stage=$label;code=$code;written_utc=$stamp.UtcDateTime.ToString('o')}
     } catch { return [ordered]@{stage='unavailable';code=''} }
 }
 function Subsequent-Boot {
@@ -88,10 +104,12 @@ $last=''
 $healthy=0
 do {
     $status=Observe
-    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.installer.stage)/$($status.installer.code)/$($status.health)/$($status.anonymous)"
+    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.installer.stage)/$($status.installer.written_utc)/$($status.health)/$($status.anonymous)"
     if ($last -ne $key) { Write-Output ('HOME_PROTECTED_OBSERVATION='+($status | ConvertTo-Json -Compress)) }
     $last=$key
-    if ($status.phase -eq 'supervising' -and $status.account -eq 'present' -and $status.health -eq 200 -and $status.anonymous -eq 401) {
+    if ($status.phase -eq 'supervising' -and $status.account -eq 'present' -and $status.profile -eq 'present' -and
+        $status.scheduler.state -eq 'Running' -and $status.scheduler.boot_trigger -and $status.scheduler.limited -and
+        $status.health -eq 200 -and $status.anonymous -eq 401) {
         $healthy++
         if ($healthy -ge 2) {
             Write-Output ('HOME_PROTECTED_READY='+($status | ConvertTo-Json -Compress))
