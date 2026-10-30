@@ -98,7 +98,11 @@ jobs:
           from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
           operation=Path('../repair-source/deploy/repair_owner57_database.py').read_text()
           contract={'status':{'blocked','repaired'},'previous_mode':{'unknown','delete','wal'},'journal_mode':{'unknown','wal'},
-              'failure':{'none','database_operation_failed','service_timeout','maintenance_failed'},
+              'failure':{'none','database_operation_failed','service_timeout','maintenance_failed','service_command_failed','archive_exists','filesystem_failed','metadata_invalid',
+                  'root_required','invalid_run','unsafe_archive_parent','unsafe_archive','service_not_running','invalid_port','service_still_active','untrusted_database',
+                  'backup_already_exists','database_integrity_failed','owner_configuration_unexpected','unreviewed_journal_mode','backup_verification_failed','wal_not_enabled',
+                  'database_rows_changed','database_permissions_changed','service_not_active','health_failed','owner_status_failed','invalid_auth_payload_accepted','validation_failed','wal_not_persistent'},
+              'maintenance_stage':{'preflight','stopping','configuring','starting','verifying','completed'},
               'previous_running_kind':{'none','osint','events','refresh','chat','analysis','reconcile','other'},
               'previous_running_stage':{'none','osint_collecting','persisting','collecting','running','queued','done','other'}}
           for k in ('server_id','checks_passed','write_checks_passed','maximum_write_wait_ms','observed_at'):contract[k]=int

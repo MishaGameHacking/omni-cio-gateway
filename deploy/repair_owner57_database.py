@@ -14,6 +14,7 @@ import urllib.error
 
 SERVICES=('analyst-ai-owner.service','analyst-ai-updates.service')
 DATABASE=Path('/var/lib/analyst-ai/backend.db')
+SAFE_FAILURES=frozenset('root_required invalid_run unsafe_archive_parent unsafe_archive service_not_running invalid_port service_still_active untrusted_database backup_already_exists database_integrity_failed owner_configuration_unexpected unreviewed_journal_mode backup_verification_failed wal_not_enabled database_rows_changed database_permissions_changed service_not_active health_failed owner_status_failed invalid_auth_payload_accepted validation_failed wal_not_persistent'.split())
 
 def need(value, code):
     if not value: raise RuntimeError(code)
@@ -72,15 +73,17 @@ def initial_result():
         'database_backup_created':False,'database_rows_preserved':False,'owner_configuration_preserved':False,
         'integrity_checked':False,'services_active':False,'checks_passed':0,'write_checks_passed':0,
         'maximum_write_wait_ms':0,'passwords_changed':False,'apk_changed':False,'observed_at':int(time.time()),
-        'previous_running_kind':'none','previous_running_stage':'none','failure':'none'}
+        'previous_running_kind':'none','previous_running_stage':'none','failure':'none','maintenance_stage':'preflight'}
 
 def maintain(result):
     need(os.getuid()==0,'root_required')
     run=ENVELOPE['payload']['run_id']
     need(re.fullmatch('[0-9]{8,20}',run),'invalid_run')
-    parent=Path('/var/lib/analyst-ai-build')
+    result['services_active']=service_active()
+    # Use a root-owned system directory; build staging may legitimately belong to the app.
+    parent=Path('/var/lib')
     need(parent.resolve(strict=True)==parent and parent.stat().st_uid==0 and not parent.stat().st_mode&0o022,'unsafe_archive_parent')
-    archive=parent/('login-wal-'+run)
+    archive=parent/('analyst-ai-login-wal-'+run)
     archive.mkdir(mode=0o700)
     need(archive.resolve(strict=True)==archive and not archive.stat().st_mode&0o077,'unsafe_archive')
     pid=subprocess.run(['systemctl','show',SERVICES[0],'--property=MainPID','--value'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
@@ -89,10 +92,12 @@ def maintain(result):
     port=int(args[args.index('--port')+1]) if '--port' in args else 8000
     need(1<=port<=65535,'invalid_port')
     try:
+        result['maintenance_stage']='stopping'
         service('stop')
         for name in SERVICES:
             current=subprocess.run(['systemctl','show',name,'--property=MainPID','--value'],capture_output=True,text=True,check=True,timeout=10).stdout.strip()
             need(current=='0','service_still_active')
+        result['maintenance_stage']='configuring'
         result.update(configure(DATABASE,archive/'before.sqlite3'))
         with closing(sqlite3.connect(DATABASE)) as db:
             row=db.execute("SELECT kind,stage FROM workspace_jobs WHERE state='running' ORDER BY updated_at LIMIT 1").fetchone()
@@ -100,9 +105,11 @@ def maintain(result):
                 result['previous_running_kind']=row[0] if row[0] in ('osint','events','refresh','chat','analysis','reconcile') else 'other'
                 result['previous_running_stage']=row[1] if row[1] in ('osint_collecting','persisting','collecting','running','queued','done') else 'other'
     finally:
+        result['maintenance_stage']='starting'
         service('start')
         result['services_active']=service_active()
     need(result['services_active'],'service_not_active')
+    result['maintenance_stage']='verifying'
     for attempt in range(12):
         try:
             probe_local(port)
@@ -120,6 +127,7 @@ def maintain(result):
             result['maximum_write_wait_ms']=max(result['maximum_write_wait_ms'],int((time.monotonic()-started)*1000))
             result['write_checks_passed']+=1
     result['status']='repaired'
+    result['maintenance_stage']='completed'
     (archive/'result.json').write_text(json.dumps(result,indent=2)+'\n')
     return result
 
@@ -128,5 +136,10 @@ if __name__=='__main__':
     try:maintain(receipt)
     except sqlite3.OperationalError:receipt['failure']='database_operation_failed'
     except subprocess.TimeoutExpired:receipt['failure']='service_timeout'
+    except RuntimeError as error:receipt['failure']=str(error) if str(error) in SAFE_FAILURES else 'maintenance_failed'
+    except subprocess.CalledProcessError:receipt['failure']='service_command_failed'
+    except FileExistsError:receipt['failure']='archive_exists'
+    except OSError:receipt['failure']='filesystem_failed'
+    except (KeyError,TypeError,ValueError):receipt['failure']='metadata_invalid'
     except Exception:receipt['failure']='maintenance_failed'
     print(json.dumps(receipt),flush=True)
