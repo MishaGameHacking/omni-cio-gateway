@@ -1,0 +1,81 @@
+name: Verify the SSH methods offered after the approved local console reset
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/post-console-reset-login-check.yml]
+permissions:
+  contents: read
+  actions: read
+env:
+  EXPECTED_TOOLS_SHA: 'e9c49b0f7333ecddb0c25890aabc7804ff6dde8f'
+  EXPECTED_TOOLS_RUN: '41087924449'
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require exact successful owner WSL tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN)});
+            if(r.head_sha!==e.EXPECTED_TOOLS_SHA||r.path!=='.github/workflows/infrastructure-budget-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Exact verification required');
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN),per_page:100});
+            if(jobs.filter(j=>j.name==='verify'&&j.conclusion==='success'&&j.status==='completed').length!==1) throw new Error('Verify job missing');
+            for(const path of ['tools/inspect_infrastructure_budget.py','tools/test_infrastructure_budget.py','tools/check_infrastructure_budget.py','.github/workflows/infrastructure-budget-tools.yml']) {
+              const {data:a}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_TOOLS_SHA});
+              const {data:b}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(a.sha!==b.sha) throw new Error('Tested tool changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Bind the observation to the successful console reset
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:41107658480});
+            if(r.head_sha!=='842e947d1128f759850db6239999c5d0cf43567d'||r.path!=='.github/workflows/owner-console-password-once.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Confirmed single reset required');
+      - name: Observe authentication methods without a credential or guest command
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        shell: python
+        run: |
+          import ast,json,os,pathlib,re,subprocess,sys,tempfile
+          from datetime import datetime,timezone
+          sys.path.insert(0,"tools")
+          import inspect_infrastructure_budget as observed
+          api=observed.ReadOnlyAPI(os.environ["TIMEWEB_CLOUD_TOKEN"])
+          row=api.get(observed.PATHS["server"])["server"]
+          if row.get("id")!=9417611 or row.get("project_id")!=2941515 or row.get("availability_zone")!="ams-1" or row.get("status")!="on":
+              raise RuntimeError("unexpected_server_identity_or_state")
+          boot=row.get("boot_mode")
+          mode=boot if isinstance(boot,str) and re.fullmatch(r"[a-z0-9_-]{1,32}",boot) else None
+          source=pathlib.Path("tools/owner_plan_transport_20261027.py").read_bytes()
+          import hashlib
+          if hashlib.sha1(b"blob "+str(len(source)).encode()+b"\0"+source).hexdigest()!="7478ac9850fe1deeb729d1ccbc8fb0f28b849124":
+              raise RuntimeError("pinned_transport_changed")
+          constants={node.targets[0].id:node.value.value for node in ast.parse(source).body if isinstance(node,ast.Assign)
+              and len(node.targets)==1 and isinstance(node.targets[0],ast.Name) and isinstance(node.value,ast.Constant)}
+          ip,host=constants["IP"],constants["HOST_KEY"]
+          with tempfile.TemporaryDirectory() as folder:
+              known=pathlib.Path(folder)/"known_hosts";known.write_text(ip+" "+host+"\n")
+              args=["ssh","-vv","-N","-T","-F","/dev/null","-o","BatchMode=yes","-o","IdentitiesOnly=yes",
+                    "-o","IdentityAgent=none","-o","StrictHostKeyChecking=yes","-o","GlobalKnownHostsFile=/dev/null",
+                    "-o","UserKnownHostsFile="+str(known),"-o","HostKeyAlgorithms=ssh-ed25519","-o","ConnectTimeout=6",
+                    "-o","PubkeyAuthentication=no","-o","KbdInteractiveAuthentication=no","-o","PasswordAuthentication=no",
+                    "-o","GSSAPIAuthentication=no","-o","PreferredAuthentications=none","-o","NumberOfPasswordPrompts=0","root@"+ip]
+              probe=subprocess.run(args,stdin=subprocess.DEVNULL,capture_output=True,timeout=14)
+              messages=probe.stderr.decode(errors="replace")
+          matches=re.findall(r"Authentications that can continue: ([a-z,-]+)",messages)
+          supported=set(matches[-1].split(",")) if matches else set()
+          allowed={"publickey","password","keyboard-interactive","hostbased","gssapi-with-mic"}
+          pin="known and matches the ED25519 host key" in messages
+          if not pin or not supported or not supported<=allowed:raise RuntimeError("guest_login_mode_unverified")
+          print("GUEST_LOGIN_MODE="+json.dumps({"server_id":9417611,"observed_at":datetime.now(timezone.utc).isoformat(),
+              "reported_boot_mode":mode,"boot_field_present":"boot_mode" in row,"boot_field_type":type(boot).__name__,
+              "guest_agent_provider_enabled":row.get("is_qemu_agent") is True,"host_key_verified":pin,
+              "ssh_methods":sorted(supported),"password_attempts":0,"keys_created":0,"guest_command_sent":False,
+              "reboot_requested":False,"credentials_reset":False}),flush=True)
