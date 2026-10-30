@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -29,7 +31,7 @@ INSTALLED = {
     'portfolio_details.py': '1dafbf959eb4ffe8fc23a304d3047fa4f95e6705459a733196a5e64b06d43ea1',
     'order_lifecycle.py': 'e5560f86c27179be3240e7f37615e9b3c0b90f0ef31d9a0adaabc2bffd0b07ca',
 }
-FAILED_RELEASE_ARCHIVE = Path('/var/lib/analyst-ai-chat-reliability-41056552195')
+FAILED_RELEASE_ARCHIVE = Path('/var/lib/analyst-ai-gpt6-protocol-41068805166')
 HEALTH_ENDPOINTS = {
     'public_health': 'https://analyst-ai-2941515.twc1.net/health',
     'public_password_status': 'https://analyst-ai-2941515.twc1.net/auth/owner/status',
@@ -274,6 +276,26 @@ def services():
     return result
 
 
+def process_waits(pid, proc=Path('/proc')):
+    """Thread wait sites only; never read arguments, environment, memory or logs."""
+    if type(pid) is not int or not 0 < pid < 10_000_000:
+        return {'available': False}
+    task = proc / str(pid) / 'task'
+    try:
+        threads = [path for path in task.iterdir() if re.fullmatch('[0-9]{1,8}', path.name)]
+        if len(threads) > 256:
+            return {'available': False, 'thread_limit_exceeded': True}
+        counts = Counter()
+        allowed = {'futex_wait_queue', 'futex_wait_queue_me', 'ep_poll', 'do_epoll_wait',
+                   'poll_schedule_timeout', 'hrtimer_nanosleep', 'wait_woken', '0'}
+        for path in threads:
+            raw = (path / 'wchan').read_text()[:128].strip()
+            counts[raw if raw in allowed else 'other'] += 1
+        return {'available': True, 'thread_count': len(threads), 'wait_sites': dict(counts)}
+    except OSError:
+        return {'available': False}
+
+
 def verify_source(root):
     for name, expected in INSTALLED.items():
         path = regular(root / name)
@@ -284,7 +306,7 @@ def verify_source(root):
 def observe_release_archive():
     archive = FAILED_RELEASE_ARCHIVE
     exists = archive.exists() or archive.is_symlink()
-    result = {'release_run': 41056552195, 'archive_present': exists,
+    result = {'release_run': 41068805166, 'archive_present': exists,
               'phase_evidence': 'archive_absent', 'failure': None}
     if not exists:
         return result
@@ -353,9 +375,12 @@ def run(envelope):
         fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
         verify_source(Path('/opt/analyst-ai/backend'))
         now = int(time.time())
+        service_rows = services()
         result = {'schema': 1, 'status': 'observed', 'server_id': 9417611, 'source_commit': SOURCE,
             'observed_at': stamp(now), 'database': observe_database(Path('/var/lib/analyst-ai/backend.db'), now),
-            'services': services(), 'failed_release': observe_release_archive(),
+            'services': service_rows, 'failed_release': observe_release_archive(),
+            'owner_thread_waits': process_waits(service_rows['analyst-ai-owner.service']['main_pid']),
+            'stack_sampler_installed': shutil.which('py-spy') is not None,
             'http': {label: observe_http(label) for label in HEALTH_ENDPOINTS},
             'exact_source_verified': True, 'order_lifecycle_source_verified': True,
             'real_trading_activation_verified': False,

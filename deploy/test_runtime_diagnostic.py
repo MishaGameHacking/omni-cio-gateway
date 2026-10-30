@@ -329,6 +329,28 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(321, result['main_pid'])
         self.assertEqual(10, result['process_age_seconds'])
 
+    def test_wait_sites_redact_unknown_text_and_only_read_wchan(self):
+        for tid, text in [('1', 'futex_wait_queue'), ('2', SECRET), ('3', 'ep_poll')]:
+            folder = self.root / '321' / 'task' / tid
+            folder.mkdir(parents=True)
+            (folder / 'wchan').write_text(text)
+        result = observer.process_waits(321, self.root)
+        self.assertEqual(result, {'available': True, 'thread_count': 3,
+            'wait_sites': {'futex_wait_queue': 1, 'other': 1, 'ep_poll': 1}})
+        self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_missing_or_invalid_process_does_not_create_a_path(self):
+        for pid in (None, True, 0, -1, '../secret', 10_000_000, 321):
+            self.assertEqual(observer.process_waits(pid, self.root), {'available': False})
+
+    def test_wait_inventory_is_bounded(self):
+        task = self.root / '321' / 'task'
+        task.mkdir(parents=True)
+        for i in range(257):
+            (task / str(i)).mkdir()
+        self.assertEqual(observer.process_waits(321, self.root),
+                         {'available': False, 'thread_limit_exceeded': True})
+
 
 if __name__ == '__main__':
     unittest.main()
