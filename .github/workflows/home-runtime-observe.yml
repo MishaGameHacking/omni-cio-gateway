@@ -1,0 +1,27 @@
+name: Observe protected Lenovo enrollment
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-observe.yml, tools/home_runtime/observe.ps1]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-observe-'));
+            try{
+              const {data}=await github.rest.repos.getContent({...context.repo,path:'tools/home_runtime/observe.ps1',ref:context.sha});
+              const file=path.join(dir,'observe.ps1');fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
+              const exe=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
+              const p=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{env,encoding:'utf8',timeout:240000});
+              for(const line of(p.stdout||'').split(/\r?\n/))if(line.startsWith('HOME_PROTECTED_OBSERVATION='))core.info(line);
+              if(p.status!==0)core.setFailed('Could not inspect the sanitized enrollment status');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
