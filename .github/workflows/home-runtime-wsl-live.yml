@@ -1,0 +1,35 @@
+name: Verify the existing laptop Linux using live public data
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-wsl-live.yml, tools/home_runtime/wsl_readiness.py]
+permissions:
+  contents: read
+jobs:
+  linux:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 7
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const cp=require('node:child_process'),path=require('node:path');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
+            const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMPUTERNAME','PATH','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','TEMP','TMP'].includes(k.toUpperCase())));
+            const wsl=path.join(process.env.SystemRoot,'System32','wsl.exe');
+            for(const name of ['wsl_readiness.py','public_check.py']){
+              const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+name});
+              const p=cp.spawnSync(wsl,['-d','AnalystAI-Home','-u','analyst-ai','--exec','/opt/analyst-ai/venv/bin/python','-I','-'],
+                {env,input:Buffer.from(data.content,'base64'),encoding:'utf8',windowsHide:true,timeout:140000});
+              const lines=(p.stdout||'').trim().split(/\r?\n/);
+              if(name==='wsl_readiness.py'){
+                const row=lines.find(s=>s.startsWith('HOME_LINUX_NOW='));
+                if(!row||p.status!==0)throw Error('Installed WSL application did not pass its local check');
+                core.info(row.slice(0,1700));
+              }else{
+                const result=JSON.parse(lines.at(-1));
+                if(p.status!==0||result.status!=='verified'||!result.exact_excerpts)throw Error('Local model could not verify the issuer release');
+                core.info('HOME_LINUX_MODEL='+JSON.stringify({source:result.source,period:result.published_period,
+                    quotes:result.exact_excerpts,seconds:result.seconds,orders:result.trade_permission}));
+              }
+            }
