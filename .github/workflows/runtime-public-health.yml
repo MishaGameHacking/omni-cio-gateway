@@ -13,7 +13,7 @@ jobs:
       - name: Read public health status without credentials
         shell: python
         run: |
-          import json, time, urllib.error, urllib.request
+          import json, socket, time, urllib.error, urllib.request
           from datetime import datetime, timezone
           results = {}
           for name, path in {"health": "/health", "password_status": "/auth/owner/status"}.items():
@@ -27,4 +27,11 @@ jobs:
               except (OSError, urllib.error.URLError):
                   results[name] = {"status": None, "error": "transport_unavailable"}
               results[name]["milliseconds"] = round(1000 * (time.monotonic() - start))
+          try:
+              with socket.create_connection(("83.217.195.29", 22), timeout=8) as connection:
+                  connection.settimeout(8)
+                  banner = connection.recv(256)
+              results["ssh"] = {"reachable": True, "ssh_v2_banner": banner.startswith(b"SSH-2.0-")}
+          except (OSError, TimeoutError):
+              results["ssh"] = {"reachable": False, "ssh_v2_banner": False}
           print("RUNTIME_HTTP_OBSERVATION=" + json.dumps({"observed_at": datetime.now(timezone.utc).isoformat(), "http": results, "services_changed": False, "broker_called": False, "model_called": False}))
