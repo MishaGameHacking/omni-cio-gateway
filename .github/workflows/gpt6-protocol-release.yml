@@ -1,3 +1,4 @@
+# Retry after confirmed unchanged AF95 recovery 41070964916; failed run 41068805166 changed no source.
 name: Deliver verified GPT-6 protocol and diagnostics update to existing Timeweb
 on:
   push:
