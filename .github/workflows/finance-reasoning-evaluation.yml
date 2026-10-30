@@ -1,0 +1,52 @@
+name: Evaluate local reasoning with historical CBR and MOEX evidence
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - tools/evaluate_finance_reasoning.py
+      - tools/check_finance_reasoning.py
+      - tools/test_finance_reasoning.py
+      - .github/workflows/finance-reasoning-evaluation.yml
+permissions:
+  contents: read
+jobs:
+  evaluate:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 22
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: finance-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts/emulator_lease.py
+            tools/evaluate_local_e4b.py
+            tools/check_finance_reasoning.py
+            tools/test_finance_reasoning.py
+            tools/evaluate_finance_reasoning.py
+          sparse-checkout-cone-mode: false
+      - name: Test point-in-time joins, compare model answers and retain their evidence
+        shell: cmd
+        working-directory: finance-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_finance_reasoning.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: finance-reasoning-${{ github.run_id }}
+          path: finance-${{ github.run_id }}-${{ github.run_attempt }}/finance-reasoning-evaluation.json
+          if-no-files-found: warn
+          retention-days: 7
