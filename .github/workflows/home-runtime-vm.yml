@@ -1,0 +1,30 @@
+name: Check delegated home VM provisioning through Windows
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-vm.yml, tools/home_runtime/vm_authority.ps1]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 2
+          script: |
+            const cp=require('node:child_process'),path=require('node:path'),crypt=require('node:crypto');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
+            const {data}=await github.rest.repos.getContent({...context.repo,path:'tools/home_runtime/vm_authority.ps1',ref:context.sha});
+            const exe=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+            const x=cp.spawnSync(exe,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(Buffer.from(data.content,'base64').toString('utf8'),'utf16le').toString('base64')],{encoding:'utf8',timeout:80000,windowsHide:true});
+            if(x.status!==0)throw Error('Permission inspection failed');
+            const row=JSON.parse(x.stdout.trim());
+            const payload={run:context.runId,sha:context.sha,at:new Date().toISOString(),row};
+            const key=crypt.randomBytes(32),iv=crypt.randomBytes(12),c=crypt.createCipheriv('aes-256-gcm',key,iv);
+            const bytes=Buffer.concat([c.update(JSON.stringify(payload),'utf8'),c.final()]);
+            const pk=crypt.createPublicKey({key:Buffer.from('MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0slElljuCS+i/PbObZsjl9UuIfnf62YDAiR5Wn/uHZ9QikUeoSuplse/laSqX7edDjUX3LVfSCElJGYmzGfTOhBzs/5oM1vBr3mTjDy8XsVbPr8I6dwBHOHKn8bxe2nZPSwD6d7wKFsMUHi4VpdyIomEWIb/yjTiPbDFQbjm4curKz1x01RX63BOpbNmRCt2dW4LNSckIqRK1hADmGNAz/2ge/hyY+R+GHDXo8Pg3+mokzQk456DS7xRwvGZ6BXVoj0mJg6t2hNL+/k6GqBGuRwjs/++zR05NtnGnU7LRjpl8h9GZNI0j+FxvPnjae6mM26VSk++tesQxsq/Wn1tyPsqSFQ/ehWqxR2hZu26GBN2rJBsEjld4G8MFvOHmwP2odhkHHdxYzc0SN6aNBak/frz1HJieBRFOjjzJwtFgE5Jue7C+6eVTsJbfK5CScgEJ8/dmerdK6iNX8Ne3DBawXD6/XBLszXiRfiV52AlxY9a0bTN1/o/AMYDWifMmQW1AgMBAAE=','base64'),format:'der',type:'spki'});
+            const k=crypt.publicEncrypt({key:pk,oaepHash:'sha256'},key);
+            core.info('HOME_VM_AUTHORITY='+JSON.stringify({k:k.toString('base64'),iv:iv.toString('base64'),tag:c.getAuthTag().toString('base64'),data:bytes.toString('base64')}));
+            if(!row.vm || typeof row.scm_create_error !== 'number')core.setFailed('VM authorization response incomplete');
