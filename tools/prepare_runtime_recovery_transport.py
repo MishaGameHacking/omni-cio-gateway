@@ -9,7 +9,7 @@ def main():
         raise RuntimeError('transport_directory_missing')
     (destination / 'operation.py').write_bytes(Path('deploy/runtime_recovery.py').read_bytes())
     (destination / 'payload.json').write_text(json.dumps({
-        'source_commit': 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4'}))
+        'source_commit': 'af95e8de8cfd50970d712483b8c17e866f7239c9'}))
 
 
 if __name__ == '__main__':

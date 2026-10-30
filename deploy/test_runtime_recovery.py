@@ -104,8 +104,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertFalse(any(call[0][0] in {'start', 'stop'} for call in self.calls))
 
     def test_candidate_module_prevents_restarting_wrong_release(self):
-        (self.root / 'order_lifecycle.py').write_text('candidate')
-        with self.assertRaisesRegex(RuntimeError, 'recovery_candidate_already_installed'):
+        (self.root / 'ai_guarded_client.py').write_text('candidate')
+        with self.assertRaisesRegex(RuntimeError, 'recovery_source_baseline_changed'):
             self.run_recovery()
         self.assertEqual(self.calls, [])
 
@@ -215,12 +215,12 @@ class RecoveryTests(unittest.TestCase):
 
 
 class ContractTests(unittest.TestCase):
-    def test_exact_cc22_runtime_and_two_existing_services_only(self):
-        self.assertEqual(recovery.BASE, 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4')
-        self.assertEqual(len(recovery.BASELINE_BLOBS), 107)
-        self.assertEqual(recovery.BASELINE_BLOBS['portfolio_details.py'], '78e1c2123f7921795c02bcb14ef615eed9476c81')
+    def test_exact_af95_runtime_and_two_existing_services_only(self):
+        self.assertEqual(recovery.BASE, 'af95e8de8cfd50970d712483b8c17e866f7239c9')
+        self.assertEqual(len(recovery.BASELINE_BLOBS), 108)
+        self.assertEqual(recovery.BASELINE_BLOBS['portfolio_details.py'], '468d6765f89fd006c3d2521b0de1cbfafd959835')
         self.assertEqual(recovery.SERVICES, ('analyst-ai-owner.service', 'analyst-ai-updates.service'))
-        self.assertNotIn('order_lifecycle.py', recovery.BASELINE_BLOBS)
+        self.assertIn('order_lifecycle.py', recovery.BASELINE_BLOBS)
 
 
 if __name__ == '__main__':
