@@ -26,7 +26,7 @@ PATHS = {
     "service_costs": "/api/v1/account/services/cost",
     "configurators": "/api/v1/configurator/servers",
 }
-INFRA_CAP = Decimal("10000")
+INFRA_CAP = Decimal("11000")
 AI_CAP = Decimal("3000")
 MAX_BYTES = 4 * 1024 * 1024
 RESOURCE_TYPES = ("servers", "balancers", "buckets", "clusters", "databases", "dedicated_servers")
@@ -91,6 +91,18 @@ def label(value):
     return value if isinstance(value, str) and re.fullmatch(r"[a-z0-9][a-z0-9_.:-]{0,47}", value) else None
 
 
+def public_numeric_shape(value, depth=0):
+    # The provider's configurator prices are public catalogue metadata. Retain
+    # bounded numeric leaves only until units and billing period are verified.
+    amount = number(value)
+    if amount is not None:
+        return {"number_reported": str(amount)}
+    if isinstance(value, dict) and depth < 3 and len(value) <= 32:
+        return {key: public_numeric_shape(item, depth + 1) for key, item in value.items()
+                if isinstance(key, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,47}", key)}
+    return {"uninterpreted_type": type(value).__name__}
+
+
 def money(value, rounding=ROUND_CEILING):
     with localcontext() as context:
         context.prec = 32
@@ -115,6 +127,9 @@ def costs(document):
                 "conservative_31_day_rub": money(ceiling),
                 "infrastructure_cap_rub": money(INFRA_CAP), "ai_cap_rub": money(AI_CAP),
                 "total_cap_rub": money(INFRA_CAP + AI_CAP),
+                "selected_budget_profile": "hybrid",
+                "alternative_local_only": {"infrastructure_cap_rub": "14000.00", "ai_cap_rub": "0.00",
+                                           "selected": False},
                 "recurring_within_infrastructure_cap": ceiling <= INFRA_CAP,
                 "headroom_before_variable_charges_rub": money(max(Decimal(0), INFRA_CAP - ceiling), ROUND_FLOOR),
                 "includes_future_variable_charges": False,
@@ -248,6 +263,7 @@ def configurator_summary(document, server):
             value = number(row[name])
             prices[name] = money(value) if value is not None else None
     current["numeric_pricing_fields_unverified"] = prices
+    current["prices_numeric_shape_unverified"] = public_numeric_shape(row.get("prices"))
     result["current"] = current
     return result
 

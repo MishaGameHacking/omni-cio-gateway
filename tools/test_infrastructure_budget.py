@@ -20,20 +20,20 @@ class ProjectionTests(unittest.TestCase):
     def test_month_longer_than_tariff_uses_larger_envelope(self):
         report = subject.costs(finance(hourly_cost="5"))
         self.assertEqual(report["conservative_31_day_rub"], "3720.00")
-        self.assertEqual(report["headroom_before_variable_charges_rub"], "6280.00")
+        self.assertEqual(report["headroom_before_variable_charges_rub"], "7280.00")
 
     def test_ending_discount_never_reduces_cost_to_discounted_fee(self):
         self.assertEqual(subject.costs(finance())["conservative_31_day_rub"], "3000.00")
 
     def test_exact_cap_and_fractional_overrun(self):
-        self.assertTrue(subject.costs(finance(monthly_cost="10000"))["recurring_within_infrastructure_cap"])
-        result = subject.costs(finance(monthly_cost="10000.000000000001"))
+        self.assertTrue(subject.costs(finance(monthly_cost="11000"))["recurring_within_infrastructure_cap"])
+        result = subject.costs(finance(monthly_cost="11000.000000000001"))
         self.assertFalse(result["recurring_within_infrastructure_cap"])
         self.assertEqual(result["headroom_before_variable_charges_rub"], "0.00")
 
     def test_headroom_rounds_down(self):
         result = subject.costs(finance(monthly_cost="3000.000001"))
-        self.assertEqual(result["headroom_before_variable_charges_rub"], "6999.99")
+        self.assertEqual(result["headroom_before_variable_charges_rub"], "7999.99")
         self.assertEqual(result["conservative_31_day_rub"], "3000.01")
 
     def test_invalid_money_never_becomes_zero(self):
@@ -50,8 +50,8 @@ class ProjectionTests(unittest.TestCase):
     def test_caller_decimal_precision_cannot_reduce_envelope(self):
         with localcontext() as context:
             context.prec = 2
-            result = subject.costs(finance(monthly_cost="9999.000001"))
-        self.assertEqual(result["conservative_31_day_rub"], "9999.01")
+            result = subject.costs(finance(monthly_cost="10999.000001"))
+        self.assertEqual(result["conservative_31_day_rub"], "10999.01")
         self.assertEqual(result["headroom_before_variable_charges_rub"], "0.99")
 
     def test_projection_excludes_account_balance_and_payment_card(self):
@@ -62,7 +62,10 @@ class ProjectionTests(unittest.TestCase):
         result = subject.costs(finance())
         self.assertFalse(result["includes_future_variable_charges"])
         self.assertFalse(result["provisioning_authorized_by_this_report"])
-        self.assertEqual(result["total_cap_rub"], "13000.00")
+        self.assertEqual(result["total_cap_rub"], "14000.00")
+        self.assertEqual(result["selected_budget_profile"], "hybrid")
+        self.assertEqual(result["alternative_local_only"]["ai_cap_rub"], "0.00")
+        self.assertFalse(result["alternative_local_only"]["selected"])
 
     def test_server_projection_excludes_sensitive_fields(self):
         result = subject.server_summary({"server": {"id": subject.SERVER_ID, "cpu": 4, "ram": 8192,
@@ -163,9 +166,22 @@ class ProjectionTests(unittest.TestCase):
             self.assertIsNone(result["current"])
             self.assertFalse(result["resize_quote"])
 
+    def test_public_price_shape_retains_numbers_but_not_strings_or_deep_data(self):
+        raw = {"cpu": "850.25", "ram": {"price": 425, "currency": "PRIVATE"},
+               "deep": {"a": {"b": {"secret": "PRIVATE"}}}, "-secret": "PRIVATE"}
+        result = subject.public_numeric_shape(raw)
+        self.assertEqual(result["cpu"], {"number_reported": "850.25"})
+        self.assertEqual(result["ram"]["price"], {"number_reported": "425"})
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertNotIn("-secret", result)
+
+    def test_invalid_public_prices_never_become_numeric_zero(self):
+        for value in (True, "NaN", "Infinity", "-1", "PRIVATE", [], None):
+            self.assertNotIn("number_reported", subject.public_numeric_shape(value))
+
     def test_expensive_small_and_malformed_candidates_excluded(self):
         base = {"id": 1, "cpu": 4, "ram": 16384, "gpu": 0, "disk": 100000, "price": "5000"}
-        rows = [{**base, **change} for change in ({"price": "10001"}, {"ram": 4096}, {"price": "NaN"}, {"cpu": True})]
+        rows = [{**base, **change} for change in ({"price": "11001"}, {"ram": 4096}, {"price": "NaN"}, {"cpu": True})]
         self.assertEqual(subject.preset_summary({"meta": {"total": 4}, "server_presets": rows})["candidates"], [])
 
     def test_only_fixed_get_calls(self):
