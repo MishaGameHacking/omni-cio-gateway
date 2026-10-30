@@ -1,4 +1,4 @@
-name: Observe protected Lenovo enrollment
+name: Verify protected Lenovo startup after enrollment
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -22,6 +22,7 @@ jobs:
               const exe=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
               const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
               const p=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{env,encoding:'utf8',timeout:240000});
-              for(const line of(p.stdout||'').split(/\r?\n/))if(line.startsWith('HOME_PROTECTED_OBSERVATION='))core.info(line);
-              if(p.status!==0)core.setFailed('Could not inspect the sanitized enrollment status');
+              for(const line of(p.stdout||'').split(/\r?\n/))if(/^HOME_PROTECTED_(OBSERVATION|PENDING|READY)=/.test(line))core.info(line);
+              if(p.status===3)core.setFailed('Protected service has not yet passed its Windows startup check');
+              else if(p.status!==0)core.setFailed('Could not inspect the sanitized enrollment status');
             }finally{fs.rmSync(dir,{recursive:true,force:true});}
