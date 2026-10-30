@@ -1,6 +1,6 @@
 """Short public HTTPS rehearsal. Only four owner-auth calls in an empty test process are admitted."""
 import base64
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import hashlib
 import http.client
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -11,31 +11,43 @@ from pathlib import Path
 import queue
 import re
 import secrets
+import shutil
 import subprocess
 import tempfile
 import threading
 import time
-import urllib.request
 
 SMOKE=Path('/opt/analyst-home-tools/72e400cda5564ab2922843597ca9c66e20950c8a/smoke.py')
-VERSION='2026.10.7'
-DIGEST='1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872'
-SIZE=40274445
-
-
-def cloud_binary(dest):
-    url='https://github.com/cloudflare/cloudflared/releases/download/'+VERSION+'/cloudflared-linux-amd64'
-    h=hashlib.sha256()
-    with urllib.request.urlopen(url,timeout=30) as response, dest.open('xb') as f:
-        if response.status!=200 or not response.geturl().startswith('https://'): raise ValueError('download_failed')
-        total=0
-        for block in iter(lambda:response.read(1024**2),b''):
-            total+=len(block)
-            if total>SIZE: raise ValueError('size_limit')
-            f.write(block)
-            h.update(block)
-    if total!=SIZE or h.hexdigest()!=DIGEST: raise ValueError('edge_digest_mismatch')
-    dest.chmod(0o700)
+@contextmanager
+def alternate_origin(folder, port):
+    # Only a random QA credential, narrow gateway and public challenge enter this development tunnel.
+    ssh=shutil.which('ssh',path='/usr/bin:/bin')
+    if not ssh:
+        raise ValueError('ssh_client_missing')
+    args=[ssh,'-F','/dev/null','-T','-o','BatchMode=yes','-o','IdentityAgent=none','-o','IdentitiesOnly=yes',
+          '-o','IdentityFile=none','-o','PasswordAuthentication=no','-o','KbdInteractiveAuthentication=no',
+          '-o','UserKnownHostsFile='+str(folder/'ssh_hosts'),'-o','GlobalKnownHostsFile=/dev/null',
+          '-o','StrictHostKeyChecking=accept-new','-o','ExitOnForwardFailure=yes','-o','ConnectTimeout=14',
+          '-o','ServerAliveInterval=25','-R','80:127.0.0.1:'+str(port),'nokey@localhost.run','--','--output','json']
+    proc=subprocess.Popen(args,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                         env={'PATH':'/usr/bin:/bin','LANG':'C','HOME':str(folder)})
+    found=queue.Queue()
+    def addresses():
+        for line in proc.stdout:
+            match=re.search(rb'(?:https://)?([a-z0-9-]+\.(?:lhr\.life|localhost\.run))\b',line)
+            if match and match[1] not in (b'admin.localhost.run',b'www.localhost.run',b'docs.localhost.run'):
+                found.put('https://'+match[1].decode())
+        found.put(None)
+    threading.Thread(target=addresses,daemon=True).start()
+    try:
+        try: origin=found.get(timeout=32)
+        except queue.Empty: raise ValueError('alternate_origin_timeout') from None
+        if not origin: raise ValueError('alternate_origin_unavailable')
+        yield origin
+    finally:
+        if proc.poll() is None: proc.terminate()
+        try: proc.wait(timeout=6)
+        except subprocess.TimeoutExpired: proc.kill();proc.wait()
 
 
 def probe():
@@ -50,8 +62,7 @@ def probe():
         time.sleep(1)
     else: raise ValueError('installed_api_unavailable')
     with tempfile.TemporaryDirectory(prefix='analyst-https-') as tmp, ExitStack() as stack:
-        folder=Path(tmp); bin=folder/'cloudflared'
-        cloud_binary(bin)
+        folder=Path(tmp)
         password,bootstrap,subject=secrets.token_urlsafe(32),secrets.token_urlsafe(36),'internet-check-'+secrets.token_hex(14)
         env={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8','BACKEND_PUBLIC_URL':'https://home-rehearsal.invalid',
              'DATABASE_PATH':str(folder/'auth.db'),'FERNET_KEY':base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
@@ -94,33 +105,7 @@ def probe():
         stack.callback(http.server_close)
         t=threading.Thread(target=http.serve_forever,daemon=True);t.start()
         stack.callback(http.shutdown)
-        env_edge={'PATH':'/usr/bin:/bin','LANG':'C.UTF-8','XDG_CONFIG_HOME':tmp}
-        cf=subprocess.Popen([str(bin),'tunnel','--no-autoupdate','--protocol','http2','--metrics','127.0.0.1:0',
-                             '--url','http://127.0.0.1:'+str(http.server_port)],cwd=tmp,env=env_edge,
-                            stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
-        def close():
-            cf.terminate()
-            try:cf.wait(timeout=8)
-            except subprocess.TimeoutExpired:cf.kill();cf.wait()
-        stack.callback(close)
-        found=queue.Queue()
-        ready=threading.Event()
-        causes=set()
-        def addresses():
-            for line in cf.stdout:
-                low=line.lower()
-                if b'registered tunnel connection' in low: ready.set()
-                for word in ('timeout','connection refused','no such host','failed to connect','certificate','network is unreachable'):
-                    if word.encode() in low: causes.add(word.replace(' ','_'))
-                m=re.search(rb'https://[a-z0-9-]+\.trycloudflare\.com\b',line)
-                if m:found.put(m[0].decode())
-            found.put(None)
-        threading.Thread(target=addresses,daemon=True).start()
-        try: origin=found.get(timeout=65)
-        except queue.Empty: raise ValueError('temporary_edge_timeout') from None
-        if not origin: raise ValueError('temporary_edge_unavailable')
-        if not ready.wait(95):
-            raise ValueError('edge_registration_'+(sorted(causes)[0] if causes else 'unconfirmed'))
+        origin=stack.enter_context(alternate_origin(folder,http.server_port))
         # Node encrypts this one-use message for the external verifier. It never goes to the action log.
         print(json.dumps({'origin':origin,'nonce':nonce,'proofHash':hashlib.sha256(proof.encode()).hexdigest(),
                           'password':password,'subject':subject}),flush=True)

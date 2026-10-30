@@ -41,7 +41,7 @@ module.exports = async ({github,context,core,side}) => {
       for await(const line of readline.createInterface({input:proc.stdout})){
         let d;try{d=JSON.parse(line);}catch{continue;}
         if(d.error){blocked=String(d.error).replace(/[^a-z0-9_]/gi,'').slice(0,80);continue;}
-        if(check||typeof d.origin!=='string'||!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(d.origin))throw Error('Invalid rehearsal message');
+        if(check||typeof d.origin!=='string'||['https://admin.localhost.run','https://www.localhost.run','https://docs.localhost.run'].includes(d.origin)||!/^https:\/\/[a-z0-9-]+\.(?:lhr\.life|localhost\.run)$/.test(d.origin))throw Error('Invalid rehearsal message');
         const key=crypto.randomBytes(32),iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv);
         const encrypted=Buffer.concat([c.update(JSON.stringify(d),'utf8'),c.final()]);
         check=await publish('sealed',{k:crypto.publicEncrypt({key:publicKey,oaepHash:'sha256'},key).toString('base64'),
@@ -68,7 +68,7 @@ module.exports = async ({github,context,core,side}) => {
       const key=crypto.privateDecrypt({key:privateKey,oaepHash:'sha256'},Buffer.from(seal.k,'base64'));
       const c=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(seal.iv,'base64'));c.setAuthTag(Buffer.from(seal.tag,'base64'));
       const d=JSON.parse(Buffer.concat([c.update(Buffer.from(seal.data,'base64')),c.final()]).toString());
-      if(!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(d.origin)||!/^[a-f0-9]{36}$/.test(d.nonce))throw Error('Invalid test origin');
+      if(!/^https:\/\/[a-z0-9-]+\.(?:lhr\.life|localhost\.run)$/.test(d.origin)||!/^[a-f0-9]{36}$/.test(d.nonce))throw Error('Invalid test origin');
       origin=d.origin;nonce=d.nonce;
       let ok=false;const observed=new Set();
       for(let i=0;i<12&&!ok;i++){
