@@ -241,20 +241,20 @@ private fun AnalyticsValueCard(data: AnalyticsViewData, full: Boolean, selectPer
 
 @Composable
 internal fun AnalyticsCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+    Card(modifier.fillMaxWidth(), shape = RoundedCornerShape(4.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
     }
 }
 
 @Composable
 private fun AnalyticsMore(title: String = "Посмотреть всё", open: () -> Unit) {
-    FilledTonalButton(onClick = open, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Text(title, color = MaterialTheme.colorScheme.primary) }
+    FilledTonalButton(onClick = open, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(4.dp)) { Text(title, color = MaterialTheme.colorScheme.primary) }
 }
 
 @Composable
 private fun AnalyticsChips(labels: List<String>, selected: Int, select: (Int) -> Unit) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        labels.forEachIndexed { index, label -> FilterChip(selected == index, { select(index) }, label = { Text(label) }, shape = RoundedCornerShape(24.dp)) }
+        labels.forEachIndexed { index, label -> FilterChip(selected == index, { select(index) }, label = { Text(label) }, shape = RoundedCornerShape(4.dp)) }
     }
 }
 
@@ -429,4 +429,5 @@ private fun AnalyticsDonut(fractions: List<Pair<String, Float>>, colors: List<Co
     }
     if (largeText) Text(PrivateValue(total.moneyText()), style = MaterialTheme.typography.titleLarge)
 }
+
 

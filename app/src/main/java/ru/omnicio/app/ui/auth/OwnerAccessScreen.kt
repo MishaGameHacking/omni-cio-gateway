@@ -181,11 +181,11 @@ private fun OwnerAccessFrame(content: @Composable () -> Unit) {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
             .imePadding().verticalScroll(rememberScrollState()).padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(24.dp))
-            SpectrumIcon(SpectrumSymbol.Brain, Modifier.size(64.dp), selected = true, motionAllowed = false)
-            Text("Analyst AI", style = MaterialTheme.typography.headlineLarge,
+            Spacer(Modifier.height(12.dp))
+            ru.omnicio.app.ui.terminal.TerminalGlyph("capital", Modifier.size(36.dp))
+            Text("ANALYST AI", style = MaterialTheme.typography.headlineLarge,
                 modifier = Modifier.semantics { heading() })
-            Text("Личный центр капитала", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Личный инвестиционный пульт", color = MaterialTheme.colorScheme.onSurfaceVariant)
             content()
             Text("Система продолжает работу на сервере, когда приложение закрыто.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -235,3 +235,4 @@ private fun OwnerAccessActions(form: OwnerAccessForm, errorMessage: String?, mig
     if (form.status == null && !form.blocked)
         SpectrumSecondaryButton("Повторить подключение", { form.revision++ }, Modifier.fillMaxWidth())
 }
+

@@ -52,7 +52,8 @@ import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.portfolio.rememberLivePortfolio
 import ru.omnicio.app.data.settings.AppSettingsStore
 import ru.omnicio.app.data.tinvest.TInvestTokenStore
-import ru.omnicio.app.ui.AnalystNavigationPanels
+import ru.omnicio.app.ui.terminal.TerminalWorkspace
+import ru.omnicio.app.ui.portfolio.TerminalDashboard
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.unit.dp
 import ru.omnicio.app.ui.AnalystTab
@@ -321,7 +322,7 @@ private fun AnalystAiApp(
     LaunchedEffect(signedIn?.user?.telegramId) {
         val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
         val saved = withContext(Dispatchers.IO) { workspaceStore.readJson(id, "navigation") }
-        if (saved?.optInt("schema_version", 0) != 2) {
+        if (saved?.optInt("schema_version", 0) != 3) {
             // Start the redesigned flow once; account data and editor drafts stay in their own records.
             screenName = AppScreen.Home.name
             backStack = arrayListOf()
@@ -336,7 +337,7 @@ private fun AnalystAiApp(
     LaunchedEffect(signedIn?.user?.telegramId, screenName, backStack, recentNames, navigationRestored) {
         val id = signedIn?.user?.telegramId ?: return@LaunchedEffect
         if (navigationRestored) withContext(Dispatchers.IO) {
-            workspaceStore.saveJson(id, "navigation", JSONObject().put("schema_version", 2).put("screen", screenName).put("back", JSONArray(backStack)).put("recent", JSONArray(recentNames)))
+            workspaceStore.saveJson(id, "navigation", JSONObject().put("schema_version", 3).put("screen", screenName).put("back", JSONArray(backStack)).put("recent", JSONArray(recentNames)))
         }
     }
     LaunchedEffect(signedIn?.accessToken) {
@@ -599,29 +600,17 @@ private fun SignedInAppContent(
         LaunchedEffect(liveSync.revision) { remotePresentation.refreshRemote() }
         SessionExpiryObserver(session.accessToken, reauthenticate)
         NotificationDeliveryRuntime()
-        BoxWithConstraints(Modifier.fillMaxSize()) {
-            val wide = maxWidth >= 840.dp
-            AnalystNavigationPanels(
-                selected = when (screen) {
-                    AppScreen.Home -> AnalystTab.Home; AppScreen.Portfolio, AppScreen.Market, AppScreen.Discovery -> AnalystTab.Portfolio
-                    AppScreen.Recommendations -> AnalystTab.Actions; AppScreen.Risk -> AnalystTab.Risk
-                    else -> AnalystTab.Profile
-                },
-                selectedWorkspace = WorkspaceRoute.entries.firstOrNull { it.name == screen.name },
-                wide = wide, navigateTab = navigateToTab, navigateWorkspace = { route ->
-                    if (route == WorkspaceRoute.Reports) reportId = null
-                    selectSection(route.name)
-                },
-            ) {
+        TerminalWorkspace(visible = screen != AppScreen.Home,
+            route = WorkspaceRoute.entries.firstOrNull { it.name == screen.name },
+            title = screenTitle(screen.name), close = { onScreenChange(AppScreen.Home) },
+            dashboard = {
+                TerminalDashboard(portfolioState, portfolioCurrency, portfolioRefreshing || workspace.busy,
+                    portfolioError ?: workspace.error, refresh, openProfile, { onScreenChange(AppScreen.TApi) })
+            }) {
                 AnimatedContent(screen, transitionSpec = { workspaceTransition(initialState, targetState, motion) }, label = "workspace-navigation") { destination ->
                     holder.SaveableStateProvider(destination.name) {
                         when (destination) {
-                            AppScreen.Home -> HomeScreen(user = session.user, state = portfolioState, refreshing = portfolioRefreshing || workspace.busy,
-                                refreshError = portfolioError ?: workspace.error, lastUpdatedMillis = portfolioLastSuccessMillis, selectedCurrency = portfolioCurrency,
-                                onCurrencyClick = { onCurrencyChange(portfolioCurrency.next()) }, onOpenPortfolio = openPortfolio,
-                                onOpenRecommendations = { onScreenChange(AppScreen.Recommendations) }, onOpenRisk = { onScreenChange(AppScreen.Risk) },
-                                onOpenMessages = { onScreenChange(AppScreen.Messages) }, onOpenProfile = openProfile,
-                                onConnect = { onScreenChange(AppScreen.TApi) }, onOpenPayments = { toPortfolio(PortfolioDestination(section = 4)) })
+                            AppScreen.Home -> Unit
                             AppScreen.Portfolio -> PortfolioScreen(state = portfolioState, accessToken = session.accessToken,
                                 refreshing = portfolioRefreshing, refreshError = portfolioError, lastUpdatedMillis = portfolioLastSuccessMillis,
                                 selectedCurrency = portfolioCurrency, onProfileClick = openProfile, onConnect = { onScreenChange(AppScreen.TApi) },
@@ -653,7 +642,6 @@ private fun SignedInAppContent(
                         }
                     }
                 }
-            }
         }
         notificationId?.let { id -> NotificationEventOverlay(id, onNotificationConsumed) }
     }
@@ -779,5 +767,6 @@ private fun ServerScreenshotPolicy(signedIn: Boolean, apply: (Boolean) -> Unit) 
         }
     }
 }
+
 
 

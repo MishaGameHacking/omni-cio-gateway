@@ -188,6 +188,12 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         MaterialTheme(
             colorScheme = colors,
             typography = AnalystTypography,
+            shapes = androidx.compose.material3.Shapes(
+                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(2f)),
+                small = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)),
+                medium = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)),
+                large = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(6f)),
+                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(6f))),
         ) {
             // Transparent scaffolds and text outside cards must not inherit the
             // framework's default black LocalContentColor in the dark theme.
@@ -204,6 +210,7 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         }
     }
 }
+
 
 
 

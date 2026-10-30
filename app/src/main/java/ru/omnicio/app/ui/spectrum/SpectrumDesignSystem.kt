@@ -125,7 +125,7 @@ fun SpectrumCard(
         state = when { pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle },
         emphasized = emphasized, interactive = onClick != null) {
         CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
-            Column(Modifier.fillMaxWidth().padding(16.dp),
+            Column(Modifier.fillMaxWidth().padding(14.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
         }
     }
@@ -230,11 +230,8 @@ fun SpectrumActionTile(
     SpectrumCard(modifier = modifier, onClick = onClick) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SpatialSurface(Modifier.size(48.dp), SpatialSurfaceKind.Chip,
-                color = LocalSpectrumPalette.current.containerFor(accent)) {
-                SpatialIcon(symbol.asset, Modifier.fillMaxSize().padding(8.dp), tint = accent,
-                    state = SpatialState.Selected, colorMode = SpatialColorMode.Decorative)
-            }
+            SpatialIcon(symbol.asset, Modifier.size(24.dp), tint = accent,
+                state = SpatialState.Selected, colorMode = SpatialColorMode.Monochrome)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                 Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
@@ -294,6 +291,7 @@ fun SpectrumBrandOrb(modifier: Modifier = Modifier, compact: Boolean = false) {
     SpatialIcon(if (compact) "analyst" else "brand", modifier.aspectRatio(1f),
         tint = LocalSpectrumPalette.current.cyan, motionAllowed = true)
 }
+
 
 
 

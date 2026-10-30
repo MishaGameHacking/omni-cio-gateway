@@ -423,3 +423,67 @@ fun OwnerCooldown56() {
     }
 }
 
+
+
+@PreviewTest
+@Preview(name = "terminal57-phone", widthDp = 390, heightDp = 844, locale = "ru")
+@Preview(name = "terminal57-full", widthDp = 390, heightDp = 2600, locale = "ru")
+@Preview(name = "terminal57-large-text", widthDp = 320, heightDp = 1900, fontScale = 1.5f, locale = "ru")
+@Composable
+fun Terminal57() = Terminal57Fixture()
+
+@PreviewTest
+@Preview(name = "terminal57-empty", widthDp = 390, heightDp = 844, locale = "ru")
+@Composable
+fun TerminalEmpty57() = Terminal57Fixture(empty = true)
+
+@PreviewTest
+@Preview(name = "terminal57-private", widthDp = 390, heightDp = 1600, locale = "ru")
+@Composable
+fun TerminalPrivacy57() = Terminal57Fixture(hidden = true)
+
+/** Synthetic values are confined to screenshotTest; the APK has no demonstration feed. */
+@Composable
+private fun Terminal57Fixture(empty: Boolean = false, hidden: Boolean = false) {
+    check(LocalInspectionMode.current)
+    fun money(n: Long) = ru.omnicio.app.data.portfolio.MoneyAmount(ru.omnicio.app.data.portfolio.ApiDecimal(n, 0), "RUB")
+    val positions = listOf(
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-a", "Тестовая компания А", "TEST-A", null, money(68400), ru.omnicio.app.data.portfolio.ApiDecimal(12, 0), instrumentType = "share"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-b", "Тестовый выпуск облигаций", "TEST-B", null, money(45600), ru.omnicio.app.data.portfolio.ApiDecimal(-2, 0), instrumentType = "bond"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-c", "Рублёвый остаток", "RUB", null, money(6000), null, instrumentType = "cash"))
+    val allocation = listOf("Акции" to 57L, "Облигации" to 38L, "Деньги" to 5L).map { (name, value) ->
+        ru.omnicio.app.data.portfolio.PortfolioAllocation(name, ru.omnicio.app.data.portfolio.ApiDecimal(value, 0)) }
+    val account = ru.omnicio.app.data.portfolio.PortfolioAccount("layout", "Тестовый счёт", money(120000),
+        ru.omnicio.app.data.portfolio.ApiDecimal(8, 0), positions, money(456), allocations = allocation)
+    val snapshot = ru.omnicio.app.data.portfolio.PortfolioSnapshot(money(120000), money(8420),
+        ru.omnicio.app.data.portfolio.ApiDecimal(8, 0), listOf(account), allocation, "2026-10-30T07:20:00Z")
+    val analytics = JSONObject().put("currency", "RUB").put("complete", true).put("history", JSONArray().apply {
+        for (i in 0..29) put(JSONObject().put("date", java.time.LocalDate.of(2026, 10, 1).plusDays(i.toLong()).toString()+"T12:00:00Z")
+            .put("value", (100000 + i * 700 + (kotlin.math.sin(i.toDouble()) * 1200).toInt()).toString()))
+    })
+    val payouts = JSONObject().put("complete", true).put("items", JSONArray().apply {
+        listOf(400, 1200, 800, 1800, 1400, 2200).forEachIndexed { i, n -> put(JSONObject()
+            .put("date", java.time.LocalDate.of(2026, 11, 15).plusMonths(i.toLong()).toString())
+            .put("estimate", JSONObject().put("currency", "RUB").put("value", JSONObject().put("units", n.toString()).put("nano", 0)))) }
+    })
+    val sources = JSONObject().put("documents", 563).put("sources", JSONArray().apply {
+        repeat(4) { put(JSONObject().put("state", if (it == 0) "partial" else "ready").put("stale", false)) }
+    })
+    val status = JSONObject().put("state", "ready").put("blockers", JSONArray())
+    val ai = JSONObject().put("budget", JSONObject().put("estimated_and_reserved_rub", "4.12").put("daily_cap_rub", "95"))
+    CompositionLocalProvider(LocalWorkspaceSession provides WorkspaceSession("", "synthetic-terminal-only"),
+        LocalWorkspaceTransport provides forbiddenTransport,
+        LocalWorkspacePreferences provides WorkspacePreferenceController(WorkspacePreferences(motion = MotionLevel.OFF, hideHomeBalance = hidden))) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                ru.omnicio.app.ui.portfolio.TerminalDashboardContent(if (empty) null else snapshot,
+                    if (empty) emptyList() else listOf(ru.omnicio.app.ui.portfolio.AccountData(analytics, null, false)),
+                    if (empty) emptyList() else listOf(ru.omnicio.app.ui.portfolio.AccountData(payouts, null, false)),
+                    5, {}, "Все счета", {}, false, null, empty,
+                    WorkspaceResource(if (empty) null else sources, false, null) {},
+                    WorkspaceResource(if (empty) null else status, false, null) {}, if (empty) null else ai, {}, {}, {})
+            }
+        } }
+    }
+}
