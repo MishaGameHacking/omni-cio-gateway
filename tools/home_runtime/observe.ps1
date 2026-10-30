@@ -50,6 +50,27 @@ function Profile-State {
         return 'absent'
     } catch { return 'unavailable' }
 }
+function Installer-State {
+    $file=Join-Path $base 'install-status\status.json'
+    try {
+        if ((Get-Item -Force -LiteralPath $file).Length -gt 4096) { throw 'Oversized receipt' }
+        $r=Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
+        $label=[string]$r.stage
+        $code=[string]$r.code
+        $allowed='^(receipt-verified|task-registered|starting-task|start-needs-profile|loading-profile|retrying-task|waiting-worker|existing-supervisor|registering-task|worker-(?:failed-)?(?:windows|import|configure|application|local-model|login-check|supervising)|failed-(?:entry|service-account|account-access|registering-task|starting-supervisor))$'
+        if ($r.package -ne 'd958608239005290f808' -or $label -notmatch $allowed -or $code -notmatch '^(?:|win32--?[0-9]{1,10}|hresult-[0-9A-F]{8}|task-[0-9A-F]{8})$') { throw 'Unknown receipt' }
+        return [ordered]@{stage=$label;code=$code}
+    } catch { return [ordered]@{stage='unavailable';code=''} }
+}
+function Subsequent-Boot {
+    try {
+        $set=(Get-LocalUser -Name 'AnalystAIHost' -ErrorAction Stop).PasswordLastSet
+        if (-not $set) { return 'unknown' }
+        $boot=(Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime.ToUniversalTime()
+        if ($boot -gt $set.ToUniversalTime()) { return 'observed' }
+        return 'same_boot'
+    } catch { return 'unknown' }
+}
 function Observe {
     try {
         $row=Get-Content -ErrorAction Stop -Raw -LiteralPath $file | ConvertFrom-Json
@@ -60,14 +81,14 @@ function Observe {
     } catch [Management.Automation.ItemNotFoundException] { $phase='awaiting_enrollment' }
       catch [UnauthorizedAccessException] { $phase='status_not_readable' }
       catch { $phase='status_unavailable' }
-    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);profile=(Profile-State);scheduler=(Scheduler-State);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
+    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);profile=(Profile-State);scheduler=(Scheduler-State);installer=(Installer-State);windows_reboot=(Subsequent-Boot);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
 }
 $deadline=[DateTime]::UtcNow.AddMinutes(3)
 $last=''
 $healthy=0
 do {
     $status=Observe
-    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.health)/$($status.anonymous)"
+    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.installer.stage)/$($status.installer.code)/$($status.health)/$($status.anonymous)"
     if ($last -ne $key) { Write-Output ('HOME_PROTECTED_OBSERVATION='+($status | ConvertTo-Json -Compress)) }
     $last=$key
     if ($status.phase -eq 'supervising' -and $status.account -eq 'present' -and $status.health -eq 200 -and $status.anonymous -eq 401) {
