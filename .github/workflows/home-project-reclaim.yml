@@ -1,4 +1,4 @@
-name: Reclaim cold installer downloads from the owner CI service profile
+name: Finish reclaiming old installer downloads in the CI service profile
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
@@ -11,9 +11,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   reclaim:
-    if: github.event.before == '4f9307ba83f9a6ab900e0d5a4038cec031d6d0dd' && github.run_attempt == 1
+    if: github.event.before == 'f5dbac2db1337ff49c6e5bc9227c50aaf9f154ee' && github.run_attempt == 1
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 20
+    timeout-minutes: 23
     steps:
       - name: Reclaim old disposable installer downloads and classify the remaining disk usage
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
@@ -42,7 +42,7 @@ jobs:
               const check="$ErrorActionPreference='Stop';$p=@(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^pip(?:[0-9.]*)[.]exe$' -or ($_.Name -match '^python(?:w|[0-9.]*)?[.]exe$' -and ((-not $_.CommandLine) -or $_.CommandLine -match '(?i)(?:-m\\s+pip(?:\\s|$)|pip-script[.]py|pip[.]exe)')) }); if($p.Count -eq 0){'idle'}else{'busy'}";
               const found=command(ps,['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(check,'utf16le').toString('base64')],{timeout:30000});
               const mode=(found.status===0 && found.stdout.trim()==='idle')?'idle':'busy';
-              const app=command('py.exe',['-3','-I',path.join(dir,'service_temp_reclaim.py'),mode],{timeout:540000});
+              const app=command('py.exe',['-3','-I',path.join(dir,'service_temp_reclaim.py'),mode,'finish-unpack'],{timeout:1120000});
               if(app.status!==0) throw Error('Temp inspection failed: '+(app.error?.code||app.status));
               const cleaned=JSON.parse(app.stdout);
               const wsl=command(path.join(system,'wsl.exe'),['-d','Ubuntu-24.04','-u','analyst-ci','--exec','python3','-I','-c',

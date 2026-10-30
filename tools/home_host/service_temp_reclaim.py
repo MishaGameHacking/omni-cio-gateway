@@ -130,7 +130,75 @@ def on_windows(pip_idle):
                                        for k,v in totals.most_common(30)]}
 
 
+def remove_cold_unpack(path, cutoff):
+    stats = Counter()
+    try:
+        top = path.lstat()
+        if top.st_file_attributes & LINK or not stat.S_ISDIR(top.st_mode) or top.st_mtime >= cutoff:
+            return stats
+        files = []
+        with os.scandir(path) as children:
+            for entry in children:
+                s = entry.stat(follow_symlinks=False)
+                if s.st_file_attributes & LINK or not stat.S_ISREG(s.st_mode) or s.st_mtime >= cutoff:
+                    return stats
+                if not WHEEL_FILE.fullmatch(entry.name):
+                    continue
+                if entry.name.lower().endswith('.whl') and classify_file(entry.path) != 'zip':
+                    continue
+                files.append((Path(entry.path), s.st_size, s.st_mtime_ns))
+        for member, length, stamp in files:
+            s = member.lstat()
+            if s.st_file_attributes & LINK or not stat.S_ISREG(s.st_mode) or s.st_size!=length or s.st_mtime_ns!=stamp:
+                continue
+            member.unlink()
+            stats['files'] += 1
+            stats['logical_bytes'] += length
+        try:
+            path.rmdir()
+            stats['retired_unpack_folders'] += 1
+        except OSError:
+            pass  # A foreign or locked file keeps its original name and folder.
+    except OSError:
+        stats['busy_or_inaccessible'] += 1
+    return stats
+
+
+def finish_wheels(pip_idle):
+    from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+    drive = Path(os.environ['SystemDrive']+os.sep)
+    path = Path(os.environ['USERPROFILE'])/'AppData'/'Local'/'Temp'
+    expect = Path(os.environ['SystemRoot'])/'ServiceProfiles'/'NetworkService'/'AppData'/'Local'/'Temp'
+    if path!=expect or not plain_directory(path):
+        raise ValueError('wrong service temp')
+    root = Path('\\\\?\\'+str(path))
+    total = Counter()
+    deadline = time.monotonic()+1020
+    cutoff = time.time()-86400
+    complete = True
+    before = shutil.disk_usage(drive).free
+    if not pip_idle:
+        return {'before':before,'after':before,'counts':{},'complete':False,'pip_idle':False}
+    with redirect_stdout(io.StringIO()), exclusive_emulator(), os.scandir(root) as items, ThreadPoolExecutor(max_workers=4) as pool:
+        pending = set()
+        for entry in items:
+            if time.monotonic() >= deadline:
+                complete = False
+                break
+            if not WHEEL_DIR.fullmatch(entry.name) or not entry.name.lower().startswith('pip-unpack-'):
+                continue
+            pending.add(pool.submit(remove_cold_unpack, Path(entry.path), cutoff))
+            if len(pending) >= 32:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for job in done:
+                    total.update(job.result())
+        for job in pending:
+            total.update(job.result())
+    return {'before':before,'after':shutil.disk_usage(drive).free,'counts':total,'complete':complete,'pip_idle':True}
+
+
 if __name__ == '__main__':
     if os.name!='nt' or os.environ.get('COMPUTERNAME')!='LAPTOP-NPSGA016' or os.environ.get('GITHUB_RUN_ATTEMPT')!='1':
         raise SystemExit('owner host and initial job required')
-    print(json.dumps(on_windows(sys.argv[1]=='idle')))
+    operation = finish_wheels if sys.argv[2:] == ['finish-unpack'] else on_windows
+    print(json.dumps(operation(sys.argv[1]=='idle')))
