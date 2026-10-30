@@ -21,8 +21,20 @@ function PackageInfo([string]$scope) {
 }
 $r.desktop_packages=@((PackageInfo 'service'),(PackageInfo 'all_users'))
 # Only publisher/package names or installation metadata from the single owner's confirmed Windows profile.
-$ownerProfile=Get-CimInstance Win32_UserProfile | Where-Object { -not $_.Special -and [IO.Path]::GetFileName($_.LocalPath) -ieq 'Klima' } | Select-Object -First 1
+$ownerProfile=$null
+try {
+    $interactive=(Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName
+    if ($interactive) {
+        $sid=[Security.Principal.NTAccount]::new($interactive).Translate([Security.Principal.SecurityIdentifier]).Value
+        $ownerProfile=Get-CimInstance Win32_UserProfile -Filter ("SID='"+$sid+"'") -ErrorAction Stop | Where-Object { -not $_.Special }
+    }
+} catch { }
+$r.interactive_profile=if ($ownerProfile) { 'resolved' } else { 'unavailable' }
 if ($ownerProfile) {
+    try {
+        $userPackages=@(Get-AppxPackage -User $ownerProfile.SID -ErrorAction Stop | Where-Object { $_.Name -match '^OpenAI\.(?:Codex|ChatGPT[-.]?Desktop|ChatGPT)$' })
+        $r.interactive_packages=@($userPackages | ForEach-Object { [ordered]@{product=$_.Name;version=[string]$_.Version} })
+    } catch { $r.interactive_packages='unavailable' }
     $r.owner_apps=@()
     foreach ($target in @(@('AppData\Local\Packages','OpenAI.Codex_*','desktop-package'),@('AppData\Local\Packages','OpenAI.ChatGPT-Desktop_*','chatgpt-package'),@('.vscode\extensions','openai.chatgpt-*','ide-extension'))) {
         try {
