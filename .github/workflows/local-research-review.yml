@@ -1,0 +1,35 @@
+name: Inspect local research code review
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/local-research-review.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Read exact public check annotations
+        shell: py -3 {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          import json, os, urllib.request
+          assert os.environ.get("COMPUTERNAME") == "LAPTOP-NPSGA016"
+          base = "https://api.github.com/repos/MishaGameHacking/omni-cio-gateway/"
+          def get(path):
+              request = urllib.request.Request(base + path, headers={"Authorization": "Bearer " + os.environ["GH_TOKEN"], "Accept": "application/vnd.github+json"})
+              with urllib.request.urlopen(request, timeout=25) as response:
+                  raw = response.read(1024 * 1024 + 1)
+              assert len(raw) <= 1024 * 1024
+              return json.loads(raw)
+          source = "e71806feeea6d386fde61a123398ef4f20217171"
+          checks = get("commits/" + source + "/check-runs")
+          for check in checks["check_runs"]:
+              if check["name"] != "SonarCloud Code Analysis":
+                  continue
+              print("REVIEW_STATUS=" + json.dumps({"source": source, "id": check["id"], "conclusion": check["conclusion"]}))
+              for row in get("check-runs/" + str(int(check["id"])) + "/annotations?per_page=100"):
+                  print("REVIEW_FINDING=" + json.dumps({name: row.get(name) for name in ("path", "start_line", "annotation_level", "title", "message")}))
