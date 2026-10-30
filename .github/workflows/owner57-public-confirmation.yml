@@ -1,0 +1,88 @@
+name: Confirm published owner57 APK through public HTTPS without republishing
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-public-confirmation.yml]
+permissions:
+  contents: read
+jobs:
+  confirm-publication:
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ee8c7a14e8d6d6bdddf3b3a2396c7d1871d4336e
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Obtain exact completed publication receipt
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const run_id=41029055042;
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(run.status!=='completed'||run.conclusion!=='failure'||run.run_attempt!==1||
+               run.head_sha!=='477ac90870154786c961b05e790448668c0704ee'||
+               run.path!=='.github/workflows/owner57-shell-delivery.yml')
+              throw new Error('Unexpected original publication run');
+            const {data:artifact}=await github.rest.actions.getArtifact({...context.repo,artifact_id:12964474400});
+            if(artifact.expired||artifact.workflow_run.id!==run_id||
+               artifact.name!=='owner57-shell-delivery-41029055042'||
+               artifact.digest!=='sha256:d2f15f3cb3ff2d8cb69f0e230f08b1c07462826ead93daa7d94da3b3d7d34f8f')
+              throw new Error('Publication receipt changed');
+            const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:artifact.id,archive_format:'zip'});
+            require('node:fs').writeFileSync(require('node:path').join(process.env.RUNNER_TEMP,'publication.zip'),Buffer.from(archive.data));
+      - name: Repeat entire APK download, channel identity and health verification
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, sys, time, urllib.error, zipfile
+          from pathlib import Path
+          sys.path.insert(0,'tools')
+          from deliver_owner57_shell import verify_public
+          archive=Path(os.environ['RUNNER_TEMP'])/'publication.zip'
+          if hashlib.sha256(archive.read_bytes()).hexdigest()!='d2f15f3cb3ff2d8cb69f0e230f08b1c07462826ead93daa7d94da3b3d7d34f8f':
+              raise RuntimeError('Receipt archive bytes changed')
+          with zipfile.ZipFile(archive) as z:
+              entries=[x for x in z.infolist() if x.filename.endswith('shell-remote-receipt.json')]
+              if len(entries)!=1 or entries[0].file_size>65536:
+                  raise RuntimeError('Unexpected receipt entries')
+              receipt=json.loads(z.read(entries[0]))
+          expected={'status':'published','source_commit':'c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f',
+              'delivery_run_id':'41029055042','test_run_id':'41024346794','visual_run_id':'41024460138',
+              'version_code':57,'version_name':'0.21.0-preview','apk_bytes':29873479,
+              'apk_sha256':'d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7',
+              'certificate_sha256':'bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1'}
+          if any(type(receipt.get(k)) is not type(v) or receipt[k]!=v for k,v in expected.items()):
+              raise RuntimeError('Unexpected published APK identity')
+          for attempt in range(1,4):
+              try:
+                  result=verify_public(receipt)
+                  break
+              except (TimeoutError,urllib.error.URLError) as error:
+                  print('PUBLIC_CONFIRMATION_TRANSIENT='+json.dumps({'attempt':attempt,'type':type(error).__name__}),flush=True)
+                  if attempt==3: raise
+                  time.sleep(5)
+          result['confirmation_run_id']=os.environ['GITHUB_RUN_ID']
+          result['confirmation_read_only']=True
+          result['original_delivery_health_timeout']=True
+          Path('plan-reports/shell-public-verification.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
+          print('SERVER_SHELL_PUBLIC_VERIFIED='+json.dumps(result,ensure_ascii=False),flush=True)
+          PY
+      - name: Preserve independent public verification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-public-confirmation-${{ github.run_id }}
+          path: plan-reports/
+          retention-days: 7
+          if-no-files-found: warn
