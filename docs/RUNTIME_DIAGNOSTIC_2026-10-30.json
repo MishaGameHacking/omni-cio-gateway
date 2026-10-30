@@ -215,5 +215,334 @@
     },
     "source_commit": "cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4",
     "status": "observed"
+  },
+  "latest_extended_observation": {
+    "tested_source": "c1aef200de7827876d3f0eacfc4ffb7bca9bb394",
+    "test_run": 41058056458,
+    "tests": 25,
+    "observation_run": 41058480255,
+    "observation_job": 124071903682,
+    "observation_commit": "a583756114547517b940e66de4d404b4e10c9bb3",
+    "conclusion": "success",
+    "run_finished_at": "2026-10-30T12:52:39Z",
+    "receipt": {
+      "application_imported": false,
+      "broker_called": false,
+      "database": {
+        "automation_preferences": {
+          "enabled": 1
+        },
+        "decision_cycles": {
+          "first_at": "2026-10-30T11:48:33+00:00",
+          "last_at": "2026-10-30T11:48:33+00:00",
+          "live_trade_execution_verified": false,
+          "recent": [
+            {
+              "age_seconds": 3815,
+              "blockers": [
+                "candidate_constraints_failed",
+                "candidate_cost_unverified",
+                "candidate_expired",
+                "candidate_quantity_unverified",
+                "evidence_changed",
+                "investment_profile_incomplete",
+                "investment_research_incomplete",
+                "no_action_required",
+                "no_whole_lot_within_target_and_reserve",
+                "own_cash_unverified",
+                "real_order_execution_disabled",
+                "unknown"
+              ],
+              "candidate_count": 2,
+              "evaluated_at": "2026-10-30T11:48:33+00:00",
+              "payload_valid": true,
+              "proposed_action_present": false,
+              "recorded_real_orders_enabled": false,
+              "state": "blocked"
+            }
+          ],
+          "rows": 1,
+          "scope": "stored_audit_all_connections_not_revalidated_current_account"
+        },
+        "discovery": [
+          {
+            "attempted_at": "2026-10-30T12:03:54+00:00",
+            "coverage": {
+              "constraint_checks_passed": 0,
+              "eligible": 1820,
+              "reviewed": 2,
+              "scanned": 26862
+            },
+            "lease_until": "2026-10-30T12:18:54+00:00",
+            "reasons": [
+              "research_incomplete"
+            ],
+            "state": "running",
+            "updated_at": "2026-10-30T12:03:54+00:00"
+          }
+        ],
+        "journal_mode": "wal",
+        "missing_tables": [],
+        "model_usage": {
+          "finish_reason_persisted": false,
+          "job_link_verified": false,
+          "max_output_tokens_persisted": false,
+          "recent": [
+            {
+              "created_at": "2026-10-30T11:56:03+00:00",
+              "input_tokens": 13002,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 600,
+              "state": "settled",
+              "updated_at": "2026-10-30T11:56:10+00:00"
+            },
+            {
+              "created_at": "2026-10-30T05:55:13+00:00",
+              "input_tokens": 13086,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 672,
+              "state": "settled",
+              "updated_at": "2026-10-30T05:55:20+00:00"
+            },
+            {
+              "created_at": "2026-10-29T23:12:10+00:00",
+              "input_tokens": 11830,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 331,
+              "state": "settled",
+              "updated_at": "2026-10-29T23:12:14+00:00"
+            }
+          ]
+        },
+        "query_only": true,
+        "scheduler_leases": {
+          "rows": 0,
+          "unexpired": 0
+        },
+        "snapshot_metadata": {
+          "last_saved_at": "2026-10-30T12:03:53+00:00",
+          "rows": 3
+        },
+        "workspace_jobs": {
+          "counts": [
+            {
+              "count": 1,
+              "kind": "analysis",
+              "state": "completed"
+            },
+            {
+              "count": 2,
+              "kind": "chat",
+              "state": "completed"
+            },
+            {
+              "count": 1,
+              "kind": "chat",
+              "state": "failed"
+            },
+            {
+              "count": 442,
+              "kind": "events",
+              "state": "completed"
+            },
+            {
+              "count": 19,
+              "kind": "events",
+              "state": "failed"
+            },
+            {
+              "count": 302,
+              "kind": "osint",
+              "state": "completed"
+            },
+            {
+              "count": 302,
+              "kind": "refresh",
+              "state": "completed"
+            },
+            {
+              "count": 2,
+              "kind": "refresh",
+              "state": "failed"
+            }
+          ],
+          "recent_chat": [
+            {
+              "created_at": "2026-10-30T11:56:02+00:00",
+              "error_code": "ai_incomplete_response",
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 600,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "fast",
+                "selected_tier": "fast"
+              },
+              "stage": "model_running",
+              "state": "failed",
+              "updated_at": "2026-10-30T11:56:10+00:00"
+            },
+            {
+              "created_at": "2026-10-30T05:55:13+00:00",
+              "error_code": null,
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 1200,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "standard",
+                "selected_tier": "standard"
+              },
+              "stage": "done",
+              "state": "completed",
+              "updated_at": "2026-10-30T05:55:20+00:00"
+            },
+            {
+              "created_at": "2026-10-29T23:12:10+00:00",
+              "error_code": null,
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 600,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "fast",
+                "selected_tier": "fast"
+              },
+              "stage": "done",
+              "state": "completed",
+              "updated_at": "2026-10-29T23:12:14+00:00"
+            }
+          ],
+          "running_expired": 0
+        }
+      },
+      "database_written": false,
+      "failed_release": {
+        "archive_present": false,
+        "failure": null,
+        "phase_evidence": "archive_absent",
+        "release_run": 41056552195
+      },
+      "http": {
+        "local_health": {
+          "elapsed_ms": 8011,
+          "error": "timeout",
+          "http_status": null
+        },
+        "public_health": {
+          "elapsed_ms": 8019,
+          "error": "timeout",
+          "http_status": null
+        },
+        "public_password_status": {
+          "elapsed_ms": 8015,
+          "error": "timeout",
+          "http_status": null
+        }
+      },
+      "model_called": false,
+      "observed_at": "2026-10-30T12:52:08+00:00",
+      "order_lifecycle_absent": true,
+      "runtime_baseline_verified": true,
+      "schema": 1,
+      "server_id": 9417611,
+      "service_changed": false,
+      "services": {
+        "analyst-ai-owner.service": {
+          "active": "active",
+          "main_pid": 114390,
+          "process_age_seconds": 4140,
+          "restarts": 0,
+          "substate": "running"
+        },
+        "analyst-ai-updates.service": {
+          "active": "active",
+          "main_pid": 114391,
+          "process_age_seconds": 4140,
+          "restarts": 0,
+          "substate": "running"
+        }
+      },
+      "source_commit": "cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4",
+      "status": "observed"
+    },
+    "transport": {
+      "operation_sha256": "67e5df15a904dc55b845003aa642d2d12f53bdb48f6487ca2b4f30fb8f9c776b",
+      "payload_sha256": "3fd443e3cb618cf56c16729da89e64a8e59567ff1b947cfa6d12b07ba6572822",
+      "receipt_sha256": "a02be0fda2d6df8170e89a81dc613f738c65604b4a048487b4f977c37d980126",
+      "remote_exit_code": 0,
+      "stderr_bytes": 0,
+      "temporary_key_removed": true
+    }
+  },
+  "interpretation": {
+    "time_zone": "Europe/Moscow",
+    "healthy_runtime_confirmed": false,
+    "observed_failure": "HTTP health and password-status requests timed out while service processes remained active",
+    "baseline_retained": true,
+    "chat_fix_installed": false,
+    "financial_execution_activated": false,
+    "paused_progress": {
+      "last_snapshot_utc": "2026-10-30T12:03:53+00:00",
+      "last_cycle_utc": "2026-10-30T11:48:33+00:00",
+      "discovery_claim_utc": "2026-10-30T12:03:54+00:00",
+      "expired_discovery_lease_utc": "2026-10-30T12:18:54+00:00"
+    },
+    "cache_ab_ba_deadlock": {
+      "status": "possible_not_proven_on_production",
+      "basis": "static nested cache lock-order path",
+      "production_thread_stacks_collected": false
+    },
+    "limitations": [
+      "Success means observation completed, not application healthy",
+      "DB observed_at precedes sequential HTTP probes",
+      "Stored discovery coverage may belong to previous result_json",
+      "candidate_expired/evidence_changed can mean incomplete unquoted candidate",
+      "Model usage is not directly joined to chat job; original finish_reason missing",
+      "No broker, paid model, real trade, configuration change or service restart performed"
+    ]
+  },
+  "postdeployment_observation_plan": {
+    "status": "not_executed",
+    "required_inputs": [
+      "final_source_commit",
+      "verified_six_module_hashes",
+      "successful_deployment_receipt_and_time"
+    ],
+    "modules": [
+      "volume_chat.py",
+      "investment_chat_policy.py",
+      "ai_guarded_client.py",
+      "volume_jobs.py",
+      "order_lifecycle.py",
+      "portfolio_details.py"
+    ],
+    "read_only": true,
+    "enqueue_jobs": false,
+    "paid_chat_probe": false,
+    "broker_calls": false,
+    "health_checks": [
+      "local_health_http_200",
+      "public_health_http_200",
+      "public_owner_status_http_200",
+      "new_process_identity",
+      "exact_source_bytes"
+    ],
+    "background_evidence": [
+      "automatic_job_prefix_counts_states_and_timestamps",
+      "new_saved_snapshot_after_restart",
+      "new_decision_cycle_after_restart_if_discovery_due"
+    ],
+    "automatic_prefixes": [
+      "auto.full.",
+      "auto.events.",
+      "auto.osint."
+    ],
+    "classification_limits": [
+      "health_success_alone_does_not_prove_background_work",
+      "events_progress_is_separate_from_price_polling_window",
+      "blocked_decision_is_not_trade_execution",
+      "two_observations_do_not_prove_24_7_reliability"
+    ]
   }
 }
