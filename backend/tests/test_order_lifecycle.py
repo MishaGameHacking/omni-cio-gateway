@@ -229,8 +229,9 @@ def test_work_listing_is_read_only_and_does_not_dispatch(environment):
     assert env["lifecycle"].work() == [{"order_id": env["order_id"], "action": "dispatch", "mode": "simulation"}]
     assert env["broker"].submissions == []
     assert env["journal"].prepare(env["intent"]) == env["order_id"]
+    conflicting_intent = replace(env["intent"], lots=1)
     with pytest.raises(ExecutionError, match="paper_idempotency_conflict"):
-        env["journal"].prepare(replace(env["intent"], lots=1))
+        env["journal"].prepare(conflicting_intent)
     expected_reservation(env)
 
 
