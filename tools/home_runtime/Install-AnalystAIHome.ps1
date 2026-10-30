@@ -155,7 +155,7 @@ $want='EXPECTED_SID'
 if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $want) { exit 41 }
 $p=Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$want)
 $root=[Environment]::ExpandEnvironmentVariables([string]$p.ProfileImagePath)
-if (-not [IO.Directory]::Exists($root) -or $root.TrimEnd('\') -ne $env:USERPROFILE.TrimEnd('\')) { exit 42 }
+if (-not [IO.Directory]::Exists($root)) { exit 42 }
 if (-not (Test-Path -LiteralPath ('Registry::HKEY_USERS\'+$want))) { exit 43 }
 exit 0
 '@

@@ -13,8 +13,19 @@ $id=(Get-LocalUser -Name 'AnalystAIHost').SID.Value
 $secret=ConvertTo-SecureString ('Fp4!'+[Guid]::NewGuid().ToString('N')) -AsPlainText -Force
 $credential=[PSCredential]::new($localUser,$secret)
 try {
-    # Validate the native secondary-logon parameter set without presenting a fake password to Windows.
-    Microsoft.PowerShell.Management\Start-Process -FilePath $winPS -ArgumentList '-NoProfile -NonInteractive -Command exit' -Credential $credential -LoadUserProfile -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru -WhatIf
+    # Windows PowerShell 5.1 Start-Process has no WhatIf switch. Validate the credential parameter set
+    # and really start a harmless process as the observer. The cross-account logon is exercised only by Windows enrollment.
+    $needed=@('FilePath','ArgumentList','Credential','LoadUserProfile','WorkingDirectory','WindowStyle','PassThru')
+    $sets=@((Get-Command Microsoft.PowerShell.Management\Start-Process).ParameterSets | Where-Object {
+        $names=@($_.Parameters.Name)
+        @($needed | Where-Object {$_ -notin $names}).Count -eq 0
+    })
+    Need ($sets.Count -ge 1) 'Native profile launch parameter set is unavailable'
+    $probe="if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { exit 21 }; exit 0"
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
+    $child=Microsoft.PowerShell.Management\Start-Process -FilePath $winPS -ArgumentList ('-NoProfile -NonInteractive -EncodedCommand '+$encoded) -LoadUserProfile -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru
+    try { Need ($child.WaitForExit(20000) -and $child.ExitCode -eq 0) 'Observer profile launch failed' }
+    finally { $child.Dispose() }
 
     $astErrors=$null; $tokens=$null
     $ast=[Management.Automation.Language.Parser]::ParseFile($Installer,[ref]$tokens,[ref]$astErrors)
@@ -54,5 +65,5 @@ try {
     $out=Start-HomeSupervisor $credential $id
     Need (($scenario.events -join ',') -eq 'start,wait' -and ($out -join ' ') -match 'failed-application') 'Guest failure was reported as healthy'
 } finally { $secret.Dispose() }
-[ordered]@{dedicated_identity_present=$true;task_first=$true;old_profile_call_removed=$true;profile_parameter_set='native_whatif';
+[ordered]@{dedicated_identity_present=$true;task_first=$true;old_profile_call_removed=$true;profile_parameter_set='verified';observer_process_started=$true;
     coordinated_cases=4;target_account_logon_performed=$false} | ConvertTo-Json -Compress
