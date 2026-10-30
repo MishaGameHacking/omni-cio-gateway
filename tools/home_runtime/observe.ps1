@@ -29,6 +29,27 @@ function Account-State {
     try { $null=Get-LocalUser -Name 'AnalystAIHost' -ErrorAction Stop; return 'present' }
     catch { if ($_.FullyQualifiedErrorId -like 'UserNotFound,*') { return 'absent' }; return 'unavailable' }
 }
+function Scheduler-State {
+    try {
+        $t=Get-ScheduledTask -TaskName 'AnalystAI-HomeRuntime' -TaskPath '\' -ErrorAction Stop
+        $info=Get-ScheduledTaskInfo -InputObject $t -ErrorAction Stop
+        return [ordered]@{visibility='visible';state=[string]$t.State;
+            last_result=('0x{0:X8}' -f ([long]$info.LastTaskResult -band 4294967295L));
+            boot_trigger=(@($t.Triggers).Count -eq 1 -and $t.Triggers[0].CimClass.CimClassName -eq 'MSFT_TaskBootTrigger');
+            limited=([string]$t.Principal.RunLevel -eq 'Limited')}
+    } catch {
+        $why=if ($_.FullyQualifiedErrorId -like 'CmdletizationQuery_NotFound*') { 'not_listed' } else { 'unavailable' }
+        return [ordered]@{visibility=$why}
+    }
+}
+function Profile-State {
+    try {
+        $u=Get-LocalUser -Name 'AnalystAIHost' -ErrorAction Stop
+        $key='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$u.SID.Value
+        if (Test-Path -LiteralPath $key -ErrorAction Stop) { return 'present' }
+        return 'absent'
+    } catch { return 'unavailable' }
+}
 function Observe {
     try {
         $row=Get-Content -ErrorAction Stop -Raw -LiteralPath $file | ConvertFrom-Json
@@ -39,14 +60,14 @@ function Observe {
     } catch [Management.Automation.ItemNotFoundException] { $phase='awaiting_enrollment' }
       catch [UnauthorizedAccessException] { $phase='status_not_readable' }
       catch { $phase='status_unavailable' }
-    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
+    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);profile=(Profile-State);scheduler=(Scheduler-State);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
 }
 $deadline=[DateTime]::UtcNow.AddMinutes(3)
 $last=''
 $healthy=0
 do {
     $status=Observe
-    $key="$($status.phase)/$($status.account)/$($status.health)/$($status.anonymous)"
+    $key="$($status.phase)/$($status.account)/$($status.profile)/$($status.scheduler.visibility)/$($status.scheduler.state)/$($status.scheduler.last_result)/$($status.health)/$($status.anonymous)"
     if ($last -ne $key) { Write-Output ('HOME_PROTECTED_OBSERVATION='+($status | ConvertTo-Json -Compress)) }
     $last=$key
     if ($status.phase -eq 'supervising' -and $status.account -eq 'present' -and $status.health -eq 200 -and $status.anonymous -eq 401) {
