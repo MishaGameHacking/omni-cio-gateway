@@ -1,0 +1,118 @@
+name: Publish owner57 preview after exact laptop and visual verification
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-shell-delivery.yml]
+permissions:
+  contents: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_SOURCE_SHA: c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f
+  EXPECTED_TEST_RUN: '41024346794'
+  EXPECTED_RUNTIME_DEPLOY_RUN: '40969026216'
+  EXPECTED_RUNTIME_DEPLOY_SHA: 4269ebc55666bd57d20daba6b31b6e11b561be4f
+  EXPECTED_RUNTIME_SOURCE_SHA: a9574656fcac4507660c872ebcc22641154a3c8a
+  EXPECTED_RUNTIME_TEST_RUN: '40966175873'
+  EXPECTED_CLIENT_ARTIFACT_SHA256: e3ffcd2cfc819acfa6e9de9e8201f40270e25a3bde842befd3fd37836ab25af0
+  EXPECTED_APK_SHA256: d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7
+  EXPECTED_VISUAL_RUN: '41024460138'
+  EXPECTED_VISUAL_SHA: 171173cf714689611275764a03f7476dcb2f3a4e
+  EXPECTED_VISUAL_ARTIFACT_SHA256: 4f419370cbbcc3dc0575dab4bf8da4a28e8735d589e92c3c0fecac25923a7dd2
+  REVIEWED_VISUAL_ARTIFACT_SHA256: 4f419370cbbcc3dc0575dab4bf8da4a28e8735d589e92c3c0fecac25923a7dd2
+  EXPECTED_PUBLICATION_TOOLS_SHA: ee8c7a14e8d6d6bdddf3b3a2396c7d1871d4336e
+  EXPECTED_PUBLICATION_TOOLS_RUN: '41014407257'
+jobs:
+  deliver:
+    permissions:
+      contents: read
+      actions: read
+      checks: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_PUBLICATION_TOOLS_SHA }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_SOURCE_SHA }}
+          path: .source-quality
+          persist-credentials: false
+          sparse-checkout: .github/scripts/require_clean_sonar.cjs
+          sparse-checkout-cone-mode: false
+      - name: Require exact backend, Android, reviewed visual evidence and deployed runtime
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const env=process.env, ref=env.EXPECTED_SOURCE_SHA;
+            async function sourceTree(commit_sha, root) {
+              const {data:commit}=await github.rest.git.getCommit({...context.repo,commit_sha});
+              const {data:tree}=await github.rest.git.getTree({...context.repo,tree_sha:commit.tree.sha});
+              const entry=tree.tree.find(item=>item.path===root&&item.type==='tree');
+              if(!entry) throw new Error('Required source inventory missing');
+              return entry.sha;
+            }
+            if(await sourceTree(ref,'backend')!==await sourceTree(env.EXPECTED_RUNTIME_SOURCE_SHA,'backend'))
+              throw new Error('Client requires backend changes that were not deployed');
+            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/owner-system-2026-10-29'});
+            if(branch.object.sha!==ref) throw new Error('Source branch advanced before publication');
+            for(const [run_id,sha,path] of [
+              [Number(env.EXPECTED_TEST_RUN),ref,'.github/workflows/owner-system.yml'],
+              [Number(env.EXPECTED_VISUAL_RUN),env.EXPECTED_VISUAL_SHA,'.github/workflows/owner-visual57.yml'],
+              [Number(env.EXPECTED_PUBLICATION_TOOLS_RUN),env.EXPECTED_PUBLICATION_TOOLS_SHA,'.github/workflows/owner57-shell-tools.yml'],
+              [Number(env.EXPECTED_RUNTIME_DEPLOY_RUN),env.EXPECTED_RUNTIME_DEPLOY_SHA,'.github/workflows/workspace-deploy.yml']]) {
+              const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+              if(run.status!=='completed'||run.conclusion!=='success'||run.head_sha!==sha||
+                 run.path!==path||run.run_attempt!==1||run.event!=='push')
+                throw new Error('Required exact verification is not successful');
+            }
+            const run_id=Number(env.EXPECTED_TEST_RUN);
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id,per_page:100});
+            for(const name of ['verify','verify-client']) {
+              const matches=jobs.filter(job=>job.name===name);
+              if(matches.length!==1||matches[0].status!=='completed'||matches[0].conclusion!=='success')
+                throw new Error('Exact backend and client verification required');
+            }
+            const {newestSonarCheck,assertCleanSonar}=require('./.source-quality/.github/scripts/require_clean_sonar.cjs');
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=newestSonarCheck(checks,ref);
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact source analysis not completed');
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            assertCleanSonar(sonar,notes,ref);
+            if(!/^[a-f0-9]{64}$/.test(env.REVIEWED_VISUAL_ARTIFACT_SHA256)||
+               env.REVIEWED_VISUAL_ARTIFACT_SHA256!==env.EXPECTED_VISUAL_ARTIFACT_SHA256)
+              throw new Error('Reviewed screenshots are not bound to the visual artifact');
+            async function download(run_id,name,digest,filename) {
+              const items=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id,per_page:100});
+              const matches=items.filter(x=>x.name===name&&!x.expired);
+              if(matches.length!==1||matches[0].digest!=='sha256:'+digest) throw new Error('Artifact identity changed');
+              const archive=await github.rest.actions.downloadArtifact({...context.repo,artifact_id:matches[0].id,archive_format:'zip'});
+              require('node:fs').writeFileSync(require('node:path').join(env.RUNNER_TEMP,filename),Buffer.from(archive.data));
+            }
+            await download(run_id,'server-version-client-'+run_id+'-1',env.EXPECTED_CLIENT_ARTIFACT_SHA256,'shell-artifact.zip');
+            const visual_run=Number(env.EXPECTED_VISUAL_RUN);
+            await download(visual_run,'owner57-visual-'+visual_run+'-1',env.EXPECTED_VISUAL_ARTIFACT_SHA256,'owner57-visual-artifact.zip');
+      - name: Bind exact signed APK bytes and actual rendered screenshots
+        run: python3 tools/prepare_owner57_shell.py
+      - name: Publish to existing channel and verify every public APK byte
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/deliver_owner57_shell.py
+      - name: Preserve publication and public whole-file verification receipts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-shell-delivery-${{ github.run_id }}
+          path: plan-reports/
+          retention-days: 7
+          if-no-files-found: warn
+

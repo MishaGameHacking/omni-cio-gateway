@@ -1,0 +1,97 @@
+{
+  "source_commit": "c81ec5916bc7c600b13d0e8ad3142bdb8bf97f2f",
+  "visual_run": 41024460138,
+  "visual_commit": "171173cf714689611275764a03f7476dcb2f3a4e",
+  "visual_artifact_id": 12964970282,
+  "visual_artifact_sha256": "4f419370cbbcc3dc0575dab4bf8da4a28e8735d589e92c3c0fecac25923a7dd2",
+  "status": "reviewed",
+  "reviewed_required_previews": 15,
+  "directly_reviewed_this_revision": 3,
+  "previously_reviewed_run": 41020431904,
+  "observations": [
+    "One scrolling dashboard uses black panels, purple charts and readable functional accents.",
+    "Large-font period controls wrap into two rows; lower action pairs stack vertically with no horizontal cutoff.",
+    "Normal full-content view includes lower actions and footer. Private view conceals financial amounts and charts.",
+    "The 320dp large-font Layoutlib bitmap is a bounded viewport (840x7875px) and ends partway through the final action; the production dashboard is a scrolling LazyColumn. This screenshot does not prove the offscreen footer or physical scrolling behavior."
+  ],
+  "fixture": "synthetic-Layoutlib-no-network",
+  "native_acceptance": false,
+  "physical_phone_verified": false,
+  "screenshots": [
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginAppearance_login-dark_c1812139_0.png",
+      "sha256": "5161275be33b325b268931c659dd6bc56c077dabbaa2eb22dee880854046b1de",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginAppearance_login-narrow-large-text_cca7be20_0.png",
+      "sha256": "0d7b369c1e3abd73059ce63cafbe21b0552eaaf323c989604184ded64cbaceb9",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/LoginErrorAppearance_login-error-dark_6f275fa5_0.png",
+      "sha256": "938c02fbf24104a32cbb55496bfa17e2c0e72f3ce34df05586d3900e8f17abb6",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/OwnerCooldown56_owner56-cooldown-large-text_6115bb3a_0.png",
+      "sha256": "66e2c9bacae060cad4f4181ec410f0a8a46b70c252ef63a96096c6a30acdf1ff",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/OwnerCooldown56_owner56-cooldown_60e2a4bf_0.png",
+      "sha256": "cbb27b4ef23bc3746a16ccb1d3f4d39a2ae214919485fbe740c4c479f872bba0",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/OwnerSetup55_owner55-setup-large-text_15359180_0.png",
+      "sha256": "04517b038586fc2cc7ac36323e9af6de1cadb1836529b6b0a1e311815858316b",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/OwnerSetup55_owner55-setup_e4249f37_0.png",
+      "sha256": "bbdc1f915f8eb633bb7bedfd36635e44ecb78ac3e7a1c9d6e7ae22a4e2dc21bb",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-dark_8ec99a9b_0.png",
+      "sha256": "f4ec631d5b1200fba51721bfdb826c7a703a5afd4420d30b3257caadd76ce737",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-narrow-large-text_9824ea38_0.png",
+      "sha256": "dd90a5253cff2411e085156128ae3423fdcc916b6b966d74a31cc831893dc21f",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/SettingsAppearance_settings-tall-content-sheet_7f129cf0_0.png",
+      "sha256": "c641dfc48f7ec9a1b0f70e3c272ae8ac9875da71dd86a70272e1e449fa5299f6",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/Terminal57_terminal57-full_03937538_0.png",
+      "sha256": "da0f16bcad226de013709a8521d82450bb0711df5073e5f819e3bc415ec928e2",
+      "review_method": "direct_visual_inspection"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/Terminal57_terminal57-large-text_01b16ed5_0.png",
+      "sha256": "1db49ebef559eb445339b1646fdf72fe30fce1f2474f2c572f111c2a5606bb25",
+      "review_method": "direct_visual_inspection"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/Terminal57_terminal57-phone_77344f7d_0.png",
+      "sha256": "88c2aeaf321cb733c0fac8dcdfcc185e862b9f592a7b7cb2da4ff75bf05d23ce",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/TerminalEmpty57_terminal57-empty_13a7783a_0.png",
+      "sha256": "7ed7a2acd55736df86d6f9613ecd5a62404dc171821c30115d0694b490f144a1",
+      "review_method": "exact_bytes_of_previously_visually_reviewed_image"
+    },
+    {
+      "path": "ru/omnicio/app/preview/AutomationAppearanceScreenshotTestKt/TerminalPrivacy57_terminal57-private_85272664_0.png",
+      "sha256": "c66fe4c9bee7f8b77484272953ea707022fe79015c37309f9d3bfe351d1b26ec",
+      "review_method": "direct_visual_inspection"
+    }
+  ]
+}
