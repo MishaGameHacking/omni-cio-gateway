@@ -103,6 +103,66 @@ class ProjectionTests(unittest.TestCase):
     def test_incomplete_preset_page(self):
         self.assertFalse(subject.preset_summary({"meta": {"total": 2}, "server_presets": []})["complete"])
 
+    def test_cheaper_other_location_does_not_hide_local_candidate(self):
+        base = {"cpu": 4, "ram": 8192, "gpu": 0, "disk": 100000, "disk_type": "nvme"}
+        rows = [{**base, "id": 1, "price": "1800", "location": "other"},
+                {**base, "id": 2, "price": "5000", "location": "current"}]
+        result = subject.preset_summary({"meta": {"total": 2}, "server_presets": rows}, {"location": "current"})
+        self.assertEqual([row["same_location"] for row in result["candidates"]], [False, True])
+        self.assertFalse(result["in_place_resize_verified"])
+
+    def test_unknown_location_never_proves_compatibility(self):
+        row = {"id": 1, "cpu": 4, "ram": 8192, "disk": 100000, "price": "1800"}
+        result = subject.preset_summary({"server_presets": [row]}, {"location": "current"})
+        self.assertIsNone(result["candidates"][0]["same_location"])
+        self.assertIsNone(subject.label("PRIVATE"))
+        self.assertIsNone(subject.label({"secret": "PRIVATE"}))
+
+    def test_current_configurator_projection_never_exposes_raw_objects(self):
+        row = {"id": 153, "location": "ru-1", "disk_type": "nvme", "description": "PRIVATE",
+               "requirements": {"ram_min": 1024, "ram_max": 32768, "ram_step": 1024, "other": "PRIVATE"},
+               "cpu_price": "800", "price": {"secret": "PRIVATE"}}
+        result = subject.configurator_summary({"server_configurators": [row], "meta": {"total": 1}}, {"configurator_id": 153})
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["current"]["requirements"]["ram_step"], 1024)
+        self.assertEqual(result["current"]["numeric_pricing_fields_unverified"]["cpu_price"], "800.00")
+        self.assertIsNone(result["current"]["numeric_pricing_fields_unverified"]["price"])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+        self.assertFalse(result["resize_quote"])
+        self.assertFalse(result["pricing_period_verified"])
+
+    def test_configurator_dictionary_collection_and_wrong_id(self):
+        document = {"server_configurators": {"153": {"id": 153}}, "meta": {"total": 1}}
+        self.assertEqual(subject.configurator_summary(document, {"configurator_id": 153})["current"]["id"], 153)
+        self.assertIsNone(subject.configurator_summary(document, {"configurator_id": 154})["current"])
+
+    def test_duplicate_configurator_fails_closed(self):
+        document = {"server_configurators": [{"id": 153}, {"id": 153}], "meta": {"total": 2}}
+        result = subject.configurator_summary(document, {"configurator_id": 153})
+        self.assertIsNone(result["current"])
+        self.assertEqual(result["reason"], "current_configurator_not_unique_or_missing")
+
+    def test_unknown_configurator_limits_and_cost_not_assumed(self):
+        row = {"id": 153, "cpu_price": True, "ram_price": "NaN", "requirements": {"ram_step": False}}
+        result = subject.configurator_summary({"server_configurators": [row]}, {"configurator_id": 153})
+        self.assertFalse(result["complete"])
+        self.assertIsNone(result["current"]["requirements"]["ram_step"])
+        self.assertEqual(result["current"]["numeric_pricing_fields_unverified"], {"cpu_price": None, "ram_price": None})
+
+    def test_server_disks_and_cpu_projection_only(self):
+        row = {"id": subject.SERVER_ID, "is_dedicated_cpu": True, "location": "ru-1",
+               "disks": [{"size": 30720, "type": "nvme", "data": "PRIVATE"}], "root_pass": "PRIVATE"}
+        result = subject.server_summary({"server": row})
+        self.assertTrue(result["is_dedicated_cpu"])
+        self.assertEqual(result["disks"], [{"size_reported": 30720, "type": "nvme"}])
+        self.assertNotIn("PRIVATE", json.dumps(result))
+
+    def test_malformed_configurators_never_authorize_resize(self):
+        for value in (None, True, "PRIVATE", []):
+            result = subject.configurator_summary({"server_configurators": value}, {"configurator_id": 153})
+            self.assertIsNone(result["current"])
+            self.assertFalse(result["resize_quote"])
+
     def test_expensive_small_and_malformed_candidates_excluded(self):
         base = {"id": 1, "cpu": 4, "ram": 16384, "gpu": 0, "disk": 100000, "price": "5000"}
         rows = [{**base, **change} for change in ({"price": "10001"}, {"ram": 4096}, {"price": "NaN"}, {"cpu": True})]

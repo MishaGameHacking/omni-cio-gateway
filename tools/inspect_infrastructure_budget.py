@@ -11,6 +11,7 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR, local
 import json
 import os
 from pathlib import Path
+import re
 import urllib.error
 import urllib.request
 
@@ -23,6 +24,7 @@ PATHS = {
     "finances": "/api/v1/account/finances",
     "presets": "/api/v1/presets/servers",
     "service_costs": "/api/v1/account/services/cost",
+    "configurators": "/api/v1/configurator/servers",
 }
 INFRA_CAP = Decimal("10000")
 AI_CAP = Decimal("3000")
@@ -84,6 +86,11 @@ def integer(value, minimum=0):
     return value if type(value) is int and minimum <= value <= 1_000_000_000 else None
 
 
+def label(value):
+    # Only provider location/type identifiers, never arbitrary descriptions.
+    return value if isinstance(value, str) and re.fullmatch(r"[a-z0-9][a-z0-9_.:-]{0,47}", value) else None
+
+
 def money(value, rounding=ROUND_CEILING):
     with localcontext() as context:
         context.prec = 32
@@ -121,6 +128,11 @@ def server_summary(document):
     result = {"server_id": SERVER_ID}
     for name in ("cpu", "ram", "gpu", "preset_id", "configurator_id"):
         result[name] = integer(row.get(name))
+    result["location"] = label(row.get("location"))
+    result["is_dedicated_cpu"] = row.get("is_dedicated_cpu") if type(row.get("is_dedicated_cpu")) is bool else None
+    disks = row.get("disks")
+    result["disks"] = [{"size_reported": integer(disk.get("size")), "type": label(disk.get("type"))}
+                       for disk in disks[:8] if isinstance(disk, dict)] if isinstance(disks, list) else None
     result["ram_unit"] = "MiB_as_reported_by_provider"
     result["hardware_complete"] = all(result[name] is not None for name in ("cpu", "ram", "gpu"))
     return result
@@ -167,7 +179,7 @@ def project_summary(document):
     return result
 
 
-def preset_summary(document):
+def preset_summary(document, server=None):
     rows, meta = document.get("server_presets"), document.get("meta")
     if not isinstance(rows, list) or len(rows) > 10000:
         return {"complete": False, "candidates": []}
@@ -183,26 +195,70 @@ def preset_summary(document):
             continue
         if price > INFRA_CAP or values["ram"] < 8192:
             continue
-        candidates.append({**values, "catalogue_monthly_price_rub": money(price)})
+        location = label(row.get("location"))
+        current_location = server.get("location") if isinstance(server, dict) else None
+        candidates.append({**values, "catalogue_monthly_price_rub": money(price),
+                           "location": location, "disk_type": label(row.get("disk_type")),
+                           "same_location": location == current_location if location and current_location else None})
     # Cheapest available catalogue entries at each memory size; no capacity or
     # final purchase/resize price is inferred from an advertised preset.
     chosen, seen = [], set()
     for row in sorted(candidates, key=lambda value: (Decimal(value["catalogue_monthly_price_rub"]), value["id"])):
-        group = (row["ram"], bool(row["gpu"]))
+        group = (row["ram"], bool(row["gpu"]), row["same_location"])
         if group not in seen:
             chosen.append(row)
             seen.add(group)
-        if len(chosen) == 8:
+        if len(chosen) == 16:
             break
     return {"complete": complete, "candidates": chosen, "availability_verified": False,
-            "addons_included_verified": False}
+            "addons_included_verified": False, "in_place_resize_verified": False}
+
+
+def configurator_summary(document, server):
+    collection, meta = document.get("server_configurators"), document.get("meta")
+    if isinstance(collection, dict):
+        rows = list(collection.values())
+    elif isinstance(collection, list):
+        rows = collection
+    else:
+        return {"complete": False, "current": None, "resize_quote": False}
+    if len(rows) > 10000:
+        return {"complete": False, "current": None, "resize_quote": False}
+    complete = isinstance(meta, dict) and type(meta.get("total")) is int and meta["total"] == len(rows)
+    matched = [row for row in rows if isinstance(row, dict) and type(row.get("id")) is int
+               and row["id"] == server.get("configurator_id")]
+    result = {"complete": complete, "current": None, "resize_quote": False,
+              "pricing_period_verified": False}
+    if len(matched) != 1:
+        result["reason"] = "current_configurator_not_unique_or_missing"
+        return result
+    row = matched[0]
+    requirements = row.get("requirements")
+    requirements = requirements if isinstance(requirements, dict) else {}
+    fields = [name for name in row if isinstance(name, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,47}", name)]
+    # Unknown fields are names only. No raw API objects or private strings escape.
+    current = {"id": row["id"], "location": label(row.get("location")),
+               "disk_type": label(row.get("disk_type")), "schema_fields": sorted(fields)[:100],
+               "requirements": {name: integer(requirements.get(name)) for name in (
+                   "cpu_min", "cpu_max", "cpu_step", "ram_min", "ram_max", "ram_step",
+                   "disk_min", "disk_max", "disk_step", "gpu_min", "gpu_max", "gpu_step")}}
+    prices = {}
+    for name in ("price", "cpu_price", "ram_price", "disk_price", "gpu_price", "price_cpu", "price_ram", "price_disk"):
+        if name in row:
+            value = number(row[name])
+            prices[name] = money(value) if value is not None else None
+    current["numeric_pricing_fields_unverified"] = prices
+    result["current"] = current
+    return result
 
 
 def inspect(api):
     documents = {name: api.get(path) for name, path in PATHS.items()}
-    return {"schema": 1, "observed_at": datetime.now(timezone.utc).isoformat(),
-            "server": server_summary(documents["server"]), "project": project_summary(documents["project"]),
-            "budget": costs(documents["finances"]), "presets": preset_summary(documents["presets"]),
+    server = server_summary(documents["server"])
+    return {"schema": 2, "observed_at": datetime.now(timezone.utc).isoformat(),
+            "server": server, "project": project_summary(documents["project"]),
+            "budget": costs(documents["finances"]), "presets": preset_summary(documents["presets"], server),
+            "configurator": configurator_summary(documents["configurators"], server),
             "service_costs": service_cost_summary(documents["service_costs"]),
             "read_only": True, "resource_changes": False, "model_inference_called": False}
 
