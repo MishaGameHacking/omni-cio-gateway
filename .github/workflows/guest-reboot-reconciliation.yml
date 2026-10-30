@@ -1,0 +1,63 @@
+name: Reconcile guest startup after an unconfirmed ordinary reboot
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/guest-reboot-reconciliation.yml]
+permissions:
+  contents: read
+  actions: read
+env:
+  EXPECTED_TOOLS_SHA: 'e9c49b0f7333ecddb0c25890aabc7804ff6dde8f'
+  EXPECTED_TOOLS_RUN: '41087924449'
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require exact successful owner WSL tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN)});
+            if(r.head_sha!==e.EXPECTED_TOOLS_SHA||r.path!=='.github/workflows/infrastructure-budget-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Exact verification required');
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN),per_page:100});
+            if(jobs.filter(j=>j.name==='verify'&&j.conclusion==='success'&&j.status==='completed').length!==1) throw new Error('Verify job missing');
+            for(const path of ['tools/inspect_infrastructure_budget.py','tools/test_infrastructure_budget.py','tools/check_infrastructure_budget.py','.github/workflows/infrastructure-budget-tools.yml']) {
+              const {data:a}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_TOOLS_SHA});
+              const {data:b}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(a.sha!==b.sha) throw new Error('Tested tool changed');
+            }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read provider startup time, boot mode and public health without credentials to the guest
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        shell: python
+        run: |
+          from datetime import datetime,timezone
+          import json,os,sys,urllib.request
+          sys.path.insert(0,"tools")
+          import inspect_infrastructure_budget as observed
+          row=observed.ReadOnlyAPI(os.environ["TIMEWEB_CLOUD_TOKEN"]).get(observed.PATHS["server"])["server"]
+          if row.get("id")!=9417611 or row.get("project_id")!=2941515 or row.get("availability_zone")!="ams-1":
+              raise RuntimeError("server_identity_changed")
+          candidate=row.get("start_at")
+          try:
+              stamp=datetime.fromisoformat(candidate.replace("Z","+00:00"))
+              if stamp.tzinfo is None: raise ValueError()
+              stamp=stamp.astimezone(timezone.utc)
+          except (AttributeError,TypeError,ValueError): stamp=None
+          attempt=datetime.fromisoformat("2026-10-30T18:11:08+00:00")
+          now=datetime.now(timezone.utc)
+          addr="https://analyst-ai-2941515.twc1.net/health"
+          try:
+              with urllib.request.urlopen(addr,timeout=7) as r: healthy=(r.status==200 and r.geturl()==addr)
+          except OSError: healthy=False
+          print("REBOOT_RECONCILIATION="+json.dumps({"observed_at":now.isoformat(),"server_id":9417611,
+              "running":row.get("status")=="on","standard_boot":row.get("boot_mode")=="std","http_200":healthy,
+              "provider_start_at":stamp.isoformat() if stamp else None,
+              "start_timestamp_after_attempt":stamp is not None and attempt<=stamp<=now,
+              "ssh_attempted":False,"mutation_sent":False,"password_accessed":False}),flush=True)
