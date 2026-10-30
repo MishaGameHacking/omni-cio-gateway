@@ -10,14 +10,17 @@ import uuid
 
 try:
     from .ai_budget import transaction
-    from .osint_catalogue import SOURCES, BY_ID, IntakeError, target_url
+    from .osint_catalogue import SOURCES, BY_ID, IntakeError, MAX_PDF, target_url
     from .osint_analysis import bands
 except ImportError:
     from ai_budget import transaction
-    from osint_catalogue import SOURCES, BY_ID, IntakeError, target_url
+    from osint_catalogue import SOURCES, BY_ID, IntakeError, MAX_PDF, target_url
     from osint_analysis import bands
 
+BUMP_REVISION = "UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1"
+
 MAX_OBJECT_BYTES = 256 * 1024**2
+MAX_ORIGINAL_BYTES = 256 * 1024**2
 MAX_PUBLICATIONS = 100000
 MAX_FRONTIER = 5000
 NEWS_DAYS = 30
@@ -35,6 +38,9 @@ def sha(value: str | bytes) -> str:
 def initialize(connect) -> None:
     with transaction(connect) as db:
         statements = (
+            """CREATE TABLE IF NOT EXISTS osint_originals_v1 (
+                sha TEXT PRIMARY KEY,body BLOB NOT NULL,bytes INTEGER NOT NULL,
+                media_type TEXT NOT NULL,created_at INTEGER NOT NULL)""",
             """CREATE TABLE IF NOT EXISTS osint_revision_v1 (
                 singleton INTEGER PRIMARY KEY CHECK(singleton=1),revision INTEGER NOT NULL,
                 object_bytes INTEGER NOT NULL DEFAULT 0,publications INTEGER NOT NULL DEFAULT 0,
@@ -91,6 +97,11 @@ def initialize(connect) -> None:
             pass
         for source in SOURCES:
             add_target(db, source.id, {"url": source.url, "kind": source.kind, "title": source.title}, now=0)
+        # One bounded re-fetch through the normal queue for reports collected
+        # before original retention existed. Host rules and retry limits apply.
+        db.execute("""UPDATE osint_targets_v1 SET next_at=0 WHERE kind='pdf'
+            AND status IN ('ready','partial','not_modified')
+            AND NOT EXISTS(SELECT 1 FROM osint_originals_v1 o WHERE o.sha=osint_targets_v1.body_sha)""")
 
 
 def add_target(db, source_id: str, item: dict, now: int) -> bool:
@@ -201,6 +212,28 @@ def _ensure_publication_capacity(db, old):
         raise IntakeError("osint_corpus_capacity")
 
 
+def _save_original(db, item, raw_sha, now):
+    raw = item.get("original_pdf")
+    if raw is None:
+        return
+    if (item["kind"] != "report" or not item["primary"] or not isinstance(raw, bytes)
+            or not raw.startswith(b"%PDF-") or len(raw) > MAX_PDF or sha(raw) != raw_sha):
+        raise IntakeError("osint_original_invalid")
+    if db.execute("SELECT 1 FROM osint_originals_v1 WHERE sha=?", (raw_sha,)).fetchone():
+        return
+    used = db.execute("SELECT COALESCE(SUM(bytes),0) FROM osint_originals_v1").fetchone()[0]
+    if used + len(raw) > MAX_ORIGINAL_BYTES:
+        raise IntakeError("osint_original_capacity")
+    db.execute("INSERT INTO osint_originals_v1 VALUES(?,?,?,?,?)",
+               (raw_sha, raw, len(raw), "application/pdf", now))
+    db.execute(BUMP_REVISION)
+
+
+def has_original(connect, raw_sha):
+    with closing(connect()) as db:
+        return db.execute("SELECT 1 FROM osint_originals_v1 WHERE sha=?", (raw_sha,)).fetchone() is not None
+
+
 def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if not analysis["relevant"]:
         return False
@@ -220,6 +253,7 @@ def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
         return False
     revision = sha(encoded({key: item.get(key) for key in ("title", "text", "published_at", "primary")}
                           ) + raw_sha + analysis["version"])
+    _save_original(db, item, raw_sha, now)
     if old and old["revision_sha"] == revision:
         db.execute("UPDATE osint_publications_v1 SET last_seen=? WHERE id=?", (now, old["id"]))
         return False
@@ -250,7 +284,7 @@ def save_publication(db, source, item: dict, analysis: dict, now: int) -> bool:
     if mode == "fts5":
         db.execute("DELETE FROM osint_search_v1 WHERE rowid=?", (identifier,))
         db.execute("INSERT INTO osint_search_v1(rowid,title,body) VALUES(?,?,?)", (identifier, item["title"], item["text"]))
-    db.execute("UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1")
+    db.execute(BUMP_REVISION)
     return True
 
 
@@ -280,5 +314,6 @@ def finish(connect, target, *, now: int, status: str, next_at: int, headers: dic
              body_sha or target["body_sha"], encoded(cursor if cursor is not None else json.loads(target["cursor_json"])),
              encoded(coverage), target["id"]))
         if target["status"] != status:
-            db.execute("UPDATE osint_revision_v1 SET revision=revision+1 WHERE singleton=1")
+            db.execute(BUMP_REVISION)
     return {"changed": changed, "status": status}
+

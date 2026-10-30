@@ -4,9 +4,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -32,6 +32,7 @@ import ru.omnicio.app.ui.spatial.SpatialMotion
 import ru.omnicio.app.ui.spectrum.*
 import ru.omnicio.app.ui.workspace.WorkspaceRoute
 
+internal val LocalRailVisible = staticCompositionLocalOf { false }
 internal val LocalOpenNavigationMenu = staticCompositionLocalOf<(() -> Unit)?> { null }
 
 /** A pending editor exit belongs to one mounted page and can continue only once. */
@@ -102,7 +103,7 @@ internal fun AnalystMenuButton(open: () -> Unit) {
 
 @Composable
 internal fun AnalystHeaderMenu() {
-    if (!LocalWideNavigation.current) LocalOpenNavigationMenu.current?.let { AnalystMenuButton(it) }
+    if (!LocalRailVisible.current && !LocalWideNavigation.current) LocalOpenNavigationMenu.current?.let { AnalystMenuButton(it) }
 }
 
 /** Menu dismissal finishes before a route-bound draft guard can continue. */
@@ -139,6 +140,7 @@ fun AnalystNavigationPanels(
     }
     CompositionLocalProvider(
         LocalWideNavigation provides wide,
+        LocalRailVisible provides true,
         LocalOpenNavigationMenu provides openMenu,
         LocalDetailNavigationMenu provides detailMenu,
         LocalPanelExitScope provides exitScope,
@@ -146,12 +148,12 @@ fun AnalystNavigationPanels(
         // Content stays in one slot when a window changes size or a popup opens.
         BoxWithConstraints(Modifier.fillMaxSize().clipToBounds().semantics { testTagsAsResourceId = true }) {
             Row(Modifier.fillMaxSize()) {
-                if (wide) StrategyNavigationRail(selected, selectedWorkspace, selectTab, selectWorkspace)
+                StrategyNavigationRail(selected, selectedWorkspace, selectTab, selectWorkspace, onExpand = openMenu)
                 Box(Modifier.weight(1f).fillMaxHeight()) { content() }
             }
             if (menuOpen) {
-                val width = (maxWidth - 24.dp).coerceAtMost(600.dp)
-                val height = maxHeight * .65f
+                val width = (maxWidth - 24.dp).coerceAtMost(320.dp)
+                val height = maxHeight - 36.dp
                 AnalystIconDock(selected, selectedWorkspace, width, height,
                     onDismiss = { menuOpen = false },
                     onSelect = { destination ->
@@ -187,7 +189,7 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
     LaunchedEffect(enabled) { if (!closing) opacity.animateTo(1f, tween(if (enabled) 180 else 0)) }
     val density = LocalDensity.current
     val top = WindowInsets.safeDrawing.getTop(density)
-    val offset = with(density) { IntOffset(12.dp.roundToPx(), top + 60.dp.roundToPx()) }
+    val offset = with(density) { IntOffset(12.dp.roundToPx(), top + 12.dp.roundToPx()) }
     Popup(alignment = Alignment.TopStart, offset = offset, onDismissRequest = { close(null) },
         properties = PopupProperties(focusable = true, dismissOnBackPress = false,
             dismissOnClickOutside = true, clippingEnabled = true)) {
@@ -220,13 +222,22 @@ private fun AnalystIconDock(selected: AnalystTab, selectedWorkspace: WorkspaceRo
                         style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
                     destinations.forEach { destination ->
                         val route = destination.workspace
-                        SpectrumTextButton(destination.title, { close(destination) }, symbol = destination.symbol,
-                            modifier = Modifier.fillMaxWidth().testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
-                                else "navigation-primary-" + destination.tab!!.name.lowercase()))
+                        val active = if (route != null) route == selectedWorkspace else selectedWorkspace == null && destination.tab == selected
+                        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                            .background(if (active) colors.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                            .selectable(active, enabled = !closing, role = Role.Tab, onClick = { close(destination) })
+                            .testTag(if (route != null) "navigation-workspace-" + route.name.lowercase()
+                                else "navigation-primary-" + destination.tab!!.name.lowercase())
+                            .padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            SpectrumIcon(destination.symbol, Modifier.size(48.dp), selected = active, motionAllowed = false)
+                            Text(destination.title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
         }
     }
 }
+
 

@@ -17,8 +17,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn("versionCode = 54", gradle)
-        self.assertIn('versionName = "0.18.0"', gradle)
+        self.assertIn("versionCode = 57", gradle)
+        self.assertIn('versionName = "0.21.0"', gradle)
 
     def test_all_nine_owner_approved_live_families_are_native(self):
         source = self.source("ui/spectrum/SpectrumLiveFeatureIcon.kt")
@@ -94,7 +94,8 @@ class Android17LiveSpectrumTests(unittest.TestCase):
             'onOpenRecommendations',
             'onOpenProfile',
             'onConnect',
-            '"Главная"',
+            '"Система"',
+            'SystemTelemetryCard(ai, observedNow)',
             '"Сегодня"',
             '"Требует внимания"',
             '"Только анализ"',
@@ -107,7 +108,7 @@ class Android17LiveSpectrumTests(unittest.TestCase):
         bar = self.source("ui/AnalystBottomBar.kt")
         catalogue = self.source("ui/NavigationCatalogue.kt")
         self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
-        for destination,label in (("Home","Главная"),("Portfolio","Аналитика"),
+        for destination,label in (("Home","Система"),("Portfolio","Аналитика"),
                                   ("Recommendations","Решения"),("Profile","Настройки")):
             self.assertIn('AnalystDestination("'+destination+'", "'+label+'"', catalogue)
         self.assertNotIn('showLabel = !compact',bar)
@@ -165,6 +166,9 @@ class Android17LiveSpectrumTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
 
 
 

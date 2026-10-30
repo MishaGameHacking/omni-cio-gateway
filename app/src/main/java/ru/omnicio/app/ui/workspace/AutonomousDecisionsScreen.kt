@@ -134,6 +134,7 @@ private fun ResearchCandidateDetails(candidate: JSONObject) {
             style = MaterialTheme.typography.titleMedium)
         Text("Отбор по правилам ещё не означает готовую рекомендацию.",
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ExplainWithAiButton("candidate", candidate.text("instrument_uid", ""), candidate.text("name", ticker))
         DetailFold("Почему инструмент попал в отбор") {
             candidate.records("checks").forEach { check ->
                 val prefix = when (check.text("state", "")) {
@@ -176,3 +177,4 @@ private fun missingEvidenceLabel(code: String): String = when (code) {
     "fresh_price", "price_stale" -> "Актуальную рыночную цену."
     else -> "Дополнительные данные и обоснование выбора."
 }
+

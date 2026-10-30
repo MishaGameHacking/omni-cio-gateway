@@ -49,13 +49,18 @@ def contrast(first, second):
 
 class SpectrumProductionTokens(unittest.TestCase):
 
-    def test_actual_light_and_graphite_surfaces_have_readable_contrast(self):
+    def test_production_dark_and_retained_light_tokens_have_readable_contrast(self):
         source = (UI / 'spectrum/SpectrumDesignSystem.kt').read_text(encoding='utf-8')
         theme = (UI / 'theme/AnalystTheme.kt').read_text(encoding='utf-8')
         tokens = (UI / 'theme/AnalystColors.kt').read_text(encoding='utf-8')
         self.assertIn('darkColorScheme(', tokens)
         self.assertNotIn('when (accent)', tokens)
-        self.assertIn('isSystemInDarkTheme()', theme)
+        self.assertIn('val dark = true', theme)
+        self.assertIn('ThemePreference(ThemeMode.DARK)', theme)
+        startup = (UI / 'theme/ApplicationThemeMode.kt').read_text(encoding='utf-8')
+        application = (UI.parent / 'AnalystApplication.kt').read_text(encoding='utf-8')
+        self.assertIn('StartupThemeMigration(ThemeMode.DARK, savedName != ThemeMode.DARK.name)', startup)
+        self.assertIn('syncSavedApplicationTheme(this, migrateApplicationThemeForStartup(this))', application)
         self.assertIn('spectrumPalette(dark = dark)', theme)
         self.assertNotEqual(production_palette(tokens, False)[0]['background'],
                             production_palette(tokens, True)[0]['background'])
@@ -78,7 +83,7 @@ class SpectrumProductionTokens(unittest.TestCase):
         surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
         self.assertIn('spatialSurfaceColors(palette, color, state', surface)
         self.assertIn('LocalContentColor provides resolved.foreground', surface)
-        self.assertIn('.clip(shape).background(gradient).border(borderWidth, border, shape)', surface)
+        self.assertIn('.clip(shape).background(fill).border(1.dp, border, shape)', surface)
 
     def assert_palette_contrast(self, c, s):
         for family in ('Primary', 'Secondary', 'Tertiary', 'Error'):
@@ -163,6 +168,8 @@ class SpectrumProductionTokens(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
 
 
 

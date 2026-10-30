@@ -14,12 +14,12 @@ class CompactHomeTests(unittest.TestCase):
         source = (HOME / "HomeScreen.kt").read_text(encoding="utf-8")
         home = source.split('fun HomeScreen(', 1)[1].split('\nprivate fun automationStateTitle', 1)[0]
         order = re.findall(r'item\(key = "([\w-]+)"\)', home)
-        self.assertEqual(order[:4], ["system-header", "portfolio-overview", "portfolio-actions", "automation-state"])
+        self.assertEqual(order[:4], ["system-header", "portfolio-overview", "system-telemetry", "portfolio-actions"])
         self.assertLess(order.index("automation-state"), order.index("automation-blockers"))
-        self.assertEqual(order, ["system-header", "portfolio-overview", "portfolio-actions", "automation-state", "automation-blockers"])
+        self.assertEqual(order, ["system-header", "portfolio-overview", "system-telemetry", "portfolio-actions", "automation-state", "automation-blockers"])
         for removed in ("analysis-results", "system-connections"):
             self.assertNotIn(removed, order)
-        self.assertIn('Text("Главная"', home)
+        self.assertIn('Text("Система"', home)
         self.assertIn('status?.records("blockers")', home)
         self.assertIn('discovery?.records("candidates")', home)
         self.assertRegex(home, r'SpectrumTextButton\("Открыть решения", onOpenRecommendations,\s*Modifier.fillMaxWidth\(\)')
@@ -45,8 +45,22 @@ class CompactHomeTests(unittest.TestCase):
         self.assertIn('val currentError = error', home)
         self.assertIn('Сохранённые сведения могут быть устаревшими.', home)
         for forbidden in ('rememberWorkspaceAction(', '/analysis/refresh', '/workspace/refresh',
-                          'System.currentTimeMillis()', 'Instant.now()'):
+                          'System.currentTimeMillis()'):
             self.assertNotIn(forbidden, home)
+        # Local time only ages an actual server observation. It must never stand
+        # in for a last-observation timestamp or manufacture processed counters.
+        self.assertIn('if (foreground) while (isActive) { observedNow = java.time.Instant.now(); delay(30_000) }', home)
+        self.assertIn('SystemTelemetryCard(ai, observedNow)', home)
+        self.assertIn('LocalWorkspaceSnapshot.current?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data")', home)
+        telemetry = (HOME / 'SystemTelemetryCard.kt').read_text(encoding='utf-8')
+        self.assertIn('job?.text("updated_at", "")', telemetry)
+        self.assertIn('updated.isAfter(now.plusSeconds(60))', telemetry)
+        self.assertIn('updated.isBefore(now.minusSeconds(300))', telemetry)
+        self.assertIn('localMoment(job.text("updated_at", ""))', telemetry)
+        self.assertIn('observedProgress(it.opt("completed")?.toString(), it.opt("total")?.toString())', telemetry)
+        self.assertIn('check.opt("observation_count")', telemetry)
+        for fabricated in ('Instant.now()', 'Random', 'System.currentTimeMillis()', 'rememberWorkspaceAction('):
+            self.assertNotIn(fabricated, telemetry)
         data = (ROOT / 'app/src/main/java/ru/omnicio/app/ui/workspace/WorkspaceData.kt').read_text(encoding='utf-8')
         read = data.split('fun rememberWorkspaceResource(', 1)[1].split('\n@Composable\nfun workspaceForeground', 1)[0]
         self.assertIn('client.request(session.token, path)', read)
@@ -75,4 +89,5 @@ class CompactHomeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 

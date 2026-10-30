@@ -25,7 +25,6 @@ import ru.omnicio.app.ui.RegisterPanelExit
 
 @Composable
 fun AppearanceScreen(onBack: () -> Unit) {
-    val theme = LocalThemePreference.current
     val controller = LocalWorkspacePreferences.current
     val draft = controller.value
     val preview: (WorkspacePreferences) -> Unit = controller.update
@@ -46,8 +45,8 @@ fun AppearanceScreen(onBack: () -> Unit) {
                 if (controller.saveFailed) SpectrumSecondaryButton("Повторить сохранение", controller.retrySave, Modifier.fillMaxWidth())
             }
             item { SpectrumCard {
-                WorkspaceChoices("Тема", listOf("Светлая", "Тёмная · графит"),
-                    if (theme.mode == ThemeMode.DARK) 1 else 0) { theme.select(if (it == 1) ThemeMode.DARK else ThemeMode.LIGHT) }
+                Text("Analyst · Night", style = MaterialTheme.typography.titleMedium)
+                Text("Единый интерфейс: графит, голубой и фиолетовый.", style = MaterialTheme.typography.bodySmall)
                 WorkspaceChoices("Движение", MotionLevel.entries.map { it.title }, draft.motion.ordinal) { preview(draft.copy(motion = MotionLevel.entries[it])) }
                 Text(when (draft.motion) {
                     MotionLevel.LIVE -> "Плавные переходы и отклик при касании. Числа остаются неподвижными."
@@ -114,5 +113,6 @@ fun WorkspaceDetailPage(title: String, subtitle: String, onBack: () -> Unit,
         }
     }
 }
+
 
 

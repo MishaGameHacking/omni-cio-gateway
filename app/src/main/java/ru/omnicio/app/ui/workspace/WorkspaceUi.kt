@@ -92,6 +92,7 @@ internal fun WorkspacePageHeading(title: String, subtitle: String) {
 @Composable
 fun WorkspaceHeader(title: String, subtitle: String, onBack: () -> Unit, symbol: SpectrumSymbol? = null,
     onOpenMenu: (() -> Unit)? = null) {
+    if (ru.omnicio.app.ui.terminal.LocalTerminalDetail.current) return
     Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
         .padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
@@ -122,4 +123,5 @@ enum class BrokerConnectionState(val title: String) {
     Checking("Проверяем подключение"), Connected("Подключено"), Missing("Не подключено"), Unknown("Статус не получен")
 }
 val LocalBrokerConnection = staticCompositionLocalOf<BrokerConnectionState?> { null }
+
 

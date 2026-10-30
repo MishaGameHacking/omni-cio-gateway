@@ -56,27 +56,16 @@ fun SpatialSurface(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val palette = LocalSpectrumPalette.current
-    val layered = LocalWorkspacePreferences.current.value.depth
     val highContrast = LocalFlatContrast.current
-    val shape = RoundedCornerShape(when (kind) {
-        SpatialSurfaceKind.Card -> 18.dp
-        SpatialSurfaceKind.Dock -> 16.dp
-        SpatialSurfaceKind.Chip -> 12.dp
-        SpatialSurfaceKind.Heading -> 0.dp
-        else -> 12.dp
-    })
-    val resolved = spatialSurfaceColors(palette, color, state, interactive, emphasized && layered, highContrast)
+    val shape = RoundedCornerShape(if (kind == SpatialSurfaceKind.Heading) 0.dp else 4.dp)
+    val resolved = spatialSurfaceColors(palette, color, state, interactive, false, highContrast)
     val fill = if (kind == SpatialSurfaceKind.Heading) Color.Transparent else resolved.fill
     val border = when {
         kind == SpatialSurfaceKind.Heading -> Color.Transparent
-        state == SpatialState.Idle && !highContrast && kind != SpatialSurfaceKind.Input -> Color.Transparent
-        else -> resolved.border
+        state == SpatialState.Selected -> palette.colors.primary
+        else -> palette.colors.outlineVariant
     }
-    val borderWidth = if (state == SpatialState.Selected) 1.5.dp else 1.dp
-    val tint = if (emphasized) palette.colors.secondaryContainer else palette.colors.surfaceContainerLow
-    val gradient = Brush.verticalGradient(listOf(fill, fill))
-    Box(modifier.shadow(if (kind == SpatialSurfaceKind.Card && layered) 1.dp else 0.dp, shape, clip = false)
-        .clip(shape).background(gradient).border(borderWidth, border, shape)) {
+    Box(modifier.clip(shape).background(fill).border(1.dp, border, shape)) {
         CompositionLocalProvider(LocalSpatialDepth provides 0f,
             LocalContentColor provides resolved.foreground) { content() }
     }
@@ -112,39 +101,29 @@ fun SpatialIcon(
     val palette = LocalSpectrumPalette.current
     val ink = spatialIconInk(palette, asset, tint, state)
     val semantics = if (description == null) modifier else modifier.semantics { contentDescription = description }
-    SpatialCanvas(listOf(SpatialPrimitive(SpatialAsset.Catalogue(asset), color = ink,
-        depth = LocalSpatialDepth.current + if (state == SpatialState.Selected) SpatialDepth.Selected else SpatialDepth.Icon,
-        thickness = 34f, state = state, motionAllowed = motionAllowed,
-        sharedKey = LocalSpatialObjectKey.current?.let { "$it/$asset" }, colorMode = colorMode,
-        outlineColor = if (asset == "monogram" && state == SpatialState.Selected) palette.foregroundFor(ink) else Color.Unspecified)), semantics)
+    ru.omnicio.app.ui.terminal.TerminalGlyph(asset, semantics, ink)
 }
 
 /** Decorative only: pair with Modifier.toggleable and a native label on a 48dp row. */
 @Composable
 fun SpatialToggleVisual(checked: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val palette = LocalSpectrumPalette.current
-    val depth = LocalSpatialDepth.current
-    val state = if (!enabled) SpatialState.Disabled else if (checked) SpatialState.Selected else SpatialState.Idle
-    val colors = spatialToggleColors(palette, checked, enabled)
-    SpatialCanvas(listOf(
-        SpatialPrimitive(SpatialAsset.Catalogue("button"), Rect(0f, .16f, 1f, .84f),
-            colors.track, depth, 24f, state, false, outlineColor = colors.outline),
-        SpatialPrimitive(SpatialAsset.Catalogue("button"),
-            if (checked) Rect(.55f, .21f, .95f, .79f) else Rect(.05f, .21f, .45f, .79f),
-            colors.thumb, depth + 6f, 36f, state, false),
-    ), modifier)
+    val colors = spatialToggleColors(LocalSpectrumPalette.current, checked, enabled)
+    androidx.compose.foundation.Canvas(modifier) {
+        drawRect(colors.track)
+        drawRect(colors.outline, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        val inset = 3.dp.toPx()
+        val width = (size.width / 2 - inset * 2).coerceAtLeast(1f)
+        drawRect(colors.thumb, androidx.compose.ui.geometry.Offset(if (checked) size.width / 2 + inset else inset, inset),
+            androidx.compose.ui.geometry.Size(width, (size.height - inset * 2).coerceAtLeast(1f)))
+    }
 }
 
 @Composable
 fun SpatialChoiceVisual(selected: Boolean, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    val palette = LocalSpectrumPalette.current
-    val depth = LocalSpatialDepth.current
-    val colors = spatialToggleColors(palette, selected, enabled)
-    val primitives = mutableListOf(SpatialPrimitive(SpatialAsset.Catalogue("monogram"), color = colors.track,
-        depth = depth, thickness = 18f, tilt = false, motionAllowed = false, outlineColor = colors.outline))
-    if (selected) primitives += SpatialPrimitive(SpatialAsset.Catalogue("check"), Rect(.2f,.2f,.8f,.8f),
-        colors.thumb, depth + 7f, 20f, SpatialState.Idle, false, motionAllowed = false)
-    SpatialCanvas(primitives, modifier)
+    val colors = spatialToggleColors(LocalSpectrumPalette.current, selected, enabled)
+    Box(modifier.background(colors.track).border(1.dp, colors.outline)) {
+        if (selected) ru.omnicio.app.ui.terminal.TerminalGlyph("check", Modifier.matchParentSize(), colors.thumb)
+    }
 }
 
 /** Orthographic height is exactly the supplied value; selection is painted inside its bounds. */
@@ -231,4 +210,6 @@ fun SpatialRing(
     }
     SpatialCanvas(primitives, modifier)
 }
+
+
 

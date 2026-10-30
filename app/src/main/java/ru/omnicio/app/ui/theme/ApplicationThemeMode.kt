@@ -33,18 +33,25 @@ val LocalSystemThemeObservation = staticCompositionLocalOf<SystemThemeObservatio
     SystemThemeObservation.Unknown(SystemThemeUnavailableReason.INITIALIZING)
 }
 
-/** App-local override only. Saved LIGHT/SYSTEM values migrate to the single style. */
-@Suppress("UNUSED_PARAMETER")
+/** App-local override only; startup migrates old preferences before this mapping. */
 internal fun applicationNightMode(mode: ThemeMode): Int = when(mode) {
     ThemeMode.LIGHT -> UiModeManager.MODE_NIGHT_NO
     ThemeMode.DARK -> UiModeManager.MODE_NIGHT_YES
     ThemeMode.SYSTEM -> UiModeManager.MODE_NIGHT_AUTO
 }
 
-internal fun storedApplicationTheme(context: Context): ThemeMode {
-    val name = context.getSharedPreferences("analyst_ai_settings", Context.MODE_PRIVATE)
-        .getString("theme_mode", ThemeMode.LIGHT.name)
-    return ThemeMode.entries.firstOrNull { it.name == name } ?: ThemeMode.LIGHT
+internal data class StartupThemeMigration(val mode: ThemeMode, val persist: Boolean)
+
+internal fun startupThemeMigration(savedName: String?): StartupThemeMigration =
+    StartupThemeMigration(ThemeMode.DARK, savedName != ThemeMode.DARK.name)
+
+internal fun migrateApplicationThemeForStartup(context: Context): ThemeMode {
+    val preferences = context.getSharedPreferences("analyst_ai_settings", Context.MODE_PRIVATE)
+    val migration = startupThemeMigration(preferences.getString("theme_mode", null))
+    if (migration.persist) preferences.edit().putString("theme_mode", migration.mode.name).apply()
+    // Return DARK even before the asynchronous disk write finishes: the first
+    // platform call and the splash screen must match the production composables.
+    return migration.mode
 }
 
 /** Only startup and the committed save path call this; previews are in memory. */

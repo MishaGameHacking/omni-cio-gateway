@@ -17,6 +17,7 @@ import httpx
 from backend.ai_budget import MoneyLedger, BudgetDenied, micro_rub, token_cost
 from backend.ai_jobs import AnalysisQueue, LeaseLost, CURRENT_JOB, drain
 from backend.ai_guarded_client import GuardedAIClient, GuardError, validated_url
+from backend.tests.ai_broker_fixtures import bind_synthetic_broker
 
 FAST = SimpleNamespace(value='fast')
 NOW = 1791882000
@@ -222,6 +223,7 @@ def model_response(**changes):
 class GuardedClientTests(DatabaseCase):
     def setUp(self):
         super().setUp()
+        bind_synthetic_broker(self.connect)
         self.env = environment()
         self.requests = []
 
@@ -385,4 +387,5 @@ class GuardedClientTests(DatabaseCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 

@@ -81,25 +81,29 @@ internal fun validPortfolioMandate(value: JSONObject): Boolean {
     if (numbers.any { it < BigDecimal.ZERO || it > BigDecimal(100) }) return false
     val bonds = numbers[1]; val shares = numbers[2]
     if ((bonds + shares).compareTo(BigDecimal(100)) != 0) return false
-    when (value.optString("asset_mode")) {
-        "bonds" -> if (bonds.compareTo(BigDecimal(100)) != 0 || shares.signum() != 0) return false
-        "shares" -> if (shares.compareTo(BigDecimal(100)) != 0 || bonds.signum() != 0) return false
-        "mixed" -> if (bonds.signum() <= 0 || shares.signum() <= 0) return false
-        else -> return false
-    }
+    if (!mandateAssetWeightsMatch(value.optString("asset_mode"), bonds, shares)) return false
     val rating = value.opt("minimum_rating_level") as? Int ?: return false
     val cooldown = value.opt("rebalance_cooldown_days") as? Int ?: return false
     val turnoverWindow = value.opt("turnover_window_days") as? Int ?: return false
-    if (rating !in 0..9 || cooldown !in 0..365 || turnoverWindow !in 1..366) return false
+    if (rating !in 0..8 || cooldown !in 0..365 || turnoverWindow !in 1..366) return false
     if (value.opt("reinvest_coupons") !is Boolean || value.opt("reinvest_dividends") !is Boolean) return false
     val sessions = value.optJSONArray("allowed_sessions") ?: return false
     return sessions.length() == 1 && sessions.optString(0) == "main"
 }
 
+private fun mandateAssetWeightsMatch(mode: String, bonds: BigDecimal, shares: BigDecimal): Boolean = when (mode) {
+    "bonds" -> bonds.compareTo(BigDecimal(100)) == 0 && shares.signum() == 0
+    "shares" -> shares.compareTo(BigDecimal(100)) == 0 && bonds.signum() == 0
+    "mixed" -> bonds.signum() > 0 && shares.signum() > 0
+    else -> false
+}
+
 @Composable
 internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject>, enabled: Boolean,
     onEdit: (JSONObject) -> Unit) {
-    val mandate = config.optJSONObject("mandate") ?: newMandateDraft()
+    val mandate = JSONObject((config.optJSONObject("mandate") ?: newMandateDraft()).toString()).apply {
+        if (optInt("minimum_rating_level", -1) == 9) put("minimum_rating_level", 8)
+    }
     val change: (String, Any) -> Unit = { key, value ->
         onEdit(JSONObject(config.toString()).put("mandate", JSONObject(mandate.toString()).put(key, value)))
     }
@@ -141,7 +145,7 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
         StrategyNumberChoice("Допустимый убыток", mandate.optString("loss_capacity_percent"), "%", enabled,
             "0", "100", listOf("0", "1", "5", "10", "20"), listOf("1", "0.1", "0.01"), true) { change("loss_capacity_percent", it) }
         Text("0% запрещает увеличение риска. Выбранное значение не гарантирует ограничения фактических потерь.", style = MaterialTheme.typography.bodySmall)
-        val ratings = listOf("AAA", "AA+", "AA", "AA−", "A+", "A", "A−", "BBB+", "BBB", "BBB−")
+        val ratings = listOf("AAA", "AA+", "AA", "AA−", "A+", "A", "A−", "BBB+", "BBB")
         WorkspaceChoices("Минимальный рейтинг", ratings, mandate.optInt("minimum_rating_level", -1), enabled) {
             change("minimum_rating_level", it)
         }
@@ -168,5 +172,6 @@ internal fun StrategyMandateEditor(config: JSONObject, accounts: List<JSONObject
         }
     }
 }
+
 
 

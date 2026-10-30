@@ -84,6 +84,10 @@ fun EvidenceLinks(evidence: List<JSONObject>, highlights: List<JSONObject> = emp
 
 private val terminalJobs = setOf("completed", "cancelled", "failed", "uncertain")
 
+/** Closing a definite failure releases only the local recovery checkpoint, never the audit. */
+internal fun canClearWorkspaceCheckpointOnClose(state: String): Boolean =
+    state in setOf("completed", "cancelled", "failed")
+
 class WorkspaceJobState internal constructor(
     val job: JSONObject?, val error: String?,
     val cancellation: WorkspaceAction, val retry: WorkspaceAction,
@@ -154,7 +158,7 @@ private fun rememberActiveWorkspaceJob(activeId: String, onCompleted: () -> Unit
         },
         refresh = { revision++ },
         close = { onClose ->
-            if (state == "cancelled" || state == "completed") scope.launch {
+            if (canClearWorkspaceCheckpointOnClose(state)) scope.launch {
                 val removed = withContext(Dispatchers.IO) { checkpoints.removeJob(session.userId, activeId) }
                 if (removed) {
                     if (state == "completed" && !notified) { notified = true; completed() }
@@ -180,7 +184,10 @@ fun WorkspaceJobPanel(model: WorkspaceJobState, onClose: () -> Unit = {}) {
         WorkspaceJobHeading(state, job?.text("stage", "queued") ?: "queued")
         job?.optString("updated_at")?.takeIf { it.isNotBlank() }?.let { Text(localMoment(it), style = MaterialTheme.typography.bodySmall) }
         model.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (state == "uncertain") Text("Исход запроса к модели пока не подтверждён. Автоматического повторного запроса нет.")
+        if (state == "failed" || state == "uncertain") {
+            Text(VolumeWorkspaceClient.jobFailureMessage(job?.optString("error_code")),
+                color = MaterialTheme.colorScheme.error)
+        }
         if (state == "cancel_requested") Text("Отмена запрошена. Уже отправленный запрос провайдеру может завершиться и учитывается в расходе.")
         if (state !in terminalJobs && state != "cancel_requested") SpectrumSecondaryButton("Отменить задание", model.cancel,
             Modifier.fillMaxWidth(), enabled = !model.cancellation.busy)

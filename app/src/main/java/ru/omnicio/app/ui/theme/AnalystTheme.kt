@@ -148,9 +148,9 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         if (inspection) null else context.applicationContext.getSharedPreferences("analyst_ai_settings", 0)
     }
     val workspace = LocalWorkspacePreferences.current
-    var mode by remember(context) { mutableStateOf(if (inspection) ThemeMode.SYSTEM else storedApplicationTheme(context)) }
     val system = if (inspection) SystemThemeObservation.Known(androidx.compose.foundation.isSystemInDarkTheme()) else rememberSystemThemeObservation()
-    val dark = displayedThemeDark(mode, system, null, androidx.compose.foundation.isSystemInDarkTheme())
+    // One intentional visual system, independent of a previously saved light theme.
+    val dark = true
     SideEffect {
         (activity as? ComponentActivity)?.enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.auto(
@@ -165,10 +165,12 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         activity?.window?.isNavigationBarContrastEnforced = false
     }
     // Persist the selected light/graphite mode across Activity and process restarts.
-    val themePreference = ThemePreference(mode) { selected ->
-        mode = selected
-        preferences?.edit()?.putString("theme_mode", selected.name)?.apply()
-        if (!inspection) syncSavedApplicationTheme(context, selected)
+    val themePreference = ThemePreference(ThemeMode.DARK) { }
+    LaunchedEffect(inspection) {
+        if (!inspection) {
+            preferences?.edit()?.putString("theme_mode", ThemeMode.DARK.name)?.apply()
+            syncSavedApplicationTheme(context, ThemeMode.DARK)
+        }
     }
     val motionPreference = SpectrumMotionPreference(workspace.value.motion != MotionLevel.OFF) { enabled ->
         workspace.update(workspace.value.copy(motion = if (enabled) MotionLevel.LIVE else MotionLevel.OFF))
@@ -186,6 +188,12 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         MaterialTheme(
             colorScheme = colors,
             typography = AnalystTypography,
+            shapes = androidx.compose.material3.Shapes(
+                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(2f)),
+                small = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)),
+                medium = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(4f)),
+                large = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(6f)),
+                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(androidx.compose.ui.unit.Dp(6f))),
         ) {
             // Transparent scaffolds and text outside cards must not inherit the
             // framework's default black LocalContentColor in the dark theme.
@@ -202,5 +210,7 @@ private fun AnalystThemeContent(content: @Composable () -> Unit) {
         }
     }
 }
+
+
 
 

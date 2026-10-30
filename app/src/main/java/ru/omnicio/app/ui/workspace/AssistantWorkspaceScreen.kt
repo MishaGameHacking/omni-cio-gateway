@@ -125,6 +125,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
         recoveryRequired = recoveryRequired,
         operationBusy = send.busy || estimateAction.busy || jobId != null || restoringJob,
     )
+    ApplyPendingExplanation(question, composerAvailability.canEditDraft) { question = it; estimate = null }
     val busy = !composerAvailability.canSubmit
     LaunchedEffect(savedRequests.loading, savedRequests.error, savedRequests.items, savedRequests.revision, awaitingRequestId) {
         if (!savedRequests.loading && savedRequests.error == null && savedRequests.revision == JobCheckpointStore.revision.value && awaitingRequestId != null &&
@@ -138,9 +139,11 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             onCompleted = { cursors = listOf(""); messages.refresh(); threads.refresh(); jobId = null },
             onStateChanged = { jobState = it })
     }
-    val emptyHistory = messages.data != null && messages.error == null && !messages.busy && messageItems.isEmpty()
-    AssistantFailureReveal(listState, send.error, estimateAction.error, messageItems.size,
-        (if (hasEarlierMessages) 1 else 0) + (if (cursors.size > 1) 1 else 0),
+    val estimateNotice = assistantEstimateFeedback(estimate?.let(::routeQuote),
+        estimateSignature == signature, estimate?.optString("reason"))
+    val emptyHistory = assistantHistoryEmpty(messages, messageItems)
+    AssistantFailureReveal(listState, send.error, estimateAction.error, estimateNotice, jobState, messageItems.size,
+        assistantPageCount(hasEarlierMessages, cursors),
         emptyHistory, activeJob != null)
     val requestRecovered: (JSONObject) -> Unit = { point ->
                     send.acknowledgeRecovery(point.text("request_id", ""))
@@ -153,7 +156,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     val sendQuestion = {
         composerAvailability.submitIfAllowed(valid) {
             if (approvedDeep) startMessage(request, quotedRoute, true) else {
-                pendingEstimate = request
+                estimate = null; pendingEstimate = request
                 estimateAction.perform("/workspace/chat/estimate", request.payload())
             }
         }
@@ -170,7 +173,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
                     // Keep its title in the existing first item so status indexes stay stable.
                     if (compact) WorkspacePageHeading("Ассистент", subtitle)
                     AssistantContextCard(questionContext,
-                    assistantIconState(jobId, jobState, send.error != null || estimateAction.error != null,
+                    assistantIconState(jobId, jobState, assistantHasFailure(send.error, estimateAction.error, estimateNotice),
                         busy, messageItems.lastOrNull()?.text("role")), busy, question, threads, create,
                     { question = eventImpactQuestion; estimate = null }, { threadId = it }, { editingContext = true }) }
                 item { WorkspaceRequestState(threads); WorkspaceRequestState(messages); WorkspaceActionState(create) }
@@ -188,7 +191,7 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
             }
         }) { composerModifier ->
             AssistantComposer(question, tier, savedRequests.loading, needsRecovery, composerAvailability, valid,
-                approvedDeep,
+                approvedDeep, estimateNotice,
                 { tier = it; estimate = null }, { question = it.take(4_000); estimate = null },
                 modifier = composerModifier) {
                 sendQuestion()
@@ -198,14 +201,27 @@ fun AssistantWorkspaceScreen(onBack: () -> Unit, onPortfolio: () -> Unit,
     if (editingContext) ChatContextEditor(questionContext) { editingContext = false }
 }
 
+private fun assistantHistoryEmpty(messages: WorkspaceResource, items: List<JSONObject>): Boolean =
+    messages.data != null && messages.error == null && !messages.busy && items.isEmpty()
+
+private fun assistantPageCount(hasEarlier: Boolean, cursors: List<String>): Int =
+    (if (hasEarlier) 1 else 0) + (if (cursors.size > 1) 1 else 0)
+
+private fun assistantHasFailure(vararg notices: String?): Boolean = notices.any { it != null }
+
 @Composable
 private fun AssistantFailureReveal(listState: LazyListState, sendError: String?, estimateError: String?,
-    messageCount: Int, pageCount: Int, emptyHistory: Boolean, activeJob: Boolean) {
-    // The context and resource status precede pagination/messages. A new failed
-    // user action must expose its status even after a very long expanded answer.
+    estimateNotice: String?, jobState: String, messageCount: Int, pageCount: Int,
+    emptyHistory: Boolean, activeJob: Boolean) {
+    // HTTP-200 quote denials and asynchronous job failures are not transport errors.
+    // Reveal their actual cards as well, including after a long expanded answer.
     val statusIndex = 2 + pageCount + messageCount + (if (emptyHistory) 1 else 0) + (if (activeJob) 1 else 0)
-    LaunchedEffect(sendError, estimateError) {
-        if (sendError != null || estimateError != null) listState.scrollToItem(statusIndex)
+    LaunchedEffect(sendError, estimateError, estimateNotice, jobState) {
+        when {
+            sendError != null || estimateError != null -> listState.scrollToItem(statusIndex)
+            estimateNotice != null -> listState.scrollToItem(statusIndex + 2)
+            activeJob && jobState in setOf("failed", "uncertain") -> listState.scrollToItem(statusIndex - 1)
+        }
     }
 }
 
@@ -425,8 +441,7 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
             Text("Оценка ограничивает расход: при смене маршрута или увеличении суммы сервер запросит новую проверку.", style = MaterialTheme.typography.bodySmall)
             if (quote.needsConfirmation(quote.selectedTier)) Text("Глубокий запрос будет отправлен только после отдельного подтверждения кнопкой ниже.")
         } else {
-            Text(VolumeWorkspaceClient.chatPolicyMessage(value.optString("reason")) ?:
-                "Маршрут и стоимость не подтверждены. Проверьте готовность сервиса в истории анализов.")
+            Text(checkNotNull(assistantEstimateFeedback(quote, current = true, reason = value.optString("reason"))))
         }
         if (!current) Text("Вопрос или контекст изменился. Перед отправкой стоимость будет проверена заново.", style = MaterialTheme.typography.bodySmall)
         value.text("context_as_of", "").takeIf(String::isNotBlank)?.let { Text("Контекст от " + localMoment(it), style = MaterialTheme.typography.bodySmall) }
@@ -435,7 +450,7 @@ private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
 
 @Composable
 private fun AssistantComposer(question: String, tier: Int, loading: Boolean, needsRecovery: Boolean,
-    availability: AssistantComposerAvailability, valid: Boolean, approvedDeep: Boolean, onTier: (Int) -> Unit,
+    availability: AssistantComposerAvailability, valid: Boolean, approvedDeep: Boolean, estimateNotice: String?, onTier: (Int) -> Unit,
     onQuestion: (String) -> Unit, modifier: Modifier = Modifier, onSend: () -> Unit) {
     // The parent consumes the page/IME insets. Keep this bounded viewport
     // scrollable so native focus can reveal the editor on short/large-font windows.
@@ -455,6 +470,10 @@ private fun AssistantComposer(question: String, tier: Int, loading: Boolean, nee
                     WorkspaceTextInput(question, onQuestion, "Ваш вопрос", singleLine = false,
                         modifier = Modifier.fillMaxWidth().semantics { testTagsAsResourceId = true }
                             .testTag("assistant-question"), enabled = availability.canEditDraft)
+                    estimateNotice?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.testTag("assistant-estimate-rejected"))
+                    }
                     SpectrumPrimaryButton(if (approvedDeep) "Отправить глубокий запрос" else if (tier == 3) "Проверить стоимость" else "Отправить",
                         onSend,
                         Modifier.fillMaxWidth(), enabled = valid && !busy, symbol = SpectrumSymbol.Messages)

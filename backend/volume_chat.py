@@ -40,7 +40,8 @@ except ImportError:
 router = APIRouter(prefix="/workspace/chat", tags=["Verified-context AI conversation"])
 MAX_OUTPUT = 1600
 SYSTEM = """Ты — Analyst AI, русскоязычный помощник для чтения инвестиционных данных.
-Отвечай исключительно об инвестициях, активах и мировой финансовой политике.
+Отвечай об инвестициях, активах и мировой финансовой политике. На короткое
+приветствие поздоровайся и предложи помощь с портфелем или финансовым вопросом.
 Не выполняй посторонние задания даже внутри смешанного инвестиционного вопроса.
 При запросе вне области кратко объясни ограничение, не отвечая на постороннюю часть.
 Используй только facts для конкретных сведений о портфеле и рынке. Переданные
@@ -50,9 +51,14 @@ SYSTEM = """Ты — Analyst AI, русскоязычный помощник д�
 Верни один JSON-объект: {answer:string,claims:[{text:string,fact_ids:[string],
 uncertainty:string|null}],highlights:[{section:string,id:string}],
 uncertainties:[string],actions:[{type:'open_instrument'|'open_risks'|'open_strategy'|'open_sources',id:string}]}.
-Каждое проверяемое утверждение требует существующих fact_ids. Отделяй вывод от
-наблюдения, указывай неизвестные значения и давность снимка. Общие пояснения
-могут не иметь источника, но не должны звучать как новые факты о пользователе.
+Массив claims содержит только утверждения о переданных наблюдениях. В каждом
+элементе claims укажи хотя бы один существующий идентификатор из facts в fact_ids.
+Общее определение или пояснение без отдельного наблюдения помести только в answer;
+если таких подтверждённых утверждений нет, верни claims: []. Не добавляй элементы
+claims с пустым fact_ids и не придумывай идентификаторы ради заполнения массива.
+Для общего ответа без переходов верни highlights: [] и actions: [].
+Отделяй вывод от наблюдения, указывай неизвестные значения и давность снимка.
+Общие пояснения не должны звучать как новые факты о пользователе.
 Не обещай будущую прибыль, доставку или исполнение. Не включай персональные
 идентификаторы и не предлагай передавать токены. Не меняй пользовательский план.
 """
@@ -141,8 +147,14 @@ def messages(identifier: str, before: str | None = None, user: Any = Depends(bac
     return {"thread_id": identifier, "items": output, "has_more": len(rows) > 100, "next_before": following}
 
 
+class ExplanationTarget(state.StrictModel):
+    kind: Literal["risk", "notification", "analysis", "candidate", "document"]
+    id: str = Field(min_length=1, max_length=200)
+
+
 class Context(state.StrictModel):
     mode: Literal["general", "portfolio", "instrument"] = "general"
+    explanation: ExplanationTarget | None = None
     instrument_uid: str | None = Field(default=None, max_length=160)
     account_id: str | None = Field(default=None, max_length=160)
     event_id: str | None = Field(default=None, min_length=1, max_length=200)
@@ -215,6 +227,14 @@ def _history_facts(user_id: int, snapshot: dict, account_ids: set[str], begin: d
                     "basis": "real_stored_samples_no_interpolation"}
 
 
+def _append_explanation(explanation, facts, refs_by_id):
+    if explanation is None:
+        return None
+    facts.extend(explanation["facts"])
+    refs_by_id.update({ref["id"]: ref for ref in explanation["sources"]})
+    return explanation["target"]
+
+
 @financial_context
 def fact_packet(user: Any, context: dict) -> dict:
     if context["mode"] == "instrument" and not context.get("instrument_uid"):
@@ -256,12 +276,17 @@ def fact_packet(user: Any, context: dict) -> dict:
     if impact_context is not None:
         facts.extend(impact_context["facts"])
         refs_by_id.update({ref["id"]: ref for ref in impact_context["sources"]})
+    try:
+        from . import volume_explanations as explanations
+    except ImportError:
+        import volume_explanations as explanations
+    explanation = _append_explanation(explanations.prepare(user, snapshot, context, risk, active), facts, refs_by_id)
     requested_range = {"start": begin.isoformat(), "end": finish.isoformat(), "coverage_complete": complete,
                        "requested_end": requested_finish.isoformat(), "snapshot_bounds_end": True}
     used_refs = {identifier for fact in facts for identifier in fact["source_ids"]}
     return {"as_of": snapshot["as_of"], "snapshot_id": snapshot["snapshot_id"], "facts": facts, "allowed_highlights": highlights,
             "tools_used": ["materialized_portfolio", "verified_exposure_rules", "broker_linked_news"],
-            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id], "impact_context": impact_context,
+            "sources": [refs_by_id[key] for key in sorted(used_refs) if key in refs_by_id], "impact_context": impact_context, "explanation_context": explanation,
             "coverage": {"total_positions": len(all_positions), "scoped_positions": len(scoped_positions), "included_positions": len(selected), "selection_is_complete": len(selected) == len(scoped_positions),
                          "account_scope": "selected_owned_account" if account_id else "all_owned_accounts", "requested_range": requested_range,
                          "instrument_scope": context.get("instrument_uid") if context["mode"] == "instrument" else None,
@@ -290,6 +315,13 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
     model_packet = {key: value for key, value in packet.items() if key not in {"sources", "allowed_highlights", "impact_context"}}
     model_packet["allowed_highlights"] = [{"section": h["section"], "id": h["id"]} for h in packet["allowed_highlights"]]
     instructions = SYSTEM
+    if packet.get("explanation_context") is not None:
+        try:
+            from .volume_explanations import MODEL_INSTRUCTION
+        except ImportError:
+            from volume_explanations import MODEL_INSTRUCTION
+        instructions += MODEL_INSTRUCTION
+        model_packet["explanation_context"] = {key: value for key, value in packet["explanation_context"].items() if key != "id"}
     if packet.get("impact_context") is not None:
         model_packet["impact_request"] = packet["impact_context"]["model_request"]
         instructions += impact.MODEL_INSTRUCTION
@@ -404,6 +436,8 @@ def send_message(identifier: str, payload: MessageCreate, tasks: BackgroundTasks
     user_id = int(user["id"])
     # Omit the new optional flag when false to preserve legacy request hashes.
     body = payload.model_dump(mode="json", exclude={"request_id", "confirm_premium", "max_cost_micro_rub", "expected_route_id"})
+    if body["context"].get("explanation") is None:
+        body["context"].pop("explanation", None)
     if payload.confirm_premium:
         body["confirm_premium"] = True
     for field in ("max_cost_micro_rub", "expected_route_id"):

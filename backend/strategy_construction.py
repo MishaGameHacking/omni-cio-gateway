@@ -18,19 +18,22 @@ except ImportError:
     from volume_contract import decimal, text_number, financial_context, timestamp
 
 CLASSES = ("bond", "share", "etf")
-# Product policy assumptions, not an estimate of future returns or default odds.
-BASE_WEIGHTS = {
+# Version 1 remains readable without silently changing saved fund allocations.
+LEGACY_WEIGHTS = {
     "capital": (70, 0, 30), "coupon": (80, 0, 20),
     "balanced": (40, 20, 40), "growth": (20, 30, 50),
     "equity": (0, 40, 60),
 }
+# Product policy assumptions, not an estimate of future returns or default odds.
+BASE_WEIGHTS = {"capital": (100, 0, 0), "balanced": (60, 40, 0), "growth": (30, 70, 0)}
 STRESS_LOSS = {"bond": Decimal("0.25"), "share": Decimal("0.60"), "etf": Decimal("0.60")}
 
 
 class StrategyConstruction(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    version: Literal[1] = 1
-    enabled_classes: list[Literal["bond", "share", "etf"]] = Field(min_length=1, max_length=3)
+    version: Literal[1, 2] = 1
+    # An empty intersection is a paused draft, never permission to enable assets.
+    enabled_classes: list[Literal["bond", "share", "etf"]] = Field(max_length=3)
     age: StrictInt | None = Field(default=None, ge=18, le=100)
     reserve_percent: StrictInt = Field(default=20, ge=5, le=80)
     key_rate_mode: Literal["allow_below", "at_least_key_rate"] = "allow_below"
@@ -49,9 +52,14 @@ def permitted_classes(config: dict) -> set[str]:
 
 def profile_construction(identifier: str, previous: dict) -> dict:
     prior = previous.get("construction") or {}
-    weights = BASE_WEIGHTS[identifier]
+    current = identifier in BASE_WEIGHTS
+    weights = (BASE_WEIGHTS if current else LEGACY_WEIGHTS)[identifier]
+    proposed = {kind for kind, weight in zip(CLASSES, weights) if weight}
+    if prior or previous.get("mandate"):
+        proposed &= permitted_classes(previous)
     return StrategyConstruction(
-        enabled_classes=[kind for kind, weight in zip(CLASSES, weights) if weight],
+        version=2 if current else 1,
+        enabled_classes=[kind for kind in CLASSES if kind in proposed],
         age=prior.get("age"), reserve_percent=max(prior.get("reserve_percent", 0),
             {"capital": 25, "coupon": 20, "balanced": 15, "growth": 15, "equity": 20}[identifier]),
         key_rate_mode=prior.get("key_rate_mode", "allow_below"),
@@ -70,7 +78,9 @@ The residual is cash; it is not silently redistributed to another risky class.
 """
     settings = config.get("construction") or {}
     profile = (config.get("tuning") or {}).get("profile_id", "capital")
-    weights = dict(zip(CLASSES, map(Decimal, BASE_WEIGHTS.get(profile, BASE_WEIGHTS["capital"]))))
+    profiles = BASE_WEIGHTS if settings.get("version", 1) == 2 else LEGACY_WEIGHTS
+    selected = profiles.get(profile, LEGACY_WEIGHTS.get(profile, profiles["capital"]))
+    weights = dict(zip(CLASSES, map(Decimal, selected)))
     allowed = permitted_classes(config)
     for kind in CLASSES:
         if kind not in allowed:
@@ -83,6 +93,8 @@ The residual is cash; it is not silently redistributed to another risky class.
         weights["share"] = weights["etf"] = Decimal(0)
     capacity = decimal((config.get("mandate") or {}).get("loss_capacity_percent")) or Decimal(0)
     reasons = []
+    if not allowed:
+        reasons.append("enabled_asset_class_required")
     if not settings.get("loss_capacity_confirmed"):
         capacity = Decimal(0)
         reasons.append("loss_capacity_not_confirmed")
@@ -157,3 +169,4 @@ def instrument_policy_reasons(meta, expected_lot, config, now=None):
     except (ValueError, TypeError):
         return ["bond_maturity_unknown"]
     return [] if now.date() < maturity <= limit else ["bond_maturity_outside_horizon"]
+

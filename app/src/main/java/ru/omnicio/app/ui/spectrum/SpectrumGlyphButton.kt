@@ -41,19 +41,18 @@ fun SpectrumGlyphButton(symbol: SpectrumSymbol, label: String, onClick: () -> Un
         tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) {
         Box(modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .semantics { contentDescription = label; selected = active }
-            .clip(RoundedCornerShape(18.dp))
-            .background(Brush.verticalGradient(listOf(
-                if (active) colors.primaryContainer else colors.surfaceContainerHigh,
-                if (active) colors.secondaryContainer else colors.surfaceContainerLow)))
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (active) colors.primaryContainer else colors.surface)
             .border(if (focused) 2.dp else 1.dp,
                 if (focused) colors.secondary else if (active) colors.primary else colors.outlineVariant,
-                RoundedCornerShape(18.dp))
+                RoundedCornerShape(4.dp))
             .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = role, onClick = click),
             contentAlignment = Alignment.Center) {
-            SpatialIcon(symbol.asset, Modifier.size(36.dp).graphicsLayer { scaleX = scale; scaleY = scale },
+            SpatialIcon(symbol.asset, Modifier.size(22.dp).graphicsLayer { scaleX = scale; scaleY = scale },
                 tint = if (enabled) colors.onSurface else colors.onSurfaceVariant,
                 state = if (pressed) SpatialState.Pressed else if (active || focused) SpatialState.Selected else SpatialState.Idle,
-                motionAllowed = enabled, colorMode = SpatialColorMode.Decorative)
+                motionAllowed = enabled, colorMode = SpatialColorMode.Monochrome)
         }
     }
 }
+

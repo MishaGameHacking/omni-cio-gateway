@@ -39,7 +39,7 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
             Text("Какие активы использовать", style = MaterialTheme.typography.titleLarge)
             val array = settings.optJSONArray("enabled_classes") ?: JSONArray()
             val selected = (0 until array.length()).map { array.getString(it) }.toSet()
-            listOf("bond" to "Облигации", "share" to "Акции", "etf" to "Фонды").forEach { (key, label) ->
+            listOf("bond" to "Облигации", "share" to "Акции").forEach { (key, label) ->
                 WorkspaceToggle(label, when(key) {
                     "bond" -> "Проверка выплат, срока и кредитного качества"
                     "share" -> "Участие в бизнесе; цена и дивиденды меняются"
@@ -48,6 +48,7 @@ internal fun StrategySimpleSettings(config: JSONObject, accounts: List<JSONObjec
                     change("enabled_classes", JSONArray((if (checked) selected + key else selected - key).sorted()))
                 }
             }
+            if ("etf" in selected) Text("Фонды сохранены в прежнем профиле. Новые стратегии используют акции и облигации.", style = MaterialTheme.typography.bodySmall)
             Text("Доступность инструментов и тесты проверяет брокер. Выключение класса не продаёт текущие позиции.", style = MaterialTheme.typography.bodySmall)
         }
         SpectrumCard {

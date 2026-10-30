@@ -21,9 +21,14 @@ import ru.omnicio.app.data.portfolio.PortfolioCurrency
 import ru.omnicio.app.data.portfolio.PortfolioUiState
 import ru.omnicio.app.data.workspace.VolumeReply
 import ru.omnicio.app.data.workspace.WorkspaceTransport
+import ru.omnicio.app.ui.LocalOpenNavigationMenu
 import ru.omnicio.app.ui.AnalystBottomBar
 import ru.omnicio.app.ui.AnalystTab
-import ru.omnicio.app.ui.auth.TelegramLoginScreen
+import ru.omnicio.app.ui.auth.OwnerAccessScreen
+import ru.omnicio.app.ui.auth.LocalOwnerAccessPreviewStatus
+import ru.omnicio.app.ui.auth.LocalOwnerAccessPreviewCooldownSeconds
+import ru.omnicio.app.data.backend.OwnerAccessStatus
+import ru.omnicio.app.ui.home.SystemTelemetryCard
 import ru.omnicio.app.ui.home.HomeScreen
 import ru.omnicio.app.ui.profile.ProfileScreen
 import ru.omnicio.app.ui.theme.AnalystTheme
@@ -113,7 +118,10 @@ private fun HostAppearance(page: String, state: String) {
         else -> BrokerConnectionState.Connected
     }
     CompositionLocalProvider(
+        LocalOpenNavigationMenu provides {},
         LocalWorkspaceSession provides WorkspaceSession("", "synthetic-layout-only"),
+        LocalOwnerAccessPreviewStatus provides OwnerAccessStatus(state != "setup", 10, 128),
+        LocalWorkspaceSnapshot provides if (state == "current") system55Fixture() else null,
         LocalWorkspaceTransport provides forbiddenTransport,
         LocalWorkspacePreviewResources provides mapOf(
             "/automation/status" to resource, "/automation/decisions" to resource),
@@ -132,18 +140,21 @@ private fun HostAppearance(page: String, state: String) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     val user = AnalystUser("synthetic-layout-only", "Тест интерфейса", null, null)
                     when (page) {
-                        "login" -> TelegramLoginScreen(
+                        "login" -> OwnerAccessScreen(
                             loading = state == "loading",
                             errorMessage = if (state == "error") "Синтетический пример ошибки входа. Повторите попытку." else null,
-                            onLoginClick = {})
+                            onSessionReady = { _, _ -> }, onAccessStart = { null })
 
                         "home" -> HomeScreen(user, PortfolioUiState.NotConnected, PortfolioCurrency.RUB,
                             false, null, null, onCurrencyClick = {}, onOpenPortfolio = {},
                             onOpenRecommendations = {}, onOpenRisk = {}, onOpenMessages = {},
                             onOpenProfile = {}, onConnect = {})
-                        "settings" -> ProfileScreen(user, tApiConfigured = broker == BrokerConnectionState.Connected,
-                            screenshotsBlocked = false, onScreenshotsBlockedChange = {},
-                            onPortfolioClick = {}, onOpenTApi = {}, onOpenEducation = {}, onLogout = {})
+                        "settings" -> ru.omnicio.app.ui.terminal.TerminalWorkspace(
+                            visible = true, route = null, title = "Настройки", close = {}, dashboard = {}) {
+                            ProfileScreen(user, tApiConfigured = broker == BrokerConnectionState.Connected,
+                                screenshotsBlocked = false, onScreenshotsBlockedChange = {},
+                                onPortfolioClick = {}, onOpenTApi = {}, onOpenEducation = {}, onLogout = {})
+                        }
                         "decisions" -> Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f)) { AutonomousDecisionsScreen {} }
                             AnalystBottomBar(AnalystTab.Actions, {}, {})
@@ -260,6 +271,47 @@ fun Rail53() {
     } }
 }
 
+@PreviewTest
+@Preview(name = "owner56-rail-collapsed", widthDp = 390, heightDp = 844, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "owner56-rail-collapsed-large-text", widthDp = 320, heightDp = 900, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun OwnerRail56() {
+    AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+        Row(Modifier.fillMaxSize()) {
+            StrategyNavigationRail(AnalystTab.Actions, WorkspaceRoute.Strategies, {}, {})
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                Text("Моя стратегия", style = MaterialTheme.typography.headlineMedium)
+                StrategySimpleSettings(strategy53Fixture(), listOf(JSONObject().put("id", "synthetic").put("name", "Тестовый счёт")), true) {}
+            }
+        }
+    } }
+}
+
+@PreviewTest
+@Preview(name = "owner56-research", widthDp = 390, heightDp = 844, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "owner56-research-large-text", widthDp = 320, heightDp = 1000, fontScale = 1.5f, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+fun OwnerResearch56() {
+    check(LocalInspectionMode.current)
+    val status = JSONObject().put("documents", 2).put("due_targets", 1).put("in_progress", 0).put("sources", JSONArray())
+    val documents = JSONObject().put("items", JSONArray().put(JSONObject().put("id", 1).put("kind", "report")
+        .put("title", "Тестовая компания · финансовые результаты").put("publisher", "Синтетический источник")
+        .put("published_at", 1793232000).put("last_seen", 1793318400)))
+    CompositionLocalProvider(LocalWorkspaceSession provides WorkspaceSession("", "synthetic-layout-only"),
+        LocalWorkspaceTransport provides forbiddenTransport,
+        LocalWorkspacePreviewResources provides mapOf(
+            "/workspace/osint/status" to WorkspaceResource(status, false, null) {},
+            "/workspace/osint/documents?limit=25&q=" to WorkspaceResource(documents, false, null) {})) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                ServerResearchScreen({}, {})
+            }
+        } }
+    }
+}
+
 
 @PreviewTest
 @Preview(name = "analytics54-dark", widthDp = 390, heightDp = 1800, locale = "ru", uiMode = Configuration.UI_MODE_NIGHT_YES)
@@ -312,5 +364,129 @@ private fun Analytics54Fixture(page: String) {
                 }
             }
         }
+    }
+}
+
+
+
+@PreviewTest
+@Preview(name = "owner55-setup", widthDp = 390, heightDp = 1050, locale = "ru")
+@Preview(name = "owner55-setup-large-text", widthDp = 320, heightDp = 1400, fontScale = 1.5f, locale = "ru")
+@Composable
+fun OwnerSetup55() = HostAppearance("login", "setup")
+
+@PreviewTest
+@Preview(name = "system55-home-tall", widthDp = 390, heightDp = 2300, locale = "ru")
+@Composable
+fun SystemHome55() = HostAppearance("home", "current")
+
+@PreviewTest
+@Preview(name = "system55-telemetry", widthDp = 390, heightDp = 1000, locale = "ru")
+@Preview(name = "system55-telemetry-large-text", widthDp = 320, heightDp = 1500, fontScale = 1.5f, locale = "ru")
+@Composable
+fun SystemTelemetry55() {
+    check(LocalInspectionMode.current)
+    CompositionLocalProvider(LocalWorkspacePreferences provides WorkspacePreferenceController(
+        WorkspacePreferences(motion = MotionLevel.OFF, haptics = false))) {
+        AnalystTheme {
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", style = MaterialTheme.typography.labelSmall)
+                    SystemTelemetryCard(system55Fixture().getJSONObject("sections").getJSONObject("ai").getJSONObject("data"),
+                        java.time.Instant.parse("2026-10-29T12:00:30Z")) { }
+                }
+            }
+        }
+    }
+}
+
+/** Synthetic, screenshot-only counters; this function never ships in the production source set. */
+private fun system55Fixture(): JSONObject {
+    val ai = JSONObject().put("jobs", JSONArray().put(JSONObject().put("job_id", "synthetic-job")
+        .put("state", "running").put("stage", "collecting_metadata").put("updated_at", "2026-10-29T12:00:00Z")
+        .put("progress", JSONObject().put("completed", 17).put("total", 40))))
+        .put("check_history", JSONArray().apply {
+            listOf(23, 18, 15, 22, 9, 12).forEachIndexed { index, count ->
+                put(JSONObject().put("observation_count", count).put("checked_at", "2026-10-29T${(12-index).toString().padStart(2, '0')}:00:00Z"))
+            }
+        })
+        .put("budget", JSONObject().put("estimated_and_reserved_rub", "12.50").put("daily_cap_rub", "80")
+            .put("monthly_estimated_and_reserved_rub", "240.50").put("monthly_cap_rub", "2500")
+            .put("budget_configuration_valid", true).put("paid_calls_paused", false))
+    return JSONObject().put("sections", JSONObject().put("ai", JSONObject().put("data", ai)))
+}
+
+@PreviewTest
+@Preview(name = "owner56-cooldown", widthDp = 390, heightDp = 1150, locale = "ru")
+@Preview(name = "owner56-cooldown-large-text", widthDp = 320, heightDp = 1600, fontScale = 1.5f, locale = "ru")
+@Composable
+fun OwnerCooldown56() {
+    CompositionLocalProvider(LocalOwnerAccessPreviewCooldownSeconds provides 125) {
+        HostAppearance("login", "setup")
+    }
+}
+
+
+
+@PreviewTest
+@Preview(name = "terminal57-phone", widthDp = 390, heightDp = 844, locale = "ru")
+@Preview(name = "terminal57-full", widthDp = 390, heightDp = 2600, locale = "ru")
+@Preview(name = "terminal57-large-text", widthDp = 320, heightDp = 3600, fontScale = 1.5f, locale = "ru")
+@Composable
+fun Terminal57() = Terminal57Fixture()
+
+@PreviewTest
+@Preview(name = "terminal57-empty", widthDp = 390, heightDp = 844, locale = "ru")
+@Composable
+fun TerminalEmpty57() = Terminal57Fixture(empty = true)
+
+@PreviewTest
+@Preview(name = "terminal57-private", widthDp = 390, heightDp = 2000, locale = "ru")
+@Composable
+fun TerminalPrivacy57() = Terminal57Fixture(hidden = true)
+
+/** Synthetic values are confined to screenshotTest; the APK has no demonstration feed. */
+@Composable
+private fun Terminal57Fixture(empty: Boolean = false, hidden: Boolean = false) {
+    check(LocalInspectionMode.current)
+    fun money(n: Long) = ru.omnicio.app.data.portfolio.MoneyAmount(ru.omnicio.app.data.portfolio.ApiDecimal(n, 0), "RUB")
+    val positions = listOf(
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-a", "Тестовая компания А", "TEST-A", null, money(68400), ru.omnicio.app.data.portfolio.ApiDecimal(12, 0), instrumentType = "share"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-b", "Тестовый выпуск облигаций", "TEST-B", null, money(45600), ru.omnicio.app.data.portfolio.ApiDecimal(-2, 0), instrumentType = "bond"),
+        ru.omnicio.app.data.portfolio.PortfolioPosition("layout-c", "Рублёвый остаток", "RUB", null, money(6000), null, instrumentType = "cash"))
+    val allocation = listOf("Акции" to 57L, "Облигации" to 38L, "Деньги" to 5L).map { (name, value) ->
+        ru.omnicio.app.data.portfolio.PortfolioAllocation(name, ru.omnicio.app.data.portfolio.ApiDecimal(value, 0)) }
+    val account = ru.omnicio.app.data.portfolio.PortfolioAccount("layout", "Тестовый счёт", money(120000),
+        ru.omnicio.app.data.portfolio.ApiDecimal(8, 0), positions, money(456), allocations = allocation)
+    val snapshot = ru.omnicio.app.data.portfolio.PortfolioSnapshot(money(120000), money(8420),
+        ru.omnicio.app.data.portfolio.ApiDecimal(8, 0), listOf(account), allocation, "2026-10-30T07:20:00Z")
+    val analytics = JSONObject().put("currency", "RUB").put("complete", true).put("history", JSONArray().apply {
+        for (i in 0..29) put(JSONObject().put("date", java.time.LocalDate.of(2026, 10, 1).plusDays(i.toLong()).toString()+"T12:00:00Z")
+            .put("value", (100000 + i * 700 + (kotlin.math.sin(i.toDouble()) * 1200).toInt()).toString()))
+    })
+    val payouts = JSONObject().put("complete", true).put("items", JSONArray().apply {
+        listOf(400, 1200, 800, 1800, 1400, 2200).forEachIndexed { i, n -> put(JSONObject()
+            .put("date", java.time.LocalDate.of(2026, 11, 15).plusMonths(i.toLong()).toString())
+            .put("estimate", JSONObject().put("currency", "RUB").put("value", JSONObject().put("units", n.toString()).put("nano", 0)))) }
+    })
+    val sources = JSONObject().put("documents", 563).put("sources", JSONArray().apply {
+        repeat(4) { put(JSONObject().put("state", if (it == 0) "partial" else "ready").put("stale", false)) }
+    })
+    val status = JSONObject().put("schema_version", 1).put("state", "current").put("blockers", JSONArray())
+    val ai = JSONObject().put("budget", JSONObject().put("estimated_and_reserved_rub", "4.12").put("daily_cap_rub", "95"))
+    CompositionLocalProvider(LocalWorkspaceSession provides WorkspaceSession("", "synthetic-terminal-only"),
+        LocalWorkspaceTransport provides forbiddenTransport,
+        LocalWorkspacePreferences provides WorkspacePreferenceController(WorkspacePreferences(motion = MotionLevel.OFF, hideHomeBalance = hidden))) {
+        AnalystTheme { Surface(color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize()) {
+                Text("ПРЕДПРОСМОТР · СИНТЕТИЧЕСКИЕ ДАННЫЕ", Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall)
+                ru.omnicio.app.ui.portfolio.TerminalDashboardContent(if (empty) null else snapshot,
+                    if (empty) emptyList() else listOf(ru.omnicio.app.ui.portfolio.AccountData(analytics, null, false)),
+                    if (empty) emptyList() else listOf(ru.omnicio.app.ui.portfolio.AccountData(payouts, null, false)),
+                    5, {}, "Все счета", {}, false, null, empty,
+                    WorkspaceResource(if (empty) null else sources, false, null) {},
+                    WorkspaceResource(if (empty) null else status, false, null) {}, if (empty) null else ai, {}, {}, {})
+            }
+        } }
     }
 }

@@ -17,7 +17,8 @@ except ImportError:
     from volume_contract import decimal, text_number, financial_context
     from strategy_construction import profile_construction, permitted_classes, allocation_policy
 
-PROFILE_IDS = ("capital", "coupon", "balanced", "growth", "equity")
+PROFILE_IDS = ("capital", "balanced", "growth")
+LEGACY_PROFILE_IDS = ("coupon", "equity")
 
 
 class StrategyTuning(BaseModel):
@@ -28,11 +29,9 @@ class StrategyTuning(BaseModel):
 
 # Rating levels follow the existing within-agency scale, not issuer name matching.
 PROFILES = (
-    ("capital", "Бережный старт", "Резерв и качественные облигации. Фонды — при достаточном сроке.", "preservation", "conservative", 24, 100, 20, 5, 10, 20, 30, 3, 10, "0.3", 30),
-    ("coupon", "Регулярный доход", "Облигации и фонды для поступлений. Выплаты зависят от эмитентов.", "income", "conservative", 36, 100, 10, 5, 10, 20, 30, 5, 15, "0.4", 30),
-    ("balanced", "Сбалансированный портфель", "Облигации, акции и фонды с общим бюджетом риска.", "income", "moderate", 60, 60, 10, 5, 10, 20, 30, 5, 20, "0.5", 30),
-    ("growth", "Долгосрочный рост", "Долгий срок, фонды, акции и реинвестирование с ограничением риска.", "growth", "aggressive", 84, 30, 10, 5, 10, 20, 30, 5, 20, "0.5", 45),
-    ("equity", "Долевое участие", "Акции и фонды акций. Повышенные колебания, длинный горизонт.", "growth", "aggressive", 84, 0, 15, 5, 10, 20, 25, 5, 20, "0.5", 45),
+    ("capital", "Сохранение и доход", "Резерв и качественные облигации. Купоны и погашения по календарю.", "preservation", "conservative", 24, 100, 25, 5, 10, 20, 30, 3, 10, "0.3", 30),
+    ("balanced", "Сбалансированный портфель", "Облигации и акции с общим ограничением риска и реинвестированием.", "income", "moderate", 60, 60, 15, 5, 10, 20, 30, 5, 20, "0.5", 30),
+    ("growth", "Долгосрочный рост", "Акции и облигации на долгий срок. Рост капитала без частых перестановок.", "growth", "aggressive", 84, 30, 15, 5, 10, 20, 30, 5, 20, "0.5", 45),
 )
 
 
@@ -40,7 +39,7 @@ def _account_reserve(previous: dict, snapshot: dict | None, reserve_pct: int):
     accounts = (snapshot or {}).get("accounts", [])
     account_ids = {str(item.get("id")) for item in accounts if item.get("id")}
     account = (previous.get("mandate") or {}).get("account_id")
-    if account not in account_ids:
+    if not account:
         account = next(iter(account_ids)) if len(account_ids) == 1 else None
     selected = next((row for row in accounts if row.get("id") == account), None)
     total = decimal((selected or {}).get("value"))
@@ -78,8 +77,8 @@ def _asset_mode(bonds):
 def _suggested_profile(current):
     mode = (current.get("mandate") or {}).get("asset_mode")
     if mode == "bonds":
-        return "coupon" if current.get("goal") == "income" else "capital"
-    return {"shares": "equity", "mixed": "balanced"}.get(mode, "capital")
+        return "capital"
+    return {"shares": "growth", "mixed": "balanced"}.get(mode, "capital")
 
 
 def _batch_size(available):
@@ -105,6 +104,8 @@ def _template(row, active: dict | None, snapshot: dict | None) -> dict:
     missing = []
     if not account:
         missing.append("account_required")
+    elif not any(row.get("id") == account for row in (snapshot or {}).get("accounts", [])):
+        missing.append("account_not_in_snapshot")
     # Zero does not invent willingness to accept a loss and blocks new risk.
     capacity = prior_mandate.get("loss_capacity_percent", "0")
     if decimal(capacity) is None or decimal(capacity) <= 0:
@@ -115,15 +116,18 @@ def _template(row, active: dict | None, snapshot: dict | None) -> dict:
         "asset_mode": mode, "base_currency": "RUB", "account_id": account or "",
         "loss_capacity_percent": capacity,
         "bond_target_percent": str(bonds), "share_target_percent": str(100 - bonds),
-        "minimum_rating_level": min(rating, prior_mandate.get("minimum_rating_level", rating)),
+        "minimum_rating_level": min(8, rating, prior_mandate.get("minimum_rating_level", rating)),
         "max_discretionary_turnover_percent": _smaller_decimal(prior_mandate, "max_discretionary_turnover_percent", turnover),
         "turnover_window_days": prior_mandate.get("turnover_window_days", 30),
         "max_trade_cost_percent": _smaller_decimal(prior_mandate, "max_trade_cost_percent", cost),
         "rebalance_cooldown_days": max(cooldown, prior_mandate.get("rebalance_cooldown_days", 0)),
-        "reinvest_coupons": True, "reinvest_dividends": True, "allowed_sessions": ["main"],
+        "reinvest_coupons": prior_mandate.get("reinvest_coupons", True),
+        "reinvest_dividends": prior_mandate.get("reinvest_dividends", True), "allowed_sessions": ["main"],
     }
     config["mandate"] = mandate
     config["construction"] = profile_construction(identifier, previous)
+    if not config["construction"]["enabled_classes"]:
+        missing.append("enabled_asset_class_required")
     return {"id": identifier, "title": title, "description": description, "config": config,
             "allocation": allocation_policy(config), "missing": missing, "ready_for_preview": not missing, "reserve_percent": reserve_pct}
 
@@ -135,7 +139,7 @@ def catalogue(active: dict | None, snapshot: dict | None) -> dict:
     current = (active or {}).get("config", {})
     mode = current.get("mandate", {}).get("asset_mode")
     suggested = _suggested_profile(current)
-    return {"revision": 2, "items": rows, "suggested_id": suggested,
+    return {"revision": 3, "items": rows, "suggested_id": suggested,
             "suggestion_basis": "existing_asset_mode_and_goal" if mode else "conservative_draft_not_personal_suitability",
             "tuning": research_tuning(current, snapshot),
             "requires_strategy_confirmation": True, "paid_calls_on_read": 0}
@@ -166,4 +170,5 @@ def research_tuning(config: dict, snapshot: dict | None) -> dict:
             "limits_widened": False, "paid_model_required": False,
             "description": "Объём проверки зависит от доступных денег; лимиты риска и резерв сохраняются.",
             "automatic_trading": False}
+
 

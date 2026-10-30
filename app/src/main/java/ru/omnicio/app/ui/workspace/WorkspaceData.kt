@@ -34,10 +34,14 @@ data class EvidenceTarget(val section: String, val id: String, val date: String?
 val LocalEvidenceNavigator = staticCompositionLocalOf<(EvidenceTarget) -> Unit> { {} }
 val LocalOpenAnalysisReport = staticCompositionLocalOf<(String?) -> Unit> { {} }
 data class ChatContext(val mode: String = "portfolio", val instrumentUid: String? = null, val title: String = "Мой портфель",
-    val accountId: String? = null, val start: String? = null, val end: String? = null, val eventId: String? = null) {
+    val accountId: String? = null, val start: String? = null, val end: String? = null, val eventId: String? = null,
+    val explanationKind: String? = null, val explanationId: String? = null) {
     fun json(): JSONObject = JSONObject().put("mode", mode).put("instrument_uid", instrumentUid ?: JSONObject.NULL)
         .put("account_id", accountId ?: JSONObject.NULL).put("start", start ?: JSONObject.NULL).put("end", end ?: JSONObject.NULL)
-        .put("event_id", eventId ?: JSONObject.NULL)
+        .put("event_id", eventId ?: JSONObject.NULL).apply {
+            if (explanationKind != null && explanationId != null)
+                put("explanation", JSONObject().put("kind", explanationKind).put("id", explanationId))
+        }
 }
 val LocalChatContext = staticCompositionLocalOf { ChatContext() }
 val LocalAskAnalyst = staticCompositionLocalOf<(ChatContext) -> Unit> { {} }
@@ -278,4 +282,5 @@ private suspend fun discardRejectedCheckpoint(checkpoints: JobCheckpointStore, u
         reply.ambiguous || reply.status !in 400..499 || reply.code == "request_id_payload_conflict") return false
     return withContext(Dispatchers.IO) { checkpoints.removeRequest(userId, requestId) }
 }
+
 

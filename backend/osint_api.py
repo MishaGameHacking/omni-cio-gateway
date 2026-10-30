@@ -1,7 +1,7 @@
 """Authenticated OSINT controls; reads never start collection or paid analysis."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 
 try:
@@ -36,9 +36,10 @@ def documents(response: Response, limit: int = Query(25, ge=1, le=50),
               before_id: int | None = Query(None, ge=1),
               source_id: str | None = Query(None, max_length=64),
               q: str | None = Query(None, max_length=160),
+              kind: Literal["news", "report"] | None = None,
               _user: Any = Depends(backend.current_user)):
     private(response)
-    return osint_read.documents(backend.connect, limit=limit, before_id=before_id, source_id=source_id, query=q)
+    return osint_read.documents(backend.connect, limit=limit, before_id=before_id, source_id=source_id, query=q, kind=kind)
 
 
 @router.get("/documents/{identifier}", responses=HTTP_ERRORS)
@@ -63,3 +64,4 @@ def refresh(payload: RequestId, tasks: BackgroundTasks, response: Response,
     job = enqueue_cycle(user, payload.request_id)
     tasks.add_task(run_job, job["job_id"])
     return job
+

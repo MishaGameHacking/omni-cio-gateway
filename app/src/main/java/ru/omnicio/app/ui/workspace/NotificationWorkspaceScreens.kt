@@ -30,7 +30,9 @@ private const val NOTIFICATION_PREFERENCES_PATH = "/workspace/notifications/pref
 fun NotificationDeliveryRuntime() {
     val resource = rememberWorkspaceResource(NOTIFICATION_PREFERENCES_PATH)
     val context = LocalContext.current
-    LaunchedEffect(resource.data) {
+    val foreground = workspaceForeground()
+    LaunchedEffect(resource.data, foreground) {
+        if (!foreground) return@LaunchedEffect
         val enabled = resource.data?.optJSONObject("preferences")?.optBoolean("enabled") ?: return@LaunchedEffect
         if (enabled) WorkspaceNotificationService.schedule(context) else WorkspaceNotificationService.cancel(context)
     }
@@ -56,7 +58,10 @@ fun NotificationSettingsScreen(onBack: () -> Unit) {
         delivery = granted && WorkspaceNotificationService.schedule(context)
     }
     val foreground = workspaceForeground()
-    LaunchedEffect(foreground) { if (foreground) delivery = WorkspaceNotificationService.canNotify(context) }
+    LaunchedEffect(foreground, config?.optBoolean("enabled")) {
+        if (foreground) delivery = if (config?.optBoolean("enabled") == true) WorkspaceNotificationService.schedule(context)
+            else WorkspaceNotificationService.canNotify(context)
+    }
     LaunchedEffect(record?.phase, record?.revision) {
         if (record?.phase == AutoSavePhase.Saved) {
             if (JSONObject(record.draft).optBoolean("enabled")) delivery = WorkspaceNotificationService.schedule(context)
@@ -186,6 +191,7 @@ fun NotificationEventOverlay(id: String, onClose: () -> Unit) {
             Text(event.text("body", ""))
             Text(localMoment(event.text("created_at", "")), style = MaterialTheme.typography.bodySmall)
             Text(notificationState(event.text("state")))
+            ExplainWithAiButton("notification", id, notificationTitle(event), beforeOpen = onClose)
             if (event.text("state") != "read") SpectrumPrimaryButton("Отметить прочитанным", {
                 read.perform("/workspace/notifications/" + VolumeWorkspaceClient.encode(id) + "/ack", JSONObject().put("state", "read").put("claim_id", JSONObject.NULL))
             }, Modifier.fillMaxWidth(), !read.busy)
@@ -241,3 +247,4 @@ private fun NotificationImpact(event: JSONObject) {
         Text("Доля " + visual.text("share_percent") + "% · лимит " + visual.text("limit_percent", "—") + "%", style = MaterialTheme.typography.bodySmall)
     }
 }
+

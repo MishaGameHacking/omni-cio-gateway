@@ -41,6 +41,11 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
     LaunchedEffect(foreground) {
         if (foreground) while (isActive) { delay(20_000); refreshStatus() }
     }
+    val ai = LocalWorkspaceSnapshot.current?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data")
+    var observedNow by remember { mutableStateOf(java.time.Instant.now()) }
+    LaunchedEffect(foreground) {
+        if (foreground) while (isActive) { observedNow = java.time.Instant.now(); delay(30_000) }
+    }
     val navigate = LocalWorkspaceNavigator.current
     val disconnected = status?.has("broker_connected") == true && !status.optBoolean("broker_connected")
     val mode = status?.text("state", "") ?: ""
@@ -55,7 +60,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
             bottomBar = { AnalystBottomBar(AnalystTab.Home, onOpenPortfolio, onOpenProfile) }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
                 .semantics { testTagsAsResourceId = true }.testTag("workspace-content"),
-                contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item(key = "system-header") {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -63,7 +68,7 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text("Analyst AI", style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary)
-                            Text("Главная", style = MaterialTheme.typography.headlineLarge,
+                            Text("Система", style = MaterialTheme.typography.headlineLarge,
                                 modifier = Modifier.semantics { heading() })
                             LiveSyncLabel()
                         }
@@ -73,6 +78,9 @@ fun HomeScreen(user: AnalystUser, state: PortfolioUiState, selectedCurrency: Por
                 item(key = "portfolio-overview") {
                     HomePortfolioHero(state, selectedCurrency, refreshing, refreshError,
                         onOpenPortfolio, onConnect)
+                }
+                item(key = "system-telemetry") {
+                    SystemTelemetryCard(ai, observedNow) { navigate(WorkspaceRoute.AnalysisTimeline) }
                 }
                 item(key = "portfolio-actions") {
                     HomePortfolioActions(onOpenRisk, { navigate(WorkspaceRoute.Strategies) },
@@ -191,3 +199,4 @@ internal fun HoldToRevealBalance(amount: MoneyAmount, hidden: Boolean, onCurrenc
                 onPress = { try { tryAwaitRelease() } finally { revealed = false } })
         })
 }
+

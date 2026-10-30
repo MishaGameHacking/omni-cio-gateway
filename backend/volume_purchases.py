@@ -72,21 +72,30 @@ def quoted_principal_matches(meta: dict, points: dict, quote: dict, lots: int) -
     return abs(expected - initial) <= decimal("0.01")
 
 
-def reviewed_credit(uid: str, kind: str, now: datetime) -> tuple[dict, dict]:
+def reviewed_credit(uid: str, kind: str, now: datetime, meta: dict | None = None) -> tuple[dict, dict]:
     try:
-        return _reviewed_credit(uid, kind, now)
+        return _reviewed_credit(uid, kind, now, meta)
     except (ValueError, TypeError, KeyError):
         raise HTTPException(503, "purchase_credit_evidence_unavailable") from None
 
 
-def _reviewed_credit(uid: str, kind: str, now: datetime) -> tuple[dict, dict]:
+def _reviewed_credit(uid: str, kind: str, now: datetime, meta: dict | None = None) -> tuple[dict, dict]:
     identity = research_store.latest_verified(backend.connect, "issuer_identity", uid, now) or {}
     issuer = identity.get("issuer_id")
     records = research_store.records(backend.connect, "rating", uid, at=now)
     if issuer:
         records += research_store.records(backend.connect, "rating", issuer, at=now)
     ratings = [Rating(**{**row, "source": Source(**row["source"])}) for row in records]
-    return identity, credit_assessment(ratings, issuer_id=issuer, instrument_id=uid, at=now, bond=kind == "bond")
+    try:
+        from .credit_evidence import broker_bond_ratings
+    except ImportError:
+        from credit_evidence import broker_bond_ratings
+    broker_rows, warnings = broker_bond_ratings(meta, instrument_id=uid,
+        observed_at=meta.get("_ratings_observed_at"), at=now) if kind == "bond" and meta is not None else ([], [])
+    assessment = credit_assessment(ratings + broker_rows, issuer_id=issuer, instrument_id=uid, at=now, bond=kind == "bond")
+    assessment["warnings"] = sorted(set(assessment["warnings"] + warnings))
+    assessment["within_rating_floor"] = assessment["within_rating_floor"] and not warnings
+    return identity, assessment
 
 
 def _fund_terms(reader, meta):
@@ -115,6 +124,7 @@ def _broker_observations(user, payload, price):
             raise HTTPException(502, "instrument_identity_mismatch")
         meta = {**full, "instrumentType": kind}
         if kind == "bond":
+            meta["_ratings_observed_at"] = datetime.now(timezone.utc).isoformat()
             # Proto3 omits default false booleans; this is safe only after the
             # typed BondBy response, not a generic Instrument response.
             for flag in ("subordinatedFlag", "perpetualFlag"):
@@ -233,7 +243,7 @@ def _check_purchase(payload: PurchaseCheck, user: Any, *, archive: bool = True) 
     started = datetime.now(timezone.utc)
     meta, info, limits, quote, trading, book = _broker_observations(user, payload, price)
     now = datetime.now(timezone.utc)
-    identity, credit = reviewed_credit(payload.instrument_uid, meta.get("instrumentType"), now)
+    identity, credit = reviewed_credit(payload.instrument_uid, meta.get("instrumentType"), now, meta)
     result = policy.assess_purchase(snapshot=snapshot, config=config, meta=meta, identity=identity,
         credit=credit, info=info, quote=quote, capacity=limits, lots=payload.lots,
         account_id=payload.account_id, observed_at=started.isoformat(), now=now)
@@ -272,4 +282,5 @@ def _check_purchase(payload: PurchaseCheck, user: Any, *, archive: bool = True) 
         # transactional input/expiry checks still run before returning.
         archive_check(user, result, inputs, persist=False)
     return result
+
 

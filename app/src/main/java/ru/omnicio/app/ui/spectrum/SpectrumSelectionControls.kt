@@ -5,6 +5,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -27,21 +28,11 @@ fun SpectrumSwitch(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val palette = LocalSpectrumPalette.current
-    val on = spatialToggleColors(palette, checked = true, enabled = true)
-    val off = spatialToggleColors(palette, checked = false, enabled = true)
-    val disabled = spatialToggleColors(palette, checked = false, enabled = false)
-    Switch(checked = checked, onCheckedChange = onCheckedChange, modifier = modifier, enabled = enabled,
-        colors = SwitchDefaults.colors(
-            checkedThumbColor = on.thumb, checkedTrackColor = on.track,
-            checkedBorderColor = on.outline, checkedIconColor = on.track,
-            uncheckedThumbColor = off.thumb, uncheckedTrackColor = off.track,
-            uncheckedBorderColor = off.outline, uncheckedIconColor = off.track,
-            disabledCheckedThumbColor = disabled.thumb, disabledCheckedTrackColor = disabled.track,
-            disabledCheckedBorderColor = disabled.outline, disabledCheckedIconColor = disabled.track,
-            disabledUncheckedThumbColor = disabled.thumb, disabledUncheckedTrackColor = disabled.track,
-            disabledUncheckedBorderColor = disabled.outline, disabledUncheckedIconColor = disabled.track,
-        ))
+    val interaction = if (onCheckedChange == null) Modifier else
+        Modifier.toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
+    Box(modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).then(interaction), contentAlignment = Alignment.Center) {
+        SpatialToggleVisual(checked, Modifier.size(40.dp, 20.dp).clearAndSetSemantics { }, enabled)
+    }
 }
 
 @Composable
@@ -91,18 +82,18 @@ fun SpectrumSlider(
     onValueChangeFinished: (() -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val focused by interaction.collectIsFocusedAsState()
     val fraction = ((value-valueRange.start)/(valueRange.endInclusive-valueRange.start))
         .takeIf { it.isFinite() }?.coerceIn(0f,1f) ?: 0f
     Slider(value = value, onValueChange = onValueChange, modifier = modifier.heightIn(min = 48.dp),
         enabled = enabled, valueRange = valueRange, steps = steps,
         onValueChangeFinished = onValueChangeFinished, interactionSource = interaction,
         thumb = {
-            SpatialIcon("monogram", Modifier.size(28.dp),
-                tint = LocalSpectrumPalette.current.cyan,
-                state = when { !enabled -> SpatialState.Disabled; pressed -> SpatialState.Pressed; focused -> SpatialState.Selected; else -> SpatialState.Idle })
+            androidx.compose.material3.Surface(Modifier.size(20.dp),
+                color = if (enabled) LocalSpectrumPalette.current.cyan else LocalSpectrumPalette.current.semantic.disabledInk,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp),
+                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.onPrimary)) {}
         },
         track = { SpectrumProgressBar(fraction, Modifier.fillMaxWidth().clearAndSetSemantics { }, enabled = enabled) },
     )
 }
+

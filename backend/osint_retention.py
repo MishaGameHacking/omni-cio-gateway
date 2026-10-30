@@ -40,6 +40,11 @@ def cleanup(connect, now: int, guard=None) -> dict:
             AND NOT EXISTS(SELECT 1 FROM osint_history_v1 h WHERE h.object_sha=o.sha) LIMIT 1000""",
             (now - 30 * DAY,)).fetchall()
         db.executemany("DELETE FROM osint_objects_v1 WHERE sha=?", [(row["sha"],) for row in unused])
+        originals = db.execute("""SELECT sha FROM osint_originals_v1 o WHERE created_at<?
+            AND NOT EXISTS(SELECT 1 FROM osint_publications_v1 p WHERE p.raw_sha=o.sha)
+            AND NOT EXISTS(SELECT 1 FROM osint_history_v1 h WHERE h.raw_sha=o.sha) LIMIT 1000""",
+            (now - 30 * DAY,)).fetchall()
+        db.executemany("DELETE FROM osint_originals_v1 WHERE sha=?", [(row["sha"],) for row in originals])
         db.execute("DELETE FROM osint_rejections_v1 WHERE rowid IN "
                    "(SELECT rowid FROM osint_rejections_v1 WHERE at<? LIMIT 2000)", (now - 30 * DAY,))
         # Completed OSINT job receipts are bounded separately, without touching other job kinds.
@@ -51,4 +56,4 @@ def cleanup(connect, now: int, guard=None) -> dict:
         db.execute("""UPDATE osint_revision_v1 SET last_cleanup=?,publications=publications-?,
             object_bytes=object_bytes-?,revision=revision+? WHERE singleton=1""",
             (now, len(expired), sum(row["bytes"] for row in unused), int(bool(expired))))
-    return {"expired": len(expired), "objects": len(unused), "skipped": False}
+    return {"expired": len(expired), "objects": len(unused), "originals": len(originals), "skipped": False}

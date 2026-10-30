@@ -37,6 +37,7 @@ internal fun InsightDetails(card: InsightCard, now: Instant, readEnabled: Boolea
             Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)
                 .verticalScroll(rememberScrollState()).padding(20.dp)) {
                 InsightCardView(card, now, readEnabled, onRead)
+                ExplainWithAiButton("analysis", card.id, card.title, beforeOpen = close)
             }
         }
         }
@@ -56,3 +57,4 @@ internal fun RiskCoverageCard() {
         }
     }
 }
+

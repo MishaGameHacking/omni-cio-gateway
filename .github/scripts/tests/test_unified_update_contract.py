@@ -41,10 +41,33 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertNotIn('registerActivityLifecycleCallbacks', source)
         self.assertNotIn('UpdateCheckStore', source)
 
-    def test_telegram_return_is_preserved(self):
-        source = self.source('MainActivity.kt')
-        for token in ('captureTelegramCallback', 'AUTH_SCHEME = "analystai"', 'AUTH_HOST = "auth"', 'exchangeTelegramCode(code)', 'sessionStore.save(result.value)'):
-            self.assertIn(token, source)
+    def test_password_entry_keeps_owner_migration_and_locked_offline_access(self):
+        main = self.source('MainActivity.kt')
+        restoration = self.source('data/backend/OwnerSessionRestoration.kt')
+        lifecycle = self.source('ui/auth/OwnerAccessLifecycle.kt')
+        offline = self.source('ui/workspace/OfflineSnapshotAccess.kt')
+        for retired in ('captureTelegramCallback', 'exchangeTelegramCode(', 'TelegramLoginScreen('):
+            self.assertNotIn(retired, main)
+        for entry in ('OwnerAccessScreen(', 'OwnerDeviceUnlock(', 'AuthUiState.Migration'):
+            self.assertIn(entry, main)
+        # A pre-password owner may enroll, but a cached identity never opens
+        # the application; the saved credential must be verified by the server.
+        self.assertIn('backend::fetchMe, backend::ownerAccessStatus, sessionStore::clear', main)
+        self.assertIn('validate(storedToken)', restoration)
+        self.assertLess(restoration.index('validate(storedToken)'), restoration.index('status()'))
+        self.assertIn('!result.value.configured -> OwnerSessionAccess.Migration(storedToken)', restoration)
+        self.assertIn('passwordRequested -> OwnerSessionAccess.Password(validatedAccessToken = storedToken)', restoration)
+        self.assertNotIn('loadCachedUser', restoration)
+        self.assertIn('if (gate.complete(ticket)) current.value = restored', main)
+        # Leaving the foreground invalidates access before asynchronous results
+        # can reopen it, including the update gate's separate frozen reader.
+        stop = lifecycle.split('Lifecycle.Event.ON_STOP ->', 1)[1].split('else -> Unit', 1)[0]
+        self.assertLess(stop.index('gate.background()'), stop.index('currentBackground()'))
+        self.assertIn('rememberOwnerAccessLifecycle { state.value = AuthUiState.Locked }', main)
+        self.assertIn('unlocked = false; open = false; cached = null', offline)
+        self.assertIn('!blocked && lifecycle.foreground', offline)
+        self.assertIn('if (open && permitted && unlocked)', offline)
+        self.assertNotIn('rememberSaveable', offline)
 
 
     def test_spectrum_primary_navigation_and_internal_destinations(self):
@@ -54,7 +77,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
         self.assertIn('analystPrimaryDestinations.mapNotNull { it.tab }', bar)
         self.assertIn('SpectrumGlyphButton',bar)
         self.assertNotIn('AnalystMenuButton(openMenu)',bar)
-        for tab,label,screen in (('Home','Главная','Home'),('Portfolio','Аналитика','Portfolio'),
+        for tab,label,screen in (('Home','Система','Home'),('Portfolio','Аналитика','Portfolio'),
                                  ('Actions','Решения','Recommendations'),('Profile','Настройки','Profile')):
             self.assertIn('AnalystDestination("'+screen+'", "'+label+'"',catalogue)
             self.assertIn('AnalystTab.'+tab+' -> AppScreen.'+screen,main)
@@ -67,26 +90,29 @@ class UnifiedUpdateContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, main)
 
 
-    def test_home_uses_server_saved_automation_state_without_demo_balances(self):
+    def test_dashboard_uses_authenticated_data_and_preserves_the_analysis_boundary(self):
         main = self.source('MainActivity.kt')
-        source = self.source('ui/home/HomeScreen.kt')
-        home = source.split('fun HomeScreen(', 1)[1].split('\nprivate fun automationStateTitle', 1)[0]
-        self.assertIn('HomeScreen(', main)
+        dashboard = self.source('ui/portfolio/TerminalDashboard.kt')
+        host = self.source('ui/terminal/TerminalWorkspace.kt')
+        self.assertIn('TerminalDashboard(portfolioState', main)
+        self.assertIn('TerminalWorkspace(visible = screen != AppScreen.Home', main)
+        self.assertNotIn('AnalystNavigationPanels(', main)
         for token in ('rememberWorkspaceResource("/automation/status")',
-                      'resource.data?.takeIf { it.optInt("schema_version") == 1 }',
-                      'status?.records("blockers")', 'status?.optJSONObject("discovery")',
-                      'discovery?.records("candidates")', 'status?.text("last_observation_at", "")',
-                      'HomeAutomationCard(status, resource.error, resource.busy, resource.refresh',
-                      'val currentError = error',
-                      'execution?.text("mode", "") == "read_only"',
-                      'execution.opt("real_orders_enabled") == false'):
-            self.assertIn(token, home)
-        for forbidden in ('snapshot.totalValue', 'snapshot.allocations', 'InteractiveBalance(',
-                          'HoldToRevealBalance(', 'PortfolioSnapshot(', 'rememberWorkspaceAction(',
-                          '1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
-            self.assertNotIn(forbidden, home)
-        self.assertIn('status == null -> "Получаем состояние"', home)
-        self.assertIn('Новых проверенных решений пока нет.', home)
+                      'rememberWorkspaceResource("/workspace/osint/status")',
+                      'PortfolioUiState.Ready', 'rememberAccountData(session.token',
+                      'LocalWorkspaceSnapshot.current', 'automation.data?.records("blockers")',
+                      'TerminalValuePlot(joinedAnalyticsHistory', 'it.showingPreviousQuery',
+                      'context.copy(title="Динамика портфеля")', 'windowInsetsPadding(WindowInsets.safeDrawing)'):
+            self.assertIn(token, dashboard)
+        for forbidden in ('PortfolioSnapshot(', 'rememberWorkspaceAction(', 'Math.random',
+                          '1 238 532', 'demoBalance', 'fixtureBalance', 'synthetic-layout'):
+            self.assertNotIn(forbidden, dashboard)
+        self.assertIn('LocalRailVisible provides true', host)
+        self.assertIn('guard.request(route,close)', host)
+        self.assertIn('WorkspaceAutoSaveProvider', host)
+        # The actual dashboard labels the server-confirmed execution boundary.
+        self.assertIn('execution?.text("mode", "") == "read_only"', dashboard)
+        self.assertIn('execution.opt("real_orders_enabled") == false', dashboard)
 
     def test_network_clients_send_same_version_and_handle_426(self):
         for file in ('data/backend/AnalystBackendClient.kt', 'data/analysis/AnalysisBackendClient.kt', 'data/portfolio/PortfolioDataClient.kt'):
@@ -137,5 +163,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
 
 

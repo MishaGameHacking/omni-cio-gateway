@@ -57,6 +57,11 @@ def _position_metadata(raw: dict, position: dict) -> dict:
             "asset_uid": "assetUid", "lot": "lot", "exchange": "exchange", "isin": "isin",
             "instrument_currency": "currency"}
     result = {**{name: raw.get(key) or position.get(key) for name, key in keys.items()}, "source": raw.get("_source")}
+    # Preserve the broker's dated evidence, including an explicitly empty list.
+    # Missing evidence must not be confused with a report of no current rating.
+    if "ratings" in raw:
+        result["broker_ratings"] = raw["ratings"]
+        result["broker_ratings_observed_at"] = (raw.get("_source") or {}).get("observed_at")
     if raw.get("_exchange_source"):
         result["exchange_source"] = raw["_exchange_source"]
     currency = result["instrument_currency"]
@@ -709,4 +714,5 @@ def _section_reason(stale, reason, state):
     if reason:
         return reason
     return "source_coverage_incomplete" if state == "partial" else None
+
 

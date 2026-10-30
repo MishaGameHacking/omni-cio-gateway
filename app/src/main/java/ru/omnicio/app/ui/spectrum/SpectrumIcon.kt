@@ -34,15 +34,12 @@ fun SpectrumIcon(
 ) {
     val palette = LocalSpectrumPalette.current
     val state = if (selected) SpatialState.Selected else SpatialState.Idle
-    val accent = when (symbol) {
-        SpectrumSymbol.Risk -> palette.amber
-        SpectrumSymbol.Notifications, SpectrumSymbol.Messages -> palette.violet
-        SpectrumSymbol.Profile, SpectrumSymbol.Analyst -> palette.cyan
-        else -> if (selected) palette.cyan else palette.blue
-    }
+    val accent = if (symbol == SpectrumSymbol.Risk) palette.amber
+        else if (selected) palette.colors.primary else palette.colors.onSurfaceVariant
     Box(modifier) {
         SpatialIcon(symbol.asset, Modifier.fillMaxSize(), tint = accent,
             state = state, motionAllowed = motionAllowed,
             colorMode = if (tile) spatialIconMode(symbol.asset) else SpatialColorMode.Monochrome)
     }
 }
+

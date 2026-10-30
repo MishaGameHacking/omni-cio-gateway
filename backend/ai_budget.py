@@ -8,9 +8,10 @@ from __future__ import annotations
 from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Context, Decimal, InvalidOperation, ROUND_CEILING
+import os
 import sqlite3
 import time
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Mapping
 
 try:
     from .schema_migrations import execute_schema
@@ -21,6 +22,8 @@ Connect = Callable[[], sqlite3.Connection]
 MOSCOW = timezone(timedelta(hours=3))
 SCALE = 1_000_000
 MAX_MONEY = 10**12
+OWNER_DAILY_CAP = 100 * SCALE
+OWNER_MONTHLY_CAP = 3000 * SCALE
 
 
 class BudgetDenied(RuntimeError):
@@ -58,6 +61,33 @@ def token_cost(input_tokens: int, output_tokens: int, input_rate: int, output_ra
 
 def day_key(at: int) -> str:
     return datetime.fromtimestamp(at, MOSCOW).date().isoformat()
+
+
+def configured_limits(environ: Mapping[str, str] | None = None) -> tuple[int, int, int, int]:
+    """Operator settings can lower the owner's ceilings, never raise them.
+
+    Missing daily settings keep paid work disabled. Missing monthly settings
+    still enforce the owner's calendar-month ceiling, including 31-day months.
+    """
+    env = os.environ if environ is None else environ
+    daily = tuple(min(micro_rub(env.get(name, '0')), OWNER_DAILY_CAP)
+                  for name in ('AI_USER_DAILY_RUB', 'AI_PROJECT_DAILY_RUB'))
+    monthly = tuple(min(micro_rub(env.get(name, '3000')), OWNER_MONTHLY_CAP)
+                    for name in ('AI_USER_MONTHLY_RUB', 'AI_PROJECT_MONTHLY_RUB'))
+    return (*daily, *monthly)
+
+
+def _limit_summary(environ: Mapping[str, str] | None) -> dict:
+    try:
+        user, project, user_month, project_month = configured_limits(environ)
+        return {'daily_cap_rub': _rub_text(min(user, project)),
+                'monthly_cap_rub': _rub_text(min(user_month, project_month)),
+                'budget_configuration_valid': True}
+    except BudgetDenied:
+        # A broken configuration must not break a read-only status endpoint or
+        # advertise an enabled budget. Dispatch still rejects the bad settings.
+        return {'daily_cap_rub': '0', 'monthly_cap_rub': '0',
+                'budget_configuration_valid': False}
 
 
 @contextmanager
@@ -130,6 +160,9 @@ class MoneyLedger:
                 user_month_cap: int | None = None, project_month_cap: int | None = None) -> None:
         _validate_reservation(user_id, key, route, model, ceiling, user_cap, project_cap)
         _validate_monthly_caps(user_month_cap, project_month_cap)
+        user_cap, project_cap = min(user_cap, OWNER_DAILY_CAP), min(project_cap, OWNER_DAILY_CAP)
+        user_month_cap = min(user_month_cap if user_month_cap is not None else OWNER_MONTHLY_CAP, OWNER_MONTHLY_CAP)
+        project_month_cap = min(project_month_cap if project_month_cap is not None else OWNER_MONTHLY_CAP, OWNER_MONTHLY_CAP)
         now = int(time.time()) if at is None else at
         day = day_key(now)
         with transaction(self.connect) as db:
@@ -208,7 +241,8 @@ class MoneyLedger:
         with transaction(self.connect) as db:
             db.execute("INSERT INTO ai_route_cooldown VALUES (?,?) ON CONFLICT(route_id) DO UPDATE SET until_at=MAX(until_at,excluded.until_at)", (route, now + 300))
 
-    def user_summary(self, user_id: int, *, at: int | None = None) -> dict:
+    def user_summary(self, user_id: int, *, at: int | None = None,
+                     environ: Mapping[str, str] | None = None) -> dict:
         day = day_key(int(time.time()) if at is None else at)
         with closing(self.connect()) as db:
             spent = self._spent(db, day, user_id)
@@ -217,6 +251,7 @@ class MoneyLedger:
             paused = bool(db.execute("SELECT 1 FROM ai_money_control WHERE name='paused'").fetchone())
         return {'day': day, 'timezone': 'Europe/Moscow', 'estimated_and_reserved_rub': _rub_text(spent),
                 'month': day[:7], 'monthly_estimated_and_reserved_rub': _rub_text(monthly),
+                **_limit_summary(environ),
                 'unresolved_attempts': unresolved, 'paid_calls_paused': paused, 'provider_invoice_reconciled': False}
 
 
@@ -240,3 +275,4 @@ def _rub_text(value: int) -> str:
 
 def _bounded_label(value, limit: int) -> bool:
     return isinstance(value, str) and 0 < len(value) <= limit
+
