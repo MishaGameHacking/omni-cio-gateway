@@ -10,7 +10,7 @@ from recover_guest_research import API_SERVER, Resumption
 CHECK = "test $(id -u) = 0"
 PUBLIC = "ssh-ed25519 unit-test-placeholder"
 GUEST = {"id":9417611, "project_id":2941515, "availability_zone":"ams-1",
-         "status":"on", "is_qemu_agent":True, "cpu":4, "ram":8192, "boot_mode":"default"}
+         "status":"on", "is_qemu_agent":True, "cpu":4, "ram":8192, "boot_mode":"std"}
 
 
 class Transient(Exception):
@@ -69,7 +69,8 @@ class Recovery(unittest.TestCase):
         self.assertEqual(test.normal.call_count,2)
 
     def test_unknown_or_recovery_boot_and_invalid_server_never_mutate(self):
-        for change in ({"boot_mode":None},{"boot_mode":"recovery_disk"},{"status":"off"},
+        for change in ({"boot_mode":None},{"boot_mode":"default"},{"boot_mode":"single"},
+                       {"boot_mode":"cd"},{"boot_mode":"recovery_disk"},{"status":"off"},
                        {"is_qemu_agent":False},{"id":1},{"ram":4096}):
             with self.subTest(change=change):
                 test=Fixture(server={**GUEST,**change})

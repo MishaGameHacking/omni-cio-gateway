@@ -24,7 +24,9 @@ def check_server(document, *, require_on):
         raise RuntimeError("unexpected_server_identity_or_hardware")
     if require_on and (row.get("status") != "on" or row.get("is_qemu_agent") is not True):
         raise RuntimeError("server_not_ready_for_graceful_reboot")
-    if row.get("boot_mode") != "default":
+    # Vds.boot_mode is the *read* enum std/single/cd. "default" belongs
+    # to UpdateServerOSBootModeRequest, which this recovery never sends.
+    if row.get("boot_mode") != "std":
         raise RuntimeError("normal_disk_boot_not_confirmed")
     return row.get("status") == "on"
 
