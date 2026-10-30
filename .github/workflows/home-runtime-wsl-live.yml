@@ -2,7 +2,7 @@ name: Verify the existing laptop Linux using live public data
 on:
   push:
     branches: [codex/timeweb-owner-prepare-2026-10-23]
-    paths: [.github/workflows/home-runtime-wsl-live.yml, tools/home_runtime/wsl_readiness.py]
+    paths: [.github/workflows/home-runtime-wsl-live.yml, tools/home_runtime/wsl_readiness.py, tools/home_runtime/service_wsl_smoke.ps1]
 permissions:
   contents: read
 jobs:
@@ -41,3 +41,22 @@ jobs:
             const output=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_LINUX_(?:NOW|MODEL|MODEL_PENDING)=/.test(s));
             output.forEach(s=>core.info(s.slice(0,1650)));
             if(p.status!==0||!output.some(s=>s.startsWith('HOME_LINUX_NOW='))||!output.some(s=>s.startsWith('HOME_LINUX_MODEL=')))throw Error('Linux application or issuer analysis incomplete');
+      - name: Verify the reviewed host implementation keeps the existing WSL worker alive
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-wsl-host-role-'));
+            try{
+              for(const n of ['service_wsl_smoke.ps1','AnalystAIHomeHost.cs']){
+                const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+n});
+                fs.writeFileSync(path.join(dir,n),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TMP','TEMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
+              const p=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),
+                ['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(dir,'service_wsl_smoke.ps1'),path.join(dir,'AnalystAIHomeHost.cs')],
+                {env,windowsHide:true,encoding:'utf8',timeout:140000});
+              const rows=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_(?:WINDOWS_LINUX_ANCHOR|ANCHOR_ERROR)=/.test(s));
+              rows.forEach(s=>core.info(s.slice(0,550)));
+              if(p.status!==0||!rows.some(s=>s.startsWith('HOME_WINDOWS_LINUX_ANCHOR=')))throw Error('Windows did not verify the WSL lifetime');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
