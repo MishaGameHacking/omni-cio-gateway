@@ -1,0 +1,23 @@
+name: Read exact portfolio engine quality findings
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/decision-engine-findings.yml]
+permissions:
+  contents: read
+  checks: read
+jobs:
+  findings:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref='a5c23615e2cb3dc2ad336fc56aebc89a80268bb3';
+            const checks=await github.paginate(github.rest.checks.listForRef,{...context.repo,ref,per_page:100});
+            const sonar=checks.filter(c=>c.head_sha===ref&&c.name==='SonarCloud Code Analysis'&&c.app?.id===12526&&c.app?.slug==='sonarqubecloud').sort((a,b)=>b.id-a.id)[0];
+            if(!sonar||sonar.status!=='completed') throw new Error('Exact source analysis pending');
+            core.info('SONAR_IDENTITY='+JSON.stringify({head:ref,id:sonar.id,conclusion:sonar.conclusion,annotations:sonar.output.annotations_count}));
+            const notes=await github.paginate(github.rest.checks.listAnnotations,{...context.repo,check_run_id:sonar.id,per_page:100});
+            for(const n of notes) core.info('SONAR_FINDING='+JSON.stringify({path:n.path,line:n.start_line,title:n.title,message:n.message}));
