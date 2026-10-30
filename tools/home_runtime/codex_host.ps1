@@ -47,7 +47,7 @@ if ($ownerProfile) {
         $packageKeys=@(Get-ChildItem -LiteralPath $key -ErrorAction Stop | Where-Object { $_.PSChildName -match '^OpenAI\.(?:Codex|ChatGPT[-.]?Desktop|ChatGPT)_' })
         $r.owner_package_records=@($packageKeys | ForEach-Object { if ($_.PSChildName -match '^(OpenAI\.[A-Za-z.-]+)_([0-9.]+)_') { [ordered]@{product=$Matches[1];version=$Matches[2]} } })
     } catch { $r.owner_package_records='unavailable' }
-    foreach ($entry in @(@('winget-link','AppData\Local\Microsoft\WinGet\Links\codex.exe'),@('npm-shim','AppData\Roaming\npm\codex.cmd'),@('npm-package','AppData\Roaming\npm\node_modules\@openai\codex\package.json'),
+    foreach ($entry in @(@('official-command','AppData\Local\Programs\OpenAI\Codex\bin\codex.exe'),@('official-command-cmd','AppData\Local\Programs\OpenAI\Codex\bin\codex.cmd'),@('winget-link','AppData\Local\Microsoft\WinGet\Links\codex.exe'),@('npm-shim','AppData\Roaming\npm\codex.cmd'),@('npm-package','AppData\Roaming\npm\node_modules\@openai\codex\package.json'),
                           @('windows-alias','AppData\Local\Microsoft\WindowsApps\codex.exe'),@('desktop-exe','AppData\Local\Programs\Codex\Codex.exe'))) {
         $path=Join-Path $ownerProfile.LocalPath $entry[1]
         try {
