@@ -16,6 +16,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -78,6 +79,7 @@ def evaluate(model, cache):
     # Bound runaway native initialization and inference in this disposable test.
     resource.setrlimit(resource.RLIMIT_CPU, (180, 185))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    cache.mkdir(parents=True, exist_ok=True)
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
     results = []
     with litert_lm.Engine(str(model), backend=litert_lm.Backend.CPU(thread_count=1),
@@ -110,7 +112,30 @@ def main():
     if sys.platform != "linux" or os.environ.get("WSL_DISTRO_NAME") != "Ubuntu-24.04":
         raise ValueError("owner_wsl_required")
     if len(sys.argv) > 1 and sys.argv[1] == "--evaluate":
-        evaluate(Path(sys.argv[2]), Path(sys.argv[3]))
+        try:
+            evaluate(Path(sys.argv[2]), Path(sys.argv[3]))
+        except Exception as error:
+            # Frame locations and allowlisted runtime failure categories only;
+            # never publish model text, prompts, environment or raw exception.
+            detail = {"exception_type": type(error).__name__,
+                      "frames": [{"file": Path(frame.filename).name, "line": frame.lineno,
+                                  "function": frame.name}
+                                 for frame in traceback.extract_tb(error.__traceback__)[-8:]]}
+            message = str(error).lower()
+            detail["categories"] = [label for label, phrase in {
+                "shared_library_missing": "cannot open shared object file",
+                "engine_creation_failed": "failed to create litert-lm engine",
+                "file_missing": "no such file or directory",
+                "runtime_version_mismatch": "runtime_version_mismatch",
+                "model_checksum_mismatch": "local_model_checksum_mismatch",
+            }.items() if phrase in message]
+            if isinstance(error, ModuleNotFoundError) and error.name and all(
+                    part.isidentifier() for part in error.name.split(".")):
+                detail["missing_module"] = error.name
+            detail["libraries"] = [name for name in ("libc++.so.1", "libc++abi.so.1", "libatomic.so.1",
+                "libstdc++.so.6", "libgomp.so.1", "libz.so.1") if name in message]
+            print(json.dumps({"failure": detail}), flush=True)
+            raise SystemExit(1) from None
         return
     cache = Path("/home/analyst-ci/.cache/analyst-local-research")
     cache.mkdir(parents=True, exist_ok=True)
@@ -137,6 +162,11 @@ def main():
                     str(model), str(folder / "cache")], capture_output=True, timeout=240)
                 if result.returncode:
                     report.update(reason="local_evaluation_failed", exit_code=result.returncode)
+                    lines = result.stdout.decode("utf-8", errors="replace").splitlines()
+                    if lines:
+                        detail = json.loads(lines[-1])
+                        if isinstance(detail, dict) and set(detail) == {"failure"}:
+                            report["diagnostic"] = detail["failure"]
                 else:
                     report = json.loads(result.stdout.decode().splitlines()[-1])
                     report["status"] = "evaluated"
