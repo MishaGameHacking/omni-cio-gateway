@@ -17,19 +17,27 @@ jobs:
             if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
             const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMPUTERNAME','PATH','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','TEMP','TMP'].includes(k.toUpperCase())));
             const wsl=path.join(process.env.SystemRoot,'System32','wsl.exe');
+            const programs={};
             for(const name of ['wsl_readiness.py','public_check.py']){
               const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+name});
-              const p=cp.spawnSync(wsl,['-d','AnalystAI-Home','-u','analyst-ai','--exec','/opt/analyst-ai/venv/bin/python','-I','-'],
-                {env,input:Buffer.from(data.content,'base64'),encoding:'utf8',windowsHide:true,timeout:140000});
-              const lines=(p.stdout||'').trim().split(/\r?\n/);
-              if(name==='wsl_readiness.py'){
-                const row=lines.find(s=>s.startsWith('HOME_LINUX_NOW='));
-                if(!row||p.status!==0)throw Error('Installed WSL application did not pass its local check');
-                core.info(row.slice(0,1700));
-              }else{
-                const result=JSON.parse(lines.at(-1));
-                if(p.status!==0||result.status!=='verified'||!result.exact_excerpts)throw Error('Local model could not verify the issuer release');
-                core.info('HOME_LINUX_MODEL='+JSON.stringify({source:result.source,period:result.published_period,
-                    quotes:result.exact_excerpts,seconds:result.seconds,orders:result.trade_permission}));
-              }
+              programs[name]=data.content.replace(/\s+/g,'');
             }
+            const run=[
+              'import base64,json,time',
+              "def module(data,name):",
+              "    scope={'__name__':name}; exec(compile(base64.b64decode(data),'wsl-check','exec'),scope); return scope",
+              "module("+JSON.stringify(programs['wsl_readiness.py'])+",'__main__')",
+              "probe=module("+JSON.stringify(programs['public_check.py'])+",'issuer_reader')['main']",
+              'for attempt in range(2):',
+              '    result=probe()',
+              "    if result.get('status')=='verified' and result.get('exact_excerpts',0)>0: break",
+              "    print('HOME_LINUX_MODEL_PENDING='+json.dumps({'attempt':attempt+1,'sources':result.get('sources',[]),'excerpts':result.get('exact_excerpts')}),flush=True)",
+              '    if attempt==0: time.sleep(5)',
+              "print('HOME_LINUX_MODEL='+json.dumps({k:result.get(k) for k in ('status','source','published_period','exact_excerpts','seconds','trade_permission')}),flush=True)",
+              "raise SystemExit(0 if result.get('status')=='verified' and result.get('exact_excerpts',0)>0 else 2)"
+            ].join('\n');
+            const p=cp.spawnSync(wsl,['-d','AnalystAI-Home','-u','analyst-ai','--exec','/opt/analyst-ai/venv/bin/python','-I','-'],
+              {env,input:run,encoding:'utf8',windowsHide:true,timeout:290000});
+            const output=(p.stdout||'').split(/\r?\n/).filter(s=>/^HOME_LINUX_(?:NOW|MODEL|MODEL_PENDING)=/.test(s));
+            output.forEach(s=>core.info(s.slice(0,1650)));
+            if(p.status!==0||!output.some(s=>s.startsWith('HOME_LINUX_NOW='))||!output.some(s=>s.startsWith('HOME_LINUX_MODEL=')))throw Error('Linux application or issuer analysis incomplete');

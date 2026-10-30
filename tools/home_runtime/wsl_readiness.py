@@ -58,13 +58,15 @@ if __name__ == '__main__':
     check(Path('/etc/analyst-home-stage').read_text().strip()=='analyst-home-public-stage-1'
           and not Path('/etc/analyst-protected-home').exists(), 'unexpected distribution')
     check(Path('/proc/1/comm').read_text().strip()=='systemd' and 'microsoft' in os.uname().release.lower(), 'not systemd in WSL')
-    for _ in range(40):
-        if status('/health')==200:
+    model_socket=Path('/run/analyst-local-ai/research.sock')
+    for _ in range(90):
+        if status('/health')==200 and model_socket.is_socket():
             break
         time.sleep(1)
     units=['analyst-ai-owner.service','analyst-local-research.service']
     active={unit:subprocess.run(['systemctl','is-active',unit],capture_output=True,text=True,timeout=8).stdout.strip() for unit in units}
     check(all(state=='active' for state in active.values()), 'Linux service inactive')
+    check(model_socket.is_socket(), 'model is still starting')
     health, me=status('/health'),status('/me')
     check((health,me)==(200,401),'local application boundary')
     today=datetime.now(timezone(timedelta(hours=3))).date()
