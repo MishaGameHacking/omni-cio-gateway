@@ -115,6 +115,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    # An 8 GiB VM reports slightly less usable RAM to Linux. Refuse to load
+    # these weights on the former 4 GiB host even if the unit was copied there.
+    if os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") < 7680 * 1024**2:
+        raise ValueError("local_host_memory_insufficient")
     verify_model(MODEL_FILE)
     import litert_lm
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)

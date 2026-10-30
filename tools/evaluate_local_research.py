@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import resource
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -29,7 +30,8 @@ MODEL_FILE = CACHE_ROOT / (contract.MODEL_SHA256 + ".litertlm")
 ENGINE_CACHE = CACHE_ROOT / ("engine-" + contract.MODEL_SHA256[:16])
 SYNTHETIC_REPORT = "Учебный отчёт"
 MODEL_URL = ("https://huggingface.co/" + contract.MODEL_ID + "/resolve/" +
-             contract.MODEL_REVISION + "/gemma-4-E2B-it.litertlm")
+             contract.MODEL_REVISION + "/gemma-4-E4B-it.litertlm")
+MODEL_BYTES = 3659530240
 
 # These are explicitly synthetic evaluation texts, never app or portfolio data.
 CASES = [
@@ -65,10 +67,10 @@ def download(path):
             size = 0
             while chunk := response.read(1024 * 1024):
                 size += len(chunk)
-                if size > 3_000_000_000:
+                if size > MODEL_BYTES:
                     raise ValueError("model_download_bound")
                 output.write(chunk)
-        if model_sha(partial) != contract.MODEL_SHA256:
+        if size != MODEL_BYTES or model_sha(partial) != contract.MODEL_SHA256:
             raise ValueError("model_checksum_mismatch")
         partial.replace(path)
     finally:
@@ -87,6 +89,7 @@ def evaluate():
     # Bound runaway native initialization and inference in this disposable test.
     resource.setrlimit(resource.RLIMIT_CPU, (180, 185))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    resource.setrlimit(resource.RLIMIT_AS, (12 * 1024**3, 12 * 1024**3))
     ENGINE_CACHE.mkdir(parents=True, exist_ok=True)
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
     results = []
@@ -112,7 +115,8 @@ def evaluate():
               "cpu_threads": 1, "context_tokens": 2048, "peak_rss_mib": round(peak_mib, 2),
               "cases": results, "synthetic_fixtures_only": True,
               "quality_gate_passed": all(item["selection_correct"] for item in results),
-              "resource_gate_passed": peak_mib <= 1800 and max(item["seconds"] for item in results) <= 12,
+              "minimum_host_ram_mib": 8192, "model_budget_mib": 5120,
+              "resource_gate_passed": peak_mib <= 5120 and max(item["seconds"] for item in results) <= 12,
               "production_activated": False, "cloud_inference_called": False}
     print(json.dumps(result), flush=True)
 
@@ -162,6 +166,11 @@ def evaluate_installed(python, report):
 
 def prepare_runtime(report):
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    memory = next((int(row.split()[1]) for row in Path("/proc/meminfo").read_text().splitlines()
+                   if row.startswith("MemAvailable:")), 0)
+    if memory < 7168 * 1024 or shutil.disk_usage(CACHE_ROOT).free < 10 * 1024**3:
+        report["reason"] = "owner_host_capacity_insufficient"
+        return
     download(MODEL_FILE)
     with tempfile.TemporaryDirectory(prefix="analyst-local-eval-") as temporary:
         folder = Path(temporary)

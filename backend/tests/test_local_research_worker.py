@@ -47,6 +47,15 @@ def test_real_token_limit_checked_before_inference(worker):
     engine.create_conversation.assert_not_called()
 
 
+def test_small_host_rejected_before_loading_weights(worker):
+    with mock.patch.object(worker.os, "sysconf", side_effect=lambda name: {
+            "SC_PHYS_PAGES": 1024 * 1024, "SC_PAGE_SIZE": 4096}[name]), \
+            mock.patch.object(worker, "verify_model") as verify:
+        with pytest.raises(ValueError, match="local_host_memory_insufficient"):
+            worker.main()
+    verify.assert_not_called()
+
+
 @pytest.mark.parametrize("content", [["wrong"], [], [{"type": "tool_call"}], [{"type": "text", "text": '{"selected":[999]}'}]])
 def test_invalid_provider_output_rejected(worker, content):
     context = local_research.packet("Report", "Revenue was 100 RUB.")

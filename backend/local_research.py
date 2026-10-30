@@ -13,18 +13,19 @@ import socket
 import threading
 import time
 
-MODEL_ID = "litert-community/gemma-4-E2B-it-litert-lm"
-MODEL_REVISION = "1caa527c1e88b55f046fcd8d2b4265606680663d"
-MODEL_SHA256 = "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+MODEL_ID = "litert-community/gemma-4-E4B-it-litert-lm"
+MODEL_REVISION = "e6a3892a8c22cf87ff99583996149cf3cb32452b"
+MODEL_SHA256 = "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
 SOCKET = "/run/analyst-local-ai/research.sock"
 MAX_PARAGRAPHS = 24
 MAX_INPUT_BYTES = 6000
 MAX_RESPONSE_BYTES = 2048
 MAX_SELECTION = 3
 CACHE_TTL = 3600
-# Measured evaluation failed both quality and the current 4 GiB host budget.
-# An environment flag alone must not enable this rejected candidate.
-MODEL_QUALIFIED = False
+# E4B passed all 12 unchanged selector cases in owner WSL run41085300857.
+# Admission covers this source-selection policy on an >=8 GiB host only.
+# The service still requires separate installation and explicit enablement.
+MODEL_QUALIFIED = True
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}
 
