@@ -16,6 +16,7 @@ import local_research as contract
 MODEL_FILE = Path("/opt/analyst-local-ai/model.litertlm")
 MAX_CONTEXT_TOKENS = 2048
 MAX_OUTPUT_TOKENS = 64
+CPU_THREADS = 2
 
 
 def verify_model(path):
@@ -122,7 +123,7 @@ def main():
     verify_model(MODEL_FILE)
     import litert_lm
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
-    with litert_lm.Engine(str(MODEL_FILE), backend=litert_lm.Backend.CPU(thread_count=1),
+    with litert_lm.Engine(str(MODEL_FILE), backend=litert_lm.Backend.CPU(thread_count=CPU_THREADS),
                           max_num_tokens=MAX_CONTEXT_TOKENS,
                           cache_dir="/var/cache/analyst-local-ai") as engine:
         path = Path(contract.SOCKET)

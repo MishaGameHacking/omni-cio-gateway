@@ -93,7 +93,7 @@ def evaluate():
     ENGINE_CACHE.mkdir(parents=True, exist_ok=True)
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
     results = []
-    with litert_lm.Engine(str(MODEL_FILE), backend=litert_lm.Backend.CPU(thread_count=1),
+    with litert_lm.Engine(str(MODEL_FILE), backend=litert_lm.Backend.CPU(thread_count=worker.CPU_THREADS),
                           max_num_tokens=2048, cache_dir=str(ENGINE_CACHE)) as engine:
         for name, title, text, expected in CASES:
             started = time.monotonic()
@@ -112,7 +112,7 @@ def evaluate():
     result = {"schema": 1, "model": contract.MODEL_ID, "revision": contract.MODEL_REVISION,
               "model_sha256": contract.MODEL_SHA256, "runtime_version": VERSION,
               "selector_sha256": contract.SELECTOR_SHA256,
-              "cpu_threads": 1, "context_tokens": 2048, "peak_rss_mib": round(peak_mib, 2),
+              "cpu_threads": worker.CPU_THREADS, "context_tokens": 2048, "peak_rss_mib": round(peak_mib, 2),
               "cases": results, "synthetic_fixtures_only": True,
               "quality_gate_passed": all(item["selection_correct"] for item in results),
               "minimum_host_ram_mib": 8192, "model_budget_mib": 5120,
