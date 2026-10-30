@@ -153,7 +153,8 @@ def test_first_observation_is_once_and_never_claims_trade_or_model(fixture):
         controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
         controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
     result = controller.decisions(fixture["user"])
-    assert [row["kind"] for row in result["events"]] == ["initial_observation"]
+    assert sorted(row["kind"] for row in result["events"]) == ["initial_observation", "portfolio_decision"]
+    assert result["decision_cycle"]["execution"]["real_orders_enabled"] is False
     assert result["discovery"]["state"] == "blocked"
     assert result["discovery"]["reasons"][0]["code"] == "strategy_required"
     with closing(backend.connect()) as db:
@@ -497,3 +498,139 @@ def test_unary_candidate_invalid_observation_never_reaches_purchase_check(fixtur
     assert result["recommendation_complete"] is False
     assert result["missing_evidence"] == [expected_reason]
     assert result["expires_at"] is None
+
+
+def test_blocked_zero_candidate_cycle_is_persisted_and_notified_once(fixture):
+    snapshot = saved(fixture)
+    user = fixture["user"]
+    controller.observe_and_discover(user, snapshot, datetime.now(timezone.utc))
+    with closing(backend.connect()) as db:
+        receipt = db.execute("SELECT payload_json FROM portfolio_decision_cycles WHERE user_id=?", (user["id"],)).fetchone()
+        assert receipt is not None
+        cycle = json.loads(receipt[0])
+        assert cycle["execution"]["real_orders_enabled"] is False
+        assert cycle["proposed_action"] is None
+        assert "strategy_required" in {row["code"] for row in cycle["blockers"]}
+        assert db.execute("SELECT count(*) FROM workspace_notification_outbox WHERE user_id=?", (user["id"],)).fetchone()[0] == 1
+        discovery = json.loads(db.execute("SELECT result_json FROM automation_discovery WHERE user_id=?", (user["id"],)).fetchone()[0])
+        prepared = controller._prepare_decision(user, discovery, datetime.now(timezone.utc))
+        db.execute("BEGIN IMMEDIATE")
+        controller._persist_decision_in(db, user, prepared, int(time.time()))
+        db.commit()
+        assert db.execute("SELECT count(*) FROM portfolio_decision_cycles WHERE user_id=?", (user["id"],)).fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM workspace_notification_outbox WHERE user_id=?", (user["id"],)).fetchone()[0] == 1
+    result = controller.status(user)
+    assert result["decision_cycle"]["cycle_id"] == cycle["cycle_id"]
+    assert "real_order_execution_disabled" in {row["code"] for row in result["blockers"]}
+
+
+def test_changed_snapshot_keeps_audit_and_coalesces_identical_noop_notification(fixture):
+    user = fixture["user"]
+    snapshot = saved(fixture)
+    controller.observe_and_discover(user, snapshot, datetime.now(timezone.utc))
+    with closing(backend.connect()) as db:
+        discovery = json.loads(db.execute("SELECT result_json FROM automation_discovery WHERE user_id=?", (user["id"],)).fetchone()[0])
+        db.execute("UPDATE workspace_snapshots SET id='new-noop-snapshot' WHERE user_id=?", (user["id"],))
+        db.commit()
+        prepared = controller._prepare_decision(user, discovery, int(time.time()))
+        db.execute("BEGIN IMMEDIATE")
+        controller._persist_decision_in(db, user, prepared, int(time.time()))
+        db.commit()
+        assert db.execute("SELECT count(*) FROM portfolio_decision_cycles WHERE user_id=?", (user["id"],)).fetchone()[0] == 2
+        assert db.execute("SELECT count(*) FROM workspace_notification_outbox WHERE user_id=?", (user["id"],)).fetchone()[0] == 1
+
+
+def test_persisted_cycle_reads_never_write_or_call_broker_and_invalidate_changed_data(fixture):
+    user = fixture["user"]
+    snapshot = saved(fixture)
+    controller.observe_and_discover(user, snapshot, datetime.now(timezone.utc))
+    with closing(backend.connect()) as db:
+        db.execute("UPDATE workspace_snapshots SET id='changed-after-cycle' WHERE user_id=?", (user["id"],))
+        db.commit()
+    original = backend.connect
+    def read_only():
+        db = original()
+        db.execute("PRAGMA query_only=ON")
+        return db
+    fixture["patch"].setattr(backend, "connect", read_only)
+    fixture["patch"].setattr(controller.catalogue, "load_catalogue", lambda *args, **kwargs: pytest.fail("GET fetched catalogue"))
+    for result in (controller.status(user), controller.decisions(user), controller.strategy_plan(user)):
+        cycle = result["decision_cycle"]
+        assert cycle["current"] is False
+        assert cycle["proposed_action"] is None
+        assert "snapshot_changed" in {row["code"] for row in cycle["blockers"]}
+
+
+def test_cycle_evaluation_runs_without_write_lock_and_uses_completion_clock(fixture):
+    snapshot = saved(fixture)
+    original = controller.decision_cycle.evaluate
+    calls = []
+    def checked(*args, **kwargs):
+        # A distinct connection can claim the writer during pure evaluation.
+        with closing(backend.connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.rollback()
+        calls.append(kwargs["now"].timestamp())
+        return original(*args, **kwargs)
+    fixture["patch"].setattr(controller.decision_cycle, "evaluate", checked)
+    before = int(time.time())
+    controller.observe_and_discover(fixture["user"], snapshot, datetime.now(timezone.utc))
+    assert len(calls) == 1
+    assert calls[0] >= before
+
+
+def test_inputs_changed_before_commit_persists_explicit_blocked_receipt(fixture):
+    user = fixture["user"]
+    saved(fixture)
+    discovery = controller._empty_discovery("blocked", ["strategy_required"])
+    prepared = controller._prepare_decision(user, discovery, int(time.time()))
+    with closing(backend.connect()) as db:
+        db.execute("UPDATE workspace_snapshots SET id='race-after-evaluation' WHERE user_id=?", (user["id"],))
+        cycle = controller._persist_decision_in(db, user, prepared, int(time.time()))
+        db.commit()
+    assert cycle["proposed_action"] is None
+    assert "decision_inputs_changed" in {row["code"] for row in cycle["blockers"]}
+    assert cycle["lineage"] == prepared["cycle"]["lineage"]
+
+
+@pytest.mark.parametrize("case,expected", [("breach", 1), ("at_floor", 0), ("stale", 0), ("raced", 0), ("commit_stale", 0)])
+def test_margin_alert_requires_fresh_bound_observation_and_never_trades(fixture, case, expected):
+    user = fixture["user"]
+    snapshot = saved(fixture)
+    snapshot["as_of"] = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    account = snapshot["accounts"][0]["id"]
+    active = active_strategy(fixture)
+    active["config"]["mandate"] = {"account_id": account}
+    snapshot["positions"] = [{"account_id": account, "instrument_uid": "cash:RUB", "instrument_type": "cash",
+        "metadata": {"instrument_currency": "RUB"}, "blocked": False, "blocked_quantity": "0",
+        "value": {"amount": "-4999" if case == "at_floor" else "-5000.001", "currency": "RUB"}}]
+    if case == "stale":
+        snapshot["as_of"] = (datetime.now(timezone.utc) - timedelta(seconds=301)).isoformat()
+    with closing(backend.connect()) as db:
+        db.execute("UPDATE workspace_snapshots SET payload_json=? WHERE user_id=?", (json.dumps(snapshot), user["id"]))
+        db.commit()
+    discovery = controller._empty_discovery("blocked", ["no_candidates_reviewed"])
+    prepared = controller._prepare_decision(user, discovery, int(time.time()))
+    if case == "commit_stale":
+        commit_time = datetime.now(timezone.utc) + timedelta(seconds=301)
+        class CommitClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return commit_time.astimezone(tz)
+        fixture["patch"].setattr(controller, "datetime", CommitClock)
+    with closing(backend.connect()) as db:
+        db.execute("BEGIN IMMEDIATE")
+        if case == "raced":
+            db.execute("UPDATE workspace_snapshots SET id='margin-input-race' WHERE user_id=?", (user["id"],))
+        cycle = controller._persist_decision_in(db, user, prepared, int(time.time()))
+        controller._persist_decision_in(db, user, prepared, int(time.time()))
+        db.commit()
+        alerts = db.execute("SELECT body FROM workspace_notification_outbox WHERE user_id=? AND kind='risk'", (user["id"],)).fetchall()
+    assert len(alerts) == expected
+    assert cycle["execution"]["real_orders_enabled"] is False
+    assert cycle["proposed_action"] is None
+    if expected:
+        assert cycle["margin"]["minimum_observed_shortfall_rub"] == "1.01"
+        assert cycle["margin"]["full_repayment_unknown"] is True
+        assert "1.01" in alerts[0]["body"]
+        assert "Автоматическая продажа не выполнялась" in alerts[0]["body"]
