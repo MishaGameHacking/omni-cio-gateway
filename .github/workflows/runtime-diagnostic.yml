@@ -10,8 +10,8 @@ concurrency:
   group: owner-preview-release-publication
   cancel-in-progress: false
 env:
-  EXPECTED_TOOLS_SHA: 'f3d560fda95b2c6c93264b5d73e3d6eb062910ea'
-  EXPECTED_TOOLS_RUN: '41053830830'
+  EXPECTED_TOOLS_SHA: 'c1aef200de7827876d3f0eacfc4ffb7bca9bb394'
+  EXPECTED_TOOLS_RUN: '41058056458'
 jobs:
   observe:
     runs-on: ubuntu-24.04
@@ -59,4 +59,4 @@ jobs:
           path: plan-reports/
           if-no-files-found: warn
           retention-days: 7
-# Observe baseline after deployment transport returned TimeoutError; do not retry installer blindly.
+# Diagnose the fixed failed rollout archive and bounded local/public API reachability.
