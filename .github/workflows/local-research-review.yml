@@ -25,7 +25,7 @@ jobs:
                   raw = response.read(1024 * 1024 + 1)
               assert len(raw) <= 1024 * 1024
               return json.loads(raw)
-          source = "e71806feeea6d386fde61a123398ef4f20217171"
+          source = "17bcb65d4a2d723de85f2db53db174347f002c47"
           checks = get("commits/" + source + "/check-runs")
           for check in checks["check_runs"]:
               if check["name"] != "SonarCloud Code Analysis":
