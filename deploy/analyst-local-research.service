@@ -1,0 +1,46 @@
+[Unit]
+Description=Analyst AI isolated public document excerpt selection
+After=network.target
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=analyst-local-ai
+Group=analyst-ai
+WorkingDirectory=/opt/analyst-local-ai
+ExecStart=/opt/analyst-local-ai/venv/bin/python /opt/analyst-local-ai/deploy/local_research_worker.py
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=60
+TimeoutStopSec=10
+RuntimeDirectory=analyst-local-ai
+RuntimeDirectoryMode=0750
+CacheDirectory=analyst-local-ai
+CacheDirectoryMode=0750
+UMask=0007
+MemoryHigh=1800M
+MemoryMax=2048M
+MemorySwapMax=0
+CPUQuota=100%
+TasksMax=32
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+InaccessiblePaths=/etc/analyst-ai /var/lib/analyst-ai /opt/analyst-ai
+ReadWritePaths=/run/analyst-local-ai /var/cache/analyst-local-ai
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+LimitCORE=0
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
