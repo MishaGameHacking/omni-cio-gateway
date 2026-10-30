@@ -90,26 +90,29 @@ class UnifiedUpdateContractTests(unittest.TestCase):
             self.assertNotIn(forbidden, main)
 
 
-    def test_home_uses_server_saved_automation_state_without_demo_balances(self):
+    def test_dashboard_uses_authenticated_data_and_preserves_the_analysis_boundary(self):
         main = self.source('MainActivity.kt')
-        source = self.source('ui/home/HomeScreen.kt')
-        home = source.split('fun HomeScreen(', 1)[1].split('\nprivate fun automationStateTitle', 1)[0]
-        self.assertIn('HomeScreen(', main)
+        dashboard = self.source('ui/portfolio/TerminalDashboard.kt')
+        host = self.source('ui/terminal/TerminalWorkspace.kt')
+        self.assertIn('TerminalDashboard(portfolioState', main)
+        self.assertIn('TerminalWorkspace(visible = screen != AppScreen.Home', main)
+        self.assertNotIn('AnalystNavigationPanels(', main)
         for token in ('rememberWorkspaceResource("/automation/status")',
-                      'resource.data?.takeIf { it.optInt("schema_version") == 1 }',
-                      'status?.records("blockers")', 'status?.optJSONObject("discovery")',
-                      'discovery?.records("candidates")', 'status?.text("last_observation_at", "")',
-                      'HomeAutomationCard(status, resource.error, resource.busy, resource.refresh',
-                      'val currentError = error',
-                      'execution?.text("mode", "") == "read_only"',
-                      'execution.opt("real_orders_enabled") == false'):
-            self.assertIn(token, home)
-        for forbidden in ('snapshot.totalValue', 'snapshot.allocations', 'InteractiveBalance(',
-                          'HoldToRevealBalance(', 'PortfolioSnapshot(', 'rememberWorkspaceAction(',
-                          '1 238 532', 'SBER', 'TBru', 'YDEX', 'demoBalance', 'fixtureBalance'):
-            self.assertNotIn(forbidden, home)
-        self.assertIn('status == null -> "Получаем состояние"', home)
-        self.assertIn('Новых проверенных решений пока нет.', home)
+                      'rememberWorkspaceResource("/workspace/osint/status")',
+                      'PortfolioUiState.Ready', 'rememberAccountData(session.token',
+                      'LocalWorkspaceSnapshot.current', 'automation.data?.records("blockers")',
+                      'TerminalValuePlot(joinedAnalyticsHistory', 'it.showingPreviousQuery',
+                      'context.copy(title="Динамика портфеля")', 'windowInsetsPadding(WindowInsets.safeDrawing)'):
+            self.assertIn(token, dashboard)
+        for forbidden in ('PortfolioSnapshot(', 'rememberWorkspaceAction(', 'Math.random',
+                          '1 238 532', 'demoBalance', 'fixtureBalance', 'synthetic-layout'):
+            self.assertNotIn(forbidden, dashboard)
+        self.assertIn('LocalRailVisible provides true', host)
+        self.assertIn('guard.request(route,close)', host)
+        self.assertIn('WorkspaceAutoSaveProvider', host)
+        # The actual dashboard labels the server-confirmed execution boundary.
+        self.assertIn('execution?.text("mode", "") == "read_only"', dashboard)
+        self.assertIn('execution.opt("real_orders_enabled") == false', dashboard)
 
     def test_network_clients_send_same_version_and_handle_426(self):
         for file in ('data/backend/AnalystBackendClient.kt', 'data/analysis/AnalysisBackendClient.kt', 'data/portfolio/PortfolioDataClient.kt'):
@@ -160,6 +163,7 @@ class UnifiedUpdateContractTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 
 

@@ -54,6 +54,7 @@ internal fun TerminalDashboard(state: PortfolioUiState, currency: PortfolioCurre
     } }
     val corpus=rememberWorkspaceResource("/workspace/osint/status")
     val automation=rememberWorkspaceResource("/automation/status")
+    val confirmedAutomation=automation.copy(data=automation.data?.takeIf { it.optInt("schema_version")==1 })
     val foreground=workspaceForeground()
     val reload by rememberUpdatedState({ corpus.refresh(); automation.refresh() })
     LaunchedEffect(foreground) { if(foreground) while(isActive) { delay(30_000); reload() } }
@@ -63,7 +64,7 @@ internal fun TerminalDashboard(state: PortfolioUiState, currency: PortfolioCurre
     } }
     TerminalDashboardContent(selected,requests,payments,period,{ period=it },accountId?.let { accounts.singleOrNull()?.name } ?: "Все счета",
         { picker=true },refreshing,error ?: (state as? PortfolioUiState.Error)?.message,
-        state==PortfolioUiState.NotConnected,corpus,automation,
+        state==PortfolioUiState.NotConnected,corpus,confirmedAutomation,
         LocalWorkspaceSnapshot.current?.optJSONObject("sections")?.optJSONObject("ai")?.optJSONObject("data"),
         { refresh(); corpus.refresh(); automation.refresh() },settings,connect,
         ChatContext(accountId=accountId,start=selectedPeriod.start,end=selectedPeriod.end))
@@ -275,11 +276,16 @@ private fun TerminalSystem(corpus: WorkspaceResource, automation: WorkspaceResou
         }
         val blockers=automation.data?.records("blockers").orEmpty()
         val status=when(automation.data?.text("state","")) {
-            "running" -> "Анализ выполняется"; "paused" -> "Анализ приостановлен"; "ready" -> "Готов к проверке"
-            "blocked" -> "Требуется внимание"; else -> "Состояние уточняется"
+            "collecting" -> "Идёт сбор данных"; "paused" -> "Анализ приостановлен"
+            "not_connected" -> "Нужен доступ к счёту"; "disabled" -> "Фоновая работа выключена"
+            "waiting" -> "Ожидаем следующую проверку"; "attention" -> "Требуется внимание"
+            "current" -> "Последний результат сохранён"; else -> "Состояние уточняется"
         }
         Text(status,color=if(blockers.isEmpty()) TerminalCyan else TerminalAmber,style=MaterialTheme.typography.titleSmall)
         blockers.firstOrNull()?.let { Text(it.text("message"),style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant) }
+        val execution=automation.data?.optJSONObject("execution")
+        if(execution?.text("mode", "") == "read_only" && execution.opt("real_orders_enabled") == false)
+            TerminalLabel("АНАЛИЗ · РЕАЛЬНЫЕ СДЕЛКИ ВЫКЛЮЧЕНЫ")
         if(corpus.error!=null || automation.error!=null) Text("Не все состояния обновились",style=MaterialTheme.typography.bodySmall,color=TerminalAmber)
         ai?.optJSONObject("budget")?.let { budget ->
             val spent=budget.text("estimated_and_reserved_rub","").toBigDecimalOrNull()

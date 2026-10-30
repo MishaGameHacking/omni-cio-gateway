@@ -156,15 +156,15 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
                                                  resolved_color("@color/analyst_on_primary", night)), 4.5)
         self.assertNotEqual(resolved_color("@color/analyst_background", False), resolved_color("@color/analyst_background", True))
 
-    def test_owner56_candidate_preserves_preview_identity_and_advances_published55(self):
+    def test_owner57_candidate_preserves_preview_identity_and_advances_published56(self):
         gradle = (ROOT / "app/build.gradle.kts").read_text(encoding="utf-8")
         version = re.search(r"versionCode\s*=\s*(\d+)", gradle)
         self.assertIsNotNone(version)
-        self.assertEqual(int(version.group(1)), 56)
-        self.assertGreater(int(version.group(1)), 55)
+        self.assertEqual(int(version.group(1)), 57)
+        self.assertGreater(int(version.group(1)), 56)
         for sdk in ("compileSdk = 37", "minSdk = 37", "targetSdk = 37"):
             self.assertIn(sdk, gradle)
-        self.assertIn('versionName = "0.20.0"', gradle)
+        self.assertIn('versionName = "0.21.0"', gradle)
         self.assertNotIn('versionName = "0.7.6"', gradle)
         self.assertIn('applicationId = "ru.omnicio.app"', gradle)
         self.assertIn('applicationIdSuffix = ".debug"', gradle)
@@ -188,6 +188,7 @@ class SpectrumBrandIdentityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
 
 
 

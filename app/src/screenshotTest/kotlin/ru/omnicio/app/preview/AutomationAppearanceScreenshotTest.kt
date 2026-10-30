@@ -469,7 +469,7 @@ private fun Terminal57Fixture(empty: Boolean = false, hidden: Boolean = false) {
     val sources = JSONObject().put("documents", 563).put("sources", JSONArray().apply {
         repeat(4) { put(JSONObject().put("state", if (it == 0) "partial" else "ready").put("stale", false)) }
     })
-    val status = JSONObject().put("state", "ready").put("blockers", JSONArray())
+    val status = JSONObject().put("schema_version", 1).put("state", "current").put("blockers", JSONArray())
     val ai = JSONObject().put("budget", JSONObject().put("estimated_and_reserved_rub", "4.12").put("daily_cap_rub", "95"))
     CompositionLocalProvider(LocalWorkspaceSession provides WorkspaceSession("", "synthetic-terminal-only"),
         LocalWorkspaceTransport provides forbiddenTransport,

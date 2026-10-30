@@ -83,7 +83,7 @@ class SpectrumProductionTokens(unittest.TestCase):
         surface = (UI / 'spatial/SpatialComponents.kt').read_text(encoding='utf-8')
         self.assertIn('spatialSurfaceColors(palette, color, state', surface)
         self.assertIn('LocalContentColor provides resolved.foreground', surface)
-        self.assertIn('.clip(shape).background(gradient).border(borderWidth, border, shape)', surface)
+        self.assertIn('.clip(shape).background(fill).border(1.dp, border, shape)', surface)
 
     def assert_palette_contrast(self, c, s):
         for family in ('Primary', 'Secondary', 'Tertiary', 'Error'):
@@ -168,6 +168,7 @@ class SpectrumProductionTokens(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
 
 
 
