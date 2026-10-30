@@ -49,6 +49,17 @@ try {
     if ($registered.State -eq 3 -and $r.has_profile -and $readyToRetry) { $r.phase='run';$null=$registered.Run($null);$r.phase='requested' }
     else { $r.phase='observed' }
 } catch { $r.code=NativeCode $_ }
+if ($r.phase -eq 'lookup' -and $r.code -eq '0x80070005' -and $readyToRetry -and $r.has_profile -and
+    $r.install_code -eq 'task-00041303') {
+    # Try the registered task by its exact name. The scheduler enforces its execution permission.
+    $command=Join-Path $env:SystemRoot 'System32\schtasks.exe'
+    $oldPreference=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        & $command /Run /TN '\AnalystAI-HomeRuntime' 2>&1 | Out-Null
+        $r.direct_exit=$LASTEXITCODE
+    } finally { $ErrorActionPreference=$oldPreference }
+}
 try {
     $r.task_history_enabled=[bool](Get-WinEvent -ListLog 'Microsoft-Windows-TaskScheduler/Operational').IsEnabled
     $query="*[System[TimeCreated[timediff(@SystemTime) <= 3600000]] and EventData[Data[@Name='TaskName']='\AnalystAI-HomeRuntime']]"
