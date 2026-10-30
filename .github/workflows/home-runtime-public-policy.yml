@@ -1,0 +1,71 @@
+name: Verify the phone's current public API and preserve its authentic update policy on Lenovo
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-public-policy.yml]
+permissions:
+  contents: read
+jobs:
+  outside:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    outputs:
+      document: ${{ steps.probe.outputs.document }}
+      digest: ${{ steps.probe.outputs.digest }}
+    steps:
+      - id: probe
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const crypto=require('node:crypto'),origin='https://analyst-ai-2941515.twc1.net';
+            async function read(path){
+              for(let attempt=1;attempt<=3;attempt++){
+                try{
+                  const r=await fetch(origin+path,{redirect:'error',headers:{'Cache-Control':'no-cache'},signal:AbortSignal.timeout(14500)});
+                  const raw=Buffer.from(await r.arrayBuffer());
+                  if(raw.length>16384)throw Error('Response size');
+                  return {status:r.status,raw};
+                }catch(e){
+                  if(attempt===3)throw Error('Public route: '+String(e.cause?.code||e.name).replace(/[^A-Za-z0-9_]/g,'').slice(0,45));
+                  await new Promise(resolve=>setTimeout(resolve,1300));
+                }
+              }
+            }
+            const [health,me,policy]=await Promise.all([read('/health'),read('/me'),read('/client/update-policy?package_name=ru.omnicio.app.debug')]);
+            if(health.status!==200||JSON.parse(health.raw).status!=='ok'||me.status!==401||policy.status!==200)throw Error('Production status mismatch');
+            const doc=JSON.parse(policy.raw),sha='d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7';
+            if(doc.schema_version!==1||doc.package_name!=='ru.omnicio.app.debug'||doc.version_code!==57||doc.apk_bytes!==29873479||
+               doc.apk_sha256!==sha||doc.certificate_sha256!=='bbce9534fd4cfee8f3bdcaf51a31cce384a4f303f090c8cae9ec558227d59eb1'||
+               doc.apk_path!=='/client/apk/Analyst-AI-57-'+sha+'.apk')throw Error('Current release needs independent verification');
+            const digest=crypto.createHash('sha256').update(policy.raw).digest('hex');
+            core.setOutput('document',policy.raw.toString('base64'));core.setOutput('digest',digest);
+            core.info('HOME_EXTERNAL_CHANNEL='+JSON.stringify({checked_utc:new Date().toISOString(),health:200,anonymous:401,policy:200,code:57,
+              policy_sha256:digest,apk_sha256:sha,origin_cutover:false}));
+  preserve:
+    needs: outside
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          PUBLIC_POLICY: ${{ needs.outside.outputs.document }}
+          PUBLIC_POLICY_DIGEST: ${{ needs.outside.outputs.digest }}
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016'||path.basename(process.env.USERPROFILE).toLowerCase()!=='networkservice')throw Error('Wrong machine');
+            const bytes=Buffer.from(process.env.PUBLIC_POLICY,'base64'),sha=crypto.createHash('sha256').update(bytes).digest('hex');
+            if(bytes.length>16384||sha!==process.env.PUBLIC_POLICY_DIGEST)throw Error('Independent public policy digest mismatch');
+            const doc=JSON.parse(bytes);
+            if(doc.version_code!==57||doc.apk_sha256!=='d2ea37f2be711e129fbd575aa311d7802597a7e5c2c6c6c547f2e66c9301e4c7')throw Error('Foreign app version');
+            const base=path.join(process.env.LOCALAPPDATA,'AnalystAI-HomeLab'),cache=path.join(base,'verified-android-channel');
+            const claim=JSON.parse(fs.readFileSync(path.join(base,'installation.json'),'utf8'));
+            if(claim.marker!=='analyst-home-public-stage-1'||claim.phase!=='ready')throw Error('Unknown cache');
+            fs.mkdirSync(cache,{recursive:true});
+            if(fs.realpathSync.native(cache).toLowerCase()!==path.resolve(cache).toLowerCase())throw Error('Redirected cache');
+            const dest=path.join(cache,'policy-'+sha+'.json');
+            if(!fs.existsSync(dest)){
+              try{fs.writeFileSync(dest,bytes,{flag:'wx'});}catch(e){if(e.code!=='EEXIST')throw e;}
+            }
+            if(fs.realpathSync.native(dest).toLowerCase()!==dest.toLowerCase()||!fs.readFileSync(dest).equals(bytes))throw Error('Cached bytes mismatch');
+            core.info('HOME_AUTHENTIC_POLICY_SAVED='+JSON.stringify({code:57,bytes:bytes.length,policy_sha256:sha,physical_copy_verified:true}));
