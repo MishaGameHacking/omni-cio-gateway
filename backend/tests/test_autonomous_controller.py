@@ -593,7 +593,7 @@ def test_inputs_changed_before_commit_persists_explicit_blocked_receipt(fixture)
     assert cycle["lineage"] == prepared["cycle"]["lineage"]
 
 
-@pytest.mark.parametrize("case,expected", [("breach", 1), ("at_floor", 0), ("stale", 0), ("raced", 0)])
+@pytest.mark.parametrize("case,expected", [("breach", 1), ("at_floor", 0), ("stale", 0), ("raced", 0), ("commit_stale", 0)])
 def test_margin_alert_requires_fresh_bound_observation_and_never_trades(fixture, case, expected):
     user = fixture["user"]
     snapshot = saved(fixture)
@@ -611,6 +611,13 @@ def test_margin_alert_requires_fresh_bound_observation_and_never_trades(fixture,
         db.commit()
     discovery = controller._empty_discovery("blocked", ["no_candidates_reviewed"])
     prepared = controller._prepare_decision(user, discovery, int(time.time()))
+    if case == "commit_stale":
+        commit_time = datetime.now(timezone.utc) + timedelta(seconds=301)
+        class CommitClock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return commit_time.astimezone(tz)
+        fixture["patch"].setattr(controller, "datetime", CommitClock)
     with closing(backend.connect()) as db:
         db.execute("BEGIN IMMEDIATE")
         if case == "raced":

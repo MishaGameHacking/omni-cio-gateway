@@ -649,6 +649,10 @@ def _notify_margin_breach_in(db, user_id, cycle, now, enqueue_in):
     margin = cycle["margin"]
     if margin["fresh"] is not True or margin["observed_floor_breached"] is not True:
         return
+    # The writer may have waited after evaluation. Recheck observation time at
+    # notification creation; a once-fresh receipt is not a fresh alert forever.
+    if not purchases.policy.fresh(margin["as_of"], datetime.now(timezone.utc), margin["max_age_seconds"]):
+        return
     title = "Остаток ниже предела −4 999 ₽"
     body = ("По свежему снимку рублёвый остаток: " + margin["observed_cash_rub"] + " ₽. "
             "Для возврата к пределу требуется не менее " + margin["minimum_observed_shortfall_rub"] + " ₽. "
