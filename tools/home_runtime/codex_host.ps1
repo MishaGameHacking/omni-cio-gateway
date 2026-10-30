@@ -2,6 +2,12 @@
 $ErrorActionPreference='Stop'
 if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016' -or [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { throw 'Unexpected machine or service context' }
 $r=[ordered]@{technical_user='NetworkService';desktop_processes=0;desktop_packages=@();owner_cli_files=@();service_cli='absent_from_path';linux=@()}
+trap {
+    if (-not $r) { $r=[ordered]@{} }
+    $r.check_fault=[ordered]@{line=$_.InvocationInfo.ScriptLineNumber;type=$_.Exception.GetBaseException().GetType().Name;id=(($_.FullyQualifiedErrorId -split ',')[0] -replace '[^a-zA-Z0-9_-]','')}
+    [Console]::WriteLine('HOME_CODEX_HOST='+($r|ConvertTo-Json -Depth 6 -Compress))
+    exit 1
+}
 $apps=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='Codex.exe' OR Name='ChatGPT.exe'" -ErrorAction SilentlyContinue)
 $r.desktop_processes=$apps.Count
 $r.desktop_names=@($apps.Name | Where-Object { $_ -in 'Codex.exe','ChatGPT.exe' } | Sort-Object -Unique)
@@ -15,11 +21,18 @@ function PackageInfo([string]$scope) {
 }
 $r.desktop_packages=@((PackageInfo 'service'),(PackageInfo 'all_users'))
 # Only publisher/package names or installation metadata from the single owner's confirmed Windows profile.
-$profile=Get-CimInstance Win32_UserProfile | Where-Object { -not $_.Special -and [IO.Path]::GetFileName($_.LocalPath) -ieq 'Klima' } | Select-Object -First 1
-if ($profile) {
+$ownerProfile=Get-CimInstance Win32_UserProfile | Where-Object { -not $_.Special -and [IO.Path]::GetFileName($_.LocalPath) -ieq 'Klima' } | Select-Object -First 1
+if ($ownerProfile) {
+    $r.owner_apps=@()
+    foreach ($target in @(@('AppData\Local\Packages','OpenAI.Codex_*','desktop-package'),@('AppData\Local\Packages','OpenAI.ChatGPT-Desktop_*','chatgpt-package'),@('.vscode\extensions','openai.chatgpt-*','ide-extension'))) {
+        try {
+            $items=@(Get-ChildItem -Directory -LiteralPath (Join-Path $ownerProfile.LocalPath $target[0]) -Filter $target[1] -ErrorAction Stop)
+            $r.owner_apps+=@([ordered]@{kind=$target[2];status=if ($items.Count) {'present'} else {'not_listed'}})
+        } catch { $r.owner_apps+=@([ordered]@{kind=$target[2];status='unavailable'}) }
+    }
     foreach ($entry in @(@('npm-shim','AppData\Roaming\npm\codex.cmd'),@('npm-package','AppData\Roaming\npm\node_modules\@openai\codex\package.json'),
                           @('windows-alias','AppData\Local\Microsoft\WindowsApps\codex.exe'),@('desktop-exe','AppData\Local\Programs\Codex\Codex.exe'))) {
-        $path=Join-Path $profile.LocalPath $entry[1]
+        $path=Join-Path $ownerProfile.LocalPath $entry[1]
         try {
             $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
             $record=[ordered]@{kind=$entry[0];status='present'}
@@ -56,6 +69,7 @@ if exe:
 print(json.dumps(row))
 '@
 $wsl=Join-Path $env:SystemRoot 'System32\wsl.exe'
+$ErrorActionPreference='Continue'
 $list=((& $wsl --list --quiet 2>$null | Out-String) -replace "`0",'') -split '\s+'
 foreach ($target in @(@('AnalystAI-Home','analyst-ai'),@('Ubuntu-24.04','analyst-ci'))) {
     if ($target[0] -notin $list) { continue }
