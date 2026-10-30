@@ -1,0 +1,30 @@
+name: Observe existing runtime HTTP availability
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/runtime-public-health.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Read public health status without credentials
+        shell: python
+        run: |
+          import json, time, urllib.error, urllib.request
+          from datetime import datetime, timezone
+          results = {}
+          for name, path in {"health": "/health", "password_status": "/auth/owner/status"}.items():
+              start = time.monotonic()
+              request = urllib.request.Request("https://analyst-ai-2941515.twc1.net" + path, method="GET")
+              try:
+                  with urllib.request.urlopen(request, timeout=8) as response:
+                      results[name] = {"status": response.status}
+              except urllib.error.HTTPError as error:
+                  results[name] = {"status": error.code}
+              except (OSError, urllib.error.URLError):
+                  results[name] = {"status": None, "error": "transport_unavailable"}
+              results[name]["milliseconds"] = round(1000 * (time.monotonic() - start))
+          print("RUNTIME_HTTP_OBSERVATION=" + json.dumps({"observed_at": datetime.now(timezone.utc).isoformat(), "http": results, "services_changed": False, "broker_called": False, "model_called": False}))
