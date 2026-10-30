@@ -6,6 +6,7 @@ on:
       - .github/workflows/home-host-readiness.yml
       - tools/home_host/readiness.ps1
       - tools/home_host/readiness.py
+      - tools/home_host/storage.py
 permissions:
   contents: read
 concurrency:
@@ -32,14 +33,15 @@ jobs:
               if (data.type !== 'file' || data.encoding !== 'base64' || !data.content) throw new Error('Missing diagnostic source');
               return Buffer.from(data.content, 'base64');
             }
-            const [winProbe, linuxProbe, brokerCa] = await Promise.all([
+            const [winProbe, linuxProbe, storageProbe, brokerCa] = await Promise.all([
               source('tools/home_host/readiness.ps1', context.sha),
               source('tools/home_host/readiness.py', context.sha),
+              source('tools/home_host/storage.py', context.sha),
               source('backend/certs/russian_trusted_root_ca.pem', '853090e11dcefef693366159c97316e55045c4c9')
             ]);
             const system = path.join(process.env.SystemRoot, 'System32');
-            function call(file, args, input) {
-              return spawnSync(file, args, {input, encoding: 'utf8', timeout: 55000, maxBuffer: 100000, windowsHide: true});
+            function call(file, args, input, timeout = 55000) {
+              return spawnSync(file, args, {input, encoding: 'utf8', timeout, maxBuffer: 100000, windowsHide: true});
             }
             function decode(result) {
               if (result.status !== 0) return {probe_error: result.error?.code || 'process_failed'};
@@ -49,12 +51,13 @@ jobs:
             const powershell = path.join(system,'WindowsPowerShell','v1.0','powershell.exe');
             const windows = decode(call(powershell, ['-NoProfile','-NonInteractive','-EncodedCommand',
               Buffer.from(winProbe.toString('utf8'),'utf16le').toString('base64')]));
+            const storage = decode(call('py.exe', ['-3','-I','-'], storageProbe, 105000));
             const wsl = path.join(system, 'wsl.exe');
             const distro = ['-d','Ubuntu-24.04'];
             const linux = decode(call(wsl, [...distro,'--exec','python3','-I','-',brokerCa.toString('base64')],linuxProbe));
             const id = call(wsl, [...distro, '-u','root','--exec','/usr/bin/id','-u']);
             const report = {version:1, run:context.runId, sha:context.sha, at:new Date().toISOString(),
-              windows, linux, wsl_root: id.status === 0 && id.stdout.trim() === '0'};
+              windows, linux, storage, wsl_root: id.status === 0 && id.stdout.trim() === '0'};
             const key = crypto.randomBytes(32), iv = crypto.randomBytes(12);
             const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
             const payload = Buffer.concat([cipher.update(JSON.stringify(report),'utf8'), cipher.final()]);
@@ -63,4 +66,4 @@ jobs:
               format:'der',type:'spki'}),oaepHash:'sha256'}, key);
             core.info('HOME_HOST_RECEIPT='+JSON.stringify({k:envelope.toString('base64'),iv:iv.toString('base64'),
               tag:cipher.getAuthTag().toString('base64'),data:payload.toString('base64')}));
-            if (windows.probe_error || linux.probe_error) core.setFailed('Host inspection incomplete; see private receipt');
+            if (windows.probe_error || linux.probe_error || storage.probe_error) core.setFailed('Host inspection incomplete; see private receipt');
