@@ -52,8 +52,8 @@ def test_own_5000_all_in_9999_is_exact_floor_but_never_credit_approval():
     actual_floor = CASH_FLOOR_RUB
     projected_cash = Decimal(result["projected_cash_rub"])
     projected_breach = Decimal(result["projected_breach_amount_rub"])
-    assert actual_floor == Decimal("-4999.00")
-    assert projected_cash == Decimal("-4999")
+    assert actual_floor == -4999
+    assert projected_cash == -4999
     assert projected_breach == 0
     assert result["arithmetic_policy_passed"] is True
     assert result["reasons"] == ["broker_margin_check_required"]
@@ -65,8 +65,9 @@ def test_one_kopeck_over_floor_is_rejected_including_fee_and_accrued_interest():
     cost["other_charges_rub"] = "0.01"
     result = evaluate_buy(observation(), cost, tariff(), now=NOW)
     projected_cash = Decimal(result["projected_cash_rub"])
+    expected_cash = Decimal("-4999.01")
     assert result["arithmetic_policy_passed"] is False
-    assert projected_cash == Decimal("-4999.01")
+    assert projected_cash == expected_cash
     assert result["required_repayment_if_executed_rub"] == "0.01"
     assert "margin_proposed_buy_breaches_floor" in result["reasons"]
     assert_never_ready(result)
@@ -89,7 +90,8 @@ def test_pending_amount_is_counted_once_and_reflected_cash_is_not_debited_twice(
     result = evaluate_current(observation(pending=[pending, deepcopy(pending)]), now=NOW)
     available_all_in = Decimal(result["maximum_all_in_buy_rub"])
     unreflected_pending = Decimal(result["unreflected_pending_debits_rub"])
-    assert available_all_in == Decimal(expected_capacity)
+    expected_available = Decimal(expected_capacity)
+    assert available_all_in == expected_available
     assert unreflected_pending == (0 if included else 100)
     assert_never_ready(result)
 
@@ -243,7 +245,7 @@ def test_decimal_precision_is_isolated_and_inputs_are_unchanged():
         context.prec = 3
         result = evaluate_buy(snapshot, cost, evidence, now=NOW)
     projected_cash = Decimal(result["projected_cash_rub"])
-    assert projected_cash == Decimal("-4999")
+    assert projected_cash == -4999
     assert result["arithmetic_policy_passed"] is True
     assert (snapshot, cost, evidence) == original
 
