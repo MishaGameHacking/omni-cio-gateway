@@ -1,0 +1,475 @@
+{
+  "schema": 1,
+  "document": "RELIABILITY_DELIVERY_2026-10-30",
+  "time_zone": "Europe/Moscow",
+  "status": "deployment_and_background_progress_verified",
+  "latest_verified_at_utc": "2026-10-30T13:16:10+00:00",
+  "current_runtime_source_verified": "af95e8de8cfd50970d712483b8c17e866f7239c9",
+  "recovery": {
+    "run": 41061063721,
+    "job": 124080616640,
+    "commit": "ff42b16974dd9afdc6592f6f2aefd80fefe50a44",
+    "conclusion": "success",
+    "receipt": {
+      "status": "recovered",
+      "server_id": 9417611,
+      "source_commit": "cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4",
+      "checked_at_utc": "2026-10-30T13:11:38.617906+00:00",
+      "before": [
+        {
+          "endpoint": "local_health",
+          "ok": false,
+          "error": "TimeoutError",
+          "elapsed_ms": 5036
+        },
+        {
+          "endpoint": "public_health",
+          "ok": false,
+          "error": "TimeoutError",
+          "elapsed_ms": 5049
+        },
+        {
+          "endpoint": "public_password",
+          "ok": false,
+          "error": "TimeoutError",
+          "elapsed_ms": 5010
+        }
+      ],
+      "after": [
+        {
+          "endpoint": "local_health",
+          "ok": true,
+          "http_status": 200,
+          "elapsed_ms": 21
+        },
+        {
+          "endpoint": "public_health",
+          "ok": true,
+          "http_status": 200,
+          "elapsed_ms": 11
+        },
+        {
+          "endpoint": "public_password",
+          "ok": true,
+          "http_status": 200,
+          "elapsed_ms": 17
+        }
+      ],
+      "pids_replaced": true,
+      "source_modified": false,
+      "configuration_modified": false,
+      "owner_and_password_preserved": true,
+      "broker_binding_preserved": true,
+      "database_inode_preserved": true,
+      "database_restored": false,
+      "database_journal_mode": "wal",
+      "backup_created": true,
+      "model_job_enqueued": false,
+      "trading_configuration_changed": false
+    },
+    "transport": {
+      "operation_sha256": "0225b3a8daeb7ad407225ad5d7df5936dcd2244681cdc000151d821fd365bf2c",
+      "payload_sha256": "3fd443e3cb618cf56c16729da89e64a8e59567ff1b947cfa6d12b07ba6572822",
+      "receipt_sha256": "a5908ad07630fbaec8e9240b1bee57932a09ddda55607a187e670ce24661b3c7",
+      "remote_exit_code": 0,
+      "stderr_bytes": 0
+    }
+  },
+  "candidate": {
+    "source_commit": "af95e8de8cfd50970d712483b8c17e866f7239c9",
+    "full_ci": {
+      "run": 41059085116,
+      "conclusion": "success",
+      "tests_passed": 2655,
+      "subtests_passed": 1575
+    },
+    "sonar_new_issues": 0,
+    "changed_modules": [
+      "ai_guarded_client.py",
+      "investment_chat_policy.py",
+      "order_lifecycle.py",
+      "portfolio_details.py",
+      "volume_chat.py",
+      "volume_jobs.py"
+    ],
+    "changes": [
+      "Bounded compact completion prompt for chat",
+      "Standalone greetings omit portfolio facts and history",
+      "Sanitized accounted incomplete-response diagnostics without paid retry",
+      "Terminal chat failure stage corrected",
+      "Nested cache locks do not wait on a second stripe",
+      "Pure order-lifecycle module without broker transport or runtime activation"
+    ]
+  },
+  "deployment": {
+    "run": 41061389212,
+    "job": 124081825866,
+    "commit": "3d853e1c5e732dc2f8671842b586ceefc07e797a",
+    "status": "deployed",
+    "receipt": {
+      "schema": 1,
+      "status": "deployed",
+      "server_id": 9417611,
+      "source_commit": "af95e8de8cfd50970d712483b8c17e866f7239c9",
+      "test_run_id": "41059085116",
+      "deployment_run_id": "41061389212",
+      "installed_sha256": {
+        "ai_guarded_client.py": "d65872bcf5d90f34e852da3155f0b9e5852a713ecfb4e55403505143381a0243",
+        "investment_chat_policy.py": "60d6a4f7ca5d8047eb5fa0b6963cf7ae79f31df624f3341f0c59b1d92a9604b8",
+        "order_lifecycle.py": "e5560f86c27179be3240e7f37615e9b3c0b90f0ef31d9a0adaabc2bffd0b07ca",
+        "portfolio_details.py": "1dafbf959eb4ffe8fc23a304d3047fa4f95e6705459a733196a5e64b06d43ea1",
+        "volume_chat.py": "8abeb8a8fba42e5319ec173f401f29bca778be61aad5d4428b97e34f3d4b167b",
+        "volume_jobs.py": "1ba356d49a4a09f87402ecfb5d959bd9fc4785a4f6ddf5e3cba099f1462d7e6b"
+      },
+      "checked_at_utc": "2026-10-30T13:14:10.176799+00:00",
+      "health": 200,
+      "unauthenticated_live": 401,
+      "unauthenticated_version": 401,
+      "unauthenticated_presentation": 401,
+      "unauthenticated_osint": 401,
+      "unauthenticated_strategy": 401,
+      "unauthenticated_decisions": 401,
+      "pdf_dependency_sha256": "c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e",
+      "apk_policy_sha256": "8de2ce7176168b651f6d17b86661c70650e50f73e5abb64f288889935bbf36f8",
+      "apk_changed": false,
+      "database_backup_created": true,
+      "tests_executed_on_timeweb": false,
+      "owner_password_status": 200,
+      "owner_password_write_routes_get": 405,
+      "owner_binding_preserved": true,
+      "owner_configuration_preserved": true,
+      "database_restored": false,
+      "compatible_password_baseline_preserved": true,
+      "database_journal_mode": "wal",
+      "physical_phone_verified": false,
+      "nonfinancial_update": true,
+      "trading_configuration_changed": false,
+      "decision_journal_ready": true,
+      "decision_journal_rows": 1
+    }
+  },
+  "postdeployment_observation": {
+    "status": "observed",
+    "run": 41061688298,
+    "job": 124082737563,
+    "probe_commit": "4a23e10dd1815e2c450748656204bbf141a59bfc",
+    "diagnostic_test_scenarios": 26,
+    "paid_chat_probe": false,
+    "receipt": {
+      "application_imported": false,
+      "broker_called": false,
+      "database": {
+        "automatic_jobs": {
+          "collection": {
+            "last_created_at": "2026-10-30T13:14:19+00:00",
+            "last_updated_at": "2026-10-30T13:14:24+00:00",
+            "rows": 287,
+            "states": {
+              "completed": 286,
+              "failed": 1
+            }
+          },
+          "events": {
+            "last_created_at": "2026-10-30T13:11:47+00:00",
+            "last_updated_at": "2026-10-30T13:11:53+00:00",
+            "rows": 462,
+            "states": {
+              "completed": 443,
+              "failed": 19
+            }
+          },
+          "research": {
+            "last_created_at": "2026-10-30T13:11:47+00:00",
+            "last_updated_at": "2026-10-30T13:11:53+00:00",
+            "rows": 303,
+            "states": {
+              "completed": 303
+            }
+          }
+        },
+        "automation_preferences": {
+          "enabled": 1
+        },
+        "decision_cycles": {
+          "first_at": "2026-10-30T11:48:33+00:00",
+          "last_at": "2026-10-30T13:14:33+00:00",
+          "live_trade_execution_verified": false,
+          "recent": [
+            {
+              "age_seconds": 97,
+              "blockers": [
+                "candidate_constraints_failed",
+                "candidate_cost_unverified",
+                "candidate_expired",
+                "candidate_quantity_unverified",
+                "evidence_changed",
+                "investment_profile_incomplete",
+                "investment_research_incomplete",
+                "no_action_required",
+                "no_whole_lot_within_target_and_reserve",
+                "own_cash_unverified",
+                "real_order_execution_disabled",
+                "unknown"
+              ],
+              "candidate_count": 2,
+              "evaluated_at": "2026-10-30T13:14:33+00:00",
+              "payload_valid": true,
+              "proposed_action_present": false,
+              "recorded_real_orders_enabled": false,
+              "state": "blocked"
+            },
+            {
+              "age_seconds": 5257,
+              "blockers": [
+                "candidate_constraints_failed",
+                "candidate_cost_unverified",
+                "candidate_expired",
+                "candidate_quantity_unverified",
+                "evidence_changed",
+                "investment_profile_incomplete",
+                "investment_research_incomplete",
+                "no_action_required",
+                "no_whole_lot_within_target_and_reserve",
+                "own_cash_unverified",
+                "real_order_execution_disabled",
+                "unknown"
+              ],
+              "candidate_count": 2,
+              "evaluated_at": "2026-10-30T11:48:33+00:00",
+              "payload_valid": true,
+              "proposed_action_present": false,
+              "recorded_real_orders_enabled": false,
+              "state": "blocked"
+            }
+          ],
+          "rows": 2,
+          "scope": "stored_audit_all_connections_not_revalidated_current_account"
+        },
+        "discovery": [
+          {
+            "attempted_at": "2026-10-30T13:14:25+00:00",
+            "coverage": {
+              "constraint_checks_passed": 0,
+              "eligible": 1820,
+              "reviewed": 2,
+              "scanned": 26863
+            },
+            "lease_until": null,
+            "reasons": [
+              "research_incomplete"
+            ],
+            "state": "partial",
+            "updated_at": "2026-10-30T13:14:34+00:00"
+          }
+        ],
+        "journal_mode": "wal",
+        "missing_tables": [],
+        "model_usage": {
+          "finish_reason_persisted": false,
+          "job_link_verified": false,
+          "max_output_tokens_persisted": false,
+          "recent": [
+            {
+              "created_at": "2026-10-30T11:56:03+00:00",
+              "input_tokens": 13002,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 600,
+              "state": "settled",
+              "updated_at": "2026-10-30T11:56:10+00:00"
+            },
+            {
+              "created_at": "2026-10-30T05:55:13+00:00",
+              "input_tokens": 13086,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 672,
+              "state": "settled",
+              "updated_at": "2026-10-30T05:55:20+00:00"
+            },
+            {
+              "created_at": "2026-10-29T23:12:10+00:00",
+              "input_tokens": 11830,
+              "model": "dashscope/qwen3.5-flash",
+              "output_tokens": 331,
+              "state": "settled",
+              "updated_at": "2026-10-29T23:12:14+00:00"
+            }
+          ]
+        },
+        "query_only": true,
+        "scheduler_leases": {
+          "rows": 0,
+          "unexpired": 0
+        },
+        "snapshot_metadata": {
+          "last_saved_at": "2026-10-30T13:14:25+00:00",
+          "rows": 3
+        },
+        "workspace_jobs": {
+          "counts": [
+            {
+              "count": 1,
+              "kind": "analysis",
+              "state": "completed"
+            },
+            {
+              "count": 2,
+              "kind": "chat",
+              "state": "completed"
+            },
+            {
+              "count": 1,
+              "kind": "chat",
+              "state": "failed"
+            },
+            {
+              "count": 443,
+              "kind": "events",
+              "state": "completed"
+            },
+            {
+              "count": 19,
+              "kind": "events",
+              "state": "failed"
+            },
+            {
+              "count": 303,
+              "kind": "osint",
+              "state": "completed"
+            },
+            {
+              "count": 303,
+              "kind": "refresh",
+              "state": "completed"
+            },
+            {
+              "count": 2,
+              "kind": "refresh",
+              "state": "failed"
+            }
+          ],
+          "recent_chat": [
+            {
+              "created_at": "2026-10-30T11:56:02+00:00",
+              "error_code": "ai_incomplete_response",
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 600,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "fast",
+                "selected_tier": "fast"
+              },
+              "stage": "model_running",
+              "state": "failed",
+              "updated_at": "2026-10-30T11:56:10+00:00"
+            },
+            {
+              "created_at": "2026-10-30T05:55:13+00:00",
+              "error_code": null,
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 1200,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "standard",
+                "selected_tier": "standard"
+              },
+              "stage": "done",
+              "state": "completed",
+              "updated_at": "2026-10-30T05:55:20+00:00"
+            },
+            {
+              "created_at": "2026-10-29T23:12:10+00:00",
+              "error_code": null,
+              "paid_started": true,
+              "running_lease_expired": false,
+              "saved_route": {
+                "max_output_tokens": 600,
+                "model": "dashscope/qwen3.5-flash",
+                "required_tier": "fast",
+                "selected_tier": "fast"
+              },
+              "stage": "done",
+              "state": "completed",
+              "updated_at": "2026-10-29T23:12:14+00:00"
+            }
+          ],
+          "running_expired": 0
+        }
+      },
+      "database_written": false,
+      "exact_source_verified": true,
+      "failed_release": {
+        "archive_present": false,
+        "failure": null,
+        "phase_evidence": "archive_absent",
+        "release_run": 41056552195
+      },
+      "http": {
+        "local_health": {
+          "elapsed_ms": 11,
+          "error": null,
+          "http_status": 200
+        },
+        "public_health": {
+          "elapsed_ms": 52,
+          "error": null,
+          "http_status": 200
+        },
+        "public_password_status": {
+          "elapsed_ms": 56,
+          "error": null,
+          "http_status": 200
+        }
+      },
+      "model_called": false,
+      "observed_at": "2026-10-30T13:16:10+00:00",
+      "order_lifecycle_source_verified": true,
+      "real_trading_activation_verified": false,
+      "schema": 1,
+      "server_id": 9417611,
+      "service_changed": false,
+      "services": {
+        "analyst-ai-owner.service": {
+          "active": "active",
+          "main_pid": 117183,
+          "process_age_seconds": 123,
+          "restarts": 0,
+          "substate": "running"
+        },
+        "analyst-ai-updates.service": {
+          "active": "active",
+          "main_pid": 117184,
+          "process_age_seconds": 123,
+          "restarts": 0,
+          "substate": "running"
+        }
+      },
+      "source_commit": "af95e8de8cfd50970d712483b8c17e866f7239c9",
+      "status": "observed"
+    }
+  },
+  "boundaries": {
+    "new_apk": false,
+    "real_orders_activated": false,
+    "margin_activated": false,
+    "automatic_liquidation_activated": false,
+    "autonomous_real_capital_management_verified": false,
+    "physical_phone_login_verified_after_recovery": false,
+    "background_progress_verified_after_recovery": true,
+    "live_model_completion_verified_after_update": false,
+    "background_progress_verified_after_deployment": true,
+    "continuous_24h_operation_verified": false
+  },
+  "incident_cause": {
+    "cache_ab_ba": "possible_from_static_audit_not_proven_on_production",
+    "production_thread_stacks_collected": false
+  },
+  "evidence_links": {
+    "recovery": "https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/41061063721",
+    "candidate_ci": "https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/41059085116",
+    "deployment": "https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/41061389212",
+    "postdeployment": "https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/41061688298"
+  }
+}
+

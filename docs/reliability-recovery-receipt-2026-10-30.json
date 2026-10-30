@@ -1,0 +1,57 @@
+{
+  "status": "recovered",
+  "server_id": 9417611,
+  "source_commit": "cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4",
+  "checked_at_utc": "2026-10-30T13:11:38.617906+00:00",
+  "before": [
+    {
+      "endpoint": "local_health",
+      "ok": false,
+      "error": "TimeoutError",
+      "elapsed_ms": 5036
+    },
+    {
+      "endpoint": "public_health",
+      "ok": false,
+      "error": "TimeoutError",
+      "elapsed_ms": 5049
+    },
+    {
+      "endpoint": "public_password",
+      "ok": false,
+      "error": "TimeoutError",
+      "elapsed_ms": 5010
+    }
+  ],
+  "after": [
+    {
+      "endpoint": "local_health",
+      "ok": true,
+      "http_status": 200,
+      "elapsed_ms": 21
+    },
+    {
+      "endpoint": "public_health",
+      "ok": true,
+      "http_status": 200,
+      "elapsed_ms": 11
+    },
+    {
+      "endpoint": "public_password",
+      "ok": true,
+      "http_status": 200,
+      "elapsed_ms": 17
+    }
+  ],
+  "pids_replaced": true,
+  "source_modified": false,
+  "configuration_modified": false,
+  "owner_and_password_preserved": true,
+  "broker_binding_preserved": true,
+  "database_inode_preserved": true,
+  "database_restored": false,
+  "database_journal_mode": "wal",
+  "backup_created": true,
+  "model_job_enqueued": false,
+  "trading_configuration_changed": false
+}
