@@ -18,7 +18,7 @@ jobs:
             try {
               const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/codex_host.ps1'});
               const file=path.join(dir,'diag.ps1');fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
-              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
               const r=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{env,encoding:'utf8',windowsHide:true,timeout:95000});
               const clean=(r.stdout||'').split(/\r?\n/).filter(s=>s.startsWith('HOME_CODEX_HOST='));
               clean.forEach(s=>core.info(s.slice(0,3000)));
