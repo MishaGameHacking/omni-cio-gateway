@@ -1,0 +1,359 @@
+{
+  "schema": 2,
+  "observed_at": "2026-10-30T16:17:56.653729+00:00",
+  "server": {
+    "server_id": 9417611,
+    "cpu": 2,
+    "ram": 4096,
+    "gpu": 0,
+    "preset_id": null,
+    "configurator_id": 153,
+    "location": "nl-1",
+    "is_dedicated_cpu": false,
+    "disks": [
+      {
+        "size_reported": 30720,
+        "type": "nvme"
+      }
+    ],
+    "ram_unit": "MiB_as_reported_by_provider",
+    "hardware_complete": true
+  },
+  "project": {
+    "project_id": 2941515,
+    "resource_counts": {
+      "servers": 1,
+      "balancers": 0,
+      "buckets": 0,
+      "clusters": 0,
+      "databases": 0,
+      "dedicated_servers": 0
+    },
+    "complete": true,
+    "expected_server_present": true
+  },
+  "budget": {
+    "verified": true,
+    "scope": "account_recurring_services",
+    "currency": "RUB",
+    "reported_monthly_cost_rub": "4560.00",
+    "reported_monthly_fee_rub": "4560.00",
+    "conservative_31_day_rub": "4635.12",
+    "infrastructure_cap_rub": "11000.00",
+    "ai_cap_rub": "3000.00",
+    "total_cap_rub": "14000.00",
+    "selected_budget_profile": "hybrid",
+    "alternative_local_only": {
+      "infrastructure_cap_rub": "14000.00",
+      "ai_cap_rub": "0.00",
+      "selected": false
+    },
+    "recurring_within_infrastructure_cap": true,
+    "headroom_before_variable_charges_rub": "6364.88",
+    "includes_future_variable_charges": false,
+    "provisioning_authorized_by_this_report": false
+  },
+  "presets": {
+    "complete": true,
+    "candidates": [
+      {
+        "id": 6751,
+        "cpu": 4,
+        "ram": 8192,
+        "disk": 81920,
+        "gpu": null,
+        "catalogue_monthly_price_rub": "1800.00",
+        "location": "ru-4",
+        "disk_type": "nvme",
+        "same_location": false
+      },
+      {
+        "id": 6753,
+        "cpu": 8,
+        "ram": 12288,
+        "disk": 102400,
+        "gpu": null,
+        "catalogue_monthly_price_rub": "2900.00",
+        "location": "ru-4",
+        "disk_type": "nvme",
+        "same_location": false
+      },
+      {
+        "id": 6755,
+        "cpu": 8,
+        "ram": 16384,
+        "disk": 163840,
+        "gpu": null,
+        "catalogue_monthly_price_rub": "4300.00",
+        "location": "ru-4",
+        "disk_type": "nvme",
+        "same_location": false
+      },
+      {
+        "id": 6813,
+        "cpu": 4,
+        "ram": 8192,
+        "disk": 81920,
+        "gpu": null,
+        "catalogue_monthly_price_rub": "9360.00",
+        "location": "nl-1",
+        "disk_type": "nvme",
+        "same_location": true
+      }
+    ],
+    "availability_verified": false,
+    "addons_included_verified": false,
+    "in_place_resize_verified": false
+  },
+  "configurator": {
+    "complete": true,
+    "current": {
+      "id": 153,
+      "location": "nl-1",
+      "disk_type": "nvme",
+      "schema_fields": [
+        "cpu_frequency",
+        "disk_type",
+        "id",
+        "is_allowed_local_network",
+        "location",
+        "prices",
+        "requirements",
+        "tags"
+      ],
+      "requirements": {
+        "cpu_min": 1,
+        "cpu_max": 104,
+        "cpu_step": 1,
+        "ram_min": 1024,
+        "ram_max": 747520,
+        "ram_step": 1024,
+        "disk_min": 15360,
+        "disk_max": 1024000,
+        "disk_step": 5120,
+        "gpu_min": null,
+        "gpu_max": null,
+        "gpu_step": null
+      },
+      "numeric_pricing_fields_unverified": {},
+      "prices_numeric_shape_unverified": {
+        "cpu": {
+          "number_reported": "580"
+        },
+        "ram": {
+          "number_reported": "560"
+        },
+        "disk": {
+          "number_reported": "32"
+        },
+        "bandwidth": {
+          "uninterpreted_type": "NoneType"
+        },
+        "gpu": {
+          "uninterpreted_type": "NoneType"
+        }
+      }
+    },
+    "resize_quote": false,
+    "pricing_period_verified": false
+  },
+  "dedicated": {
+    "complete": true,
+    "candidates": [
+      {
+        "id": 6007,
+        "catalogue_price_rub": "5480.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1231v3",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 1,
+        "disk_total_size_reported": 1,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6009,
+        "catalogue_price_rub": "5680.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1240v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 1,
+        "disk_total_size_reported": 2,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6011,
+        "catalogue_price_rub": "5750.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E5-1620v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 1,
+        "disk_total_size_reported": 1,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6013,
+        "catalogue_price_rub": "5780.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1230v3",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 2,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6015,
+        "catalogue_price_rub": "5950.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1220v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 480,
+        "disk_type": "ssd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6017,
+        "catalogue_price_rub": "6400.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1220v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 2,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6019,
+        "catalogue_price_rub": "6490.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1231v3",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 2,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6021,
+        "catalogue_price_rub": "6800.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1240",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 4,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6023,
+        "catalogue_price_rub": "6800.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1240",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 512,
+        "disk_type": "ssd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6025,
+        "catalogue_price_rub": "7070.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1220v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 8,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6849,
+        "catalogue_price_rub": "7130.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1230v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 8192,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 8,
+        "disk_type": "hdd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      },
+      {
+        "id": 6835,
+        "catalogue_price_rub": "7190.00",
+        "location": "ru-3",
+        "cpu_description": "Intel Xeon E3-1220v2",
+        "cpu_count_reported": 4,
+        "memory_size_mb_reported": 16384,
+        "memory_count_reported": 1,
+        "disk_count_reported": 2,
+        "disk_total_size_reported": 488,
+        "disk_type": "ssd",
+        "is_pre_installed": false,
+        "within_hybrid_base_cap": true
+      }
+    ],
+    "availability_verified": false,
+    "addons_included_verified": false,
+    "gpu_verified": false,
+    "billing_period_verified": false
+  },
+  "service_costs": {
+    "complete": true,
+    "target_services": [
+      {
+        "base_cost_reported": "4360.00",
+        "including_addons_reported": "4560.00",
+        "configuration": {
+          "cpu": 2,
+          "ram": 4,
+          "disk": 30
+        }
+      }
+    ],
+    "service_id": 9417611,
+    "project_id": 2941515,
+    "billing_period_verified": false,
+    "resize_quote": false,
+    "future_addons_included": false
+  },
+  "read_only": true,
+  "resource_changes": false,
+  "model_inference_called": false
+}
