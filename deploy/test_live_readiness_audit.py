@@ -53,6 +53,50 @@ def catalog(rows):
 
 
 class AuditTests(unittest.TestCase):
+    def test_profile_presence_never_substitutes_for_confirmation(self):
+        result = audit.profile_checks({'mandate': {'loss_capacity_percent': '20'},
+            'construction': {'loss_capacity_confirmed': 1, 'income_stability': 'PRIVATE_TEXT'}})
+        self.assertEqual(result, {'loss_capacity_confirmed': False, 'income_stability_known': False,
+            'loss_capacity_valid': True, 'loss_capacity_state': 'positive'})
+        self.assertNotIn('20', json.dumps(result))
+        self.assertNotIn('PRIVATE_TEXT', json.dumps(result))
+
+    def test_profile_handles_missing_and_invalid_values_without_disclosure(self):
+        for raw in (True, 'NaN', '-1', '101', None, {}, [], 'PRIVATE_VALUE'):
+            with self.subTest(raw=raw):
+                result = audit.profile_checks({'mandate': {'loss_capacity_percent': raw}})
+                self.assertFalse(result['loss_capacity_valid'])
+        self.assertFalse(audit.profile_checks({})['loss_capacity_confirmed'])
+
+    def test_zero_and_positive_capacity_are_distinct(self):
+        for value, state in [('0', 'zero'), ('100', 'positive')]:
+            result = audit.profile_checks({'mandate': {'loss_capacity_percent': value},
+                'construction': {'loss_capacity_confirmed': True, 'income_stability': 'variable'}})
+            self.assertTrue(result['loss_capacity_confirmed'])
+            self.assertTrue(result['income_stability_known'])
+            self.assertEqual(result['loss_capacity_state'], state)
+
+    def test_gateway_access_uses_only_a_metadata_get_and_exact_identifiers(self):
+        opener = Mock()
+        opener.open.return_value = Reply(json.dumps({'data': [
+            {'id': 'openai/gpt-6-luna'}, {'id': 'gpt-6-astra'}, {'id': 'PRIVATE_OTHER_MODEL'}]}).encode())
+        with patch.object(audit.urllib.request, 'build_opener', return_value=opener):
+            result = audit.gateway_model_access({'TIMEWEB_AI_TOKEN': 'PRIVATE_KEY'})
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, 'https://api.timeweb.ai/v1/models')
+        self.assertEqual(request.get_method(), 'GET')
+        self.assertIsNone(request.data)
+        self.assertTrue(result['available']['gpt-6-luna'])
+        self.assertFalse(result['available']['gpt-6-astra'])
+        self.assertFalse(result['inference_verified'])
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_gateway_does_not_infer_access_from_cloud_admin_token(self):
+        with patch.object(audit.urllib.request, 'build_opener') as opener:
+            with self.assertRaisesRegex(audit.AuditError, 'gateway_key_unavailable'):
+                audit.gateway_model_access({'TIMEWEB_CLOUD_TOKEN': 'PRIVATE_CLOUD'})
+            opener.assert_not_called()
+
     def test_read_protocol_and_private_data_projection(self):
         broker = Broker()
         report, private = audit.inspect_broker(broker)

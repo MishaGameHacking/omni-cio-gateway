@@ -72,7 +72,8 @@ def baseline():
 
 
 def config_values(raw):
-    allowed = {'FERNET_KEY', 'DATABASE_PATH', 'AI_MODEL_FAST', 'AI_MODEL_STANDARD', 'AI_MODEL_PREMIUM'}
+    allowed = {'FERNET_KEY', 'DATABASE_PATH', 'TIMEWEB_AI_TOKEN',
+               'AI_MODEL_FAST', 'AI_MODEL_STANDARD', 'AI_MODEL_PREMIUM'}
     result = {}
     for line in raw.splitlines():
         if not line.strip() or line.lstrip().startswith('#'):
@@ -190,6 +191,41 @@ def safe_routes(config):
     return result
 
 
+def profile_checks(strategy):
+    """Distinguish field presence from evidence, without publishing user values."""
+    construction = strategy.get('construction')
+    construction = construction if isinstance(construction, dict) else {}
+    mandate = strategy.get('mandate')
+    mandate = mandate if isinstance(mandate, dict) else {}
+    raw = mandate.get('loss_capacity_percent')
+    capacity = None
+    if type(raw) in (str, int) and len(str(raw)) <= 40:
+        try:
+            value = Decimal(raw)
+            if value.is_finite() and 0 <= value <= 100:
+                capacity = 'zero' if value == 0 else 'positive'
+        except InvalidOperation:
+            pass
+    return {'loss_capacity_confirmed': construction.get('loss_capacity_confirmed') is True,
+            'income_stability_known': construction.get('income_stability') in ('stable', 'variable'),
+            'loss_capacity_valid': capacity is not None, 'loss_capacity_state': capacity or 'invalid'}
+
+
+def gateway_model_access(config):
+    token = config.get('TIMEWEB_AI_TOKEN', '')
+    need(isinstance(token, str) and 1 <= len(token) <= 8192
+         and all(33 <= ord(char) <= 126 for char in token), 'gateway_key_unavailable')
+    request = urllib.request.Request('https://api.timeweb.ai/v1/models', method='GET',
+        headers={'Authorization': 'Bearer ' + token, 'Accept': 'application/json'})
+    payload = request_json(urllib.request.build_opener(NoRedirect()), request, 8)
+    rows = payload.get('data')
+    need(isinstance(rows, list) and len(rows) <= 10000
+         and all(isinstance(row, dict) for row in rows), 'gateway_models_invalid')
+    identifiers = [row.get('id') for row in rows]
+    return {'metadata_get_succeeded': True, 'inference_verified': False,
+            'available': {model: identifiers.count('openai/' + model) == 1 for model in sorted(MODEL_IDS)}}
+
+
 def broker_context():
     raw = regular(ROOT / 'certs/russian_trusted_root_ca.pem', 100_000).decode('ascii')
     der = ssl.PEM_cert_to_DER_cert(raw)
@@ -223,6 +259,10 @@ def audit_runtime(run):
         raise AuditError('stored_broker_token_unreadable') from None
     need(20 <= len(token) <= 2048 and all(32 < ord(char) < 127 for char in token), 'stored_broker_token_invalid')
     report, private = inspect_broker(BrokerReader(token, broker_context()))
+    try:
+        gateway = gateway_model_access(config)
+    except AuditError:
+        gateway = {'metadata_get_succeeded': False, 'inference_verified': False}
     current = owner_state()
     need(current[0] == user and current[1] == cipher, 'broker_binding_changed')
     baseline()
@@ -231,6 +271,7 @@ def audit_runtime(run):
     report.update(schema=1, server_id=9417611, status='observed', source_commit=SOURCE,
         observed_at=datetime.now(timezone.utc).isoformat(), strategy_present=bool(strategy),
         mandate_missing_fields=missing, configured_models=safe_routes(config),
+        profile_checks=profile_checks(strategy), gateway_model_access=gateway,
         stored_snapshot_at=(datetime.fromtimestamp(stamp, timezone.utc).isoformat() if type(stamp) is int else None),
         private_report_saved=True, application_database_written=False, model_inference_called=False,
         trading_configuration_changed=False, financial_values_published=False)
