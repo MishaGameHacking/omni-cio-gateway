@@ -59,3 +59,4 @@ jobs:
           path: plan-reports/
           if-no-files-found: warn
           retention-days: 7
+# Observe baseline after deployment transport returned TimeoutError; do not retry installer blindly.
