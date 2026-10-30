@@ -1,0 +1,21 @@
+{
+  "source": "853090e11dcefef693366159c97316e55045c4c9",
+  "backend_test_run": "41088491538",
+  "bundle_sha256": "4c45834b29bdedd6ccc3c7d120f133423e11b2d6c611b6c9e9d0d09b3debcc3c",
+  "package_sha256": "05312df40d8d5621cd9cf66d43616feffbcb615b5220b0ff665d5e93a832e28a",
+  "package_bytes": 442494,
+  "original_operations": {
+    "activate_local_research.py": "eb8c62e13e90253544e6e59bcb78548c8d5b736d",
+    "gpt6_protocol_release.py": "613656222335b82f59bce27b224852323d92d06e",
+    "local_report_route_release.py": "f4c0b1a2a2dfa18fef22415ee7f7a5f0d2321ef4"
+  },
+  "verified_entrypoint": true,
+  "unprivileged_execution_rejected": true,
+  "modified_payload_rejected": true,
+  "contains_credentials": false,
+  "production_invoked": false,
+  "package_job": 41109469483,
+  "package_head": "4e591e274c24a971b5b14c0f0598e0ac5964ba4f",
+  "artifact_id": 13002527486,
+  "git_blob": "b48aec04aac9be7846bec5eda57e2f2b67d7dc7a"
+}
