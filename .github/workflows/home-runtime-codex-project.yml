@@ -23,6 +23,20 @@ jobs:
               }
               const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMFILES(X86)','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
               const shell=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+              const fixture=path.join(dir,'viewer'),work=path.join(fixture,'omni-cio-gateway'),signals=path.join(fixture,'session-status');
+              const bin=path.join(fixture,'user','Programs','OpenAI','Codex','bin');
+              for(const name of [work,signals,bin])fs.mkdirSync(name,{recursive:true});
+              fs.copyFileSync(path.join(dir,'open_codex_project.cmd'),path.join(fixture,'Open.cmd'));
+              fs.writeFileSync(path.join(work,'AGENTS.md'),'local launcher QA');
+              fs.writeFileSync(path.join(work,'codex.cmd'),'@exit /b 19\r\n');
+              fs.writeFileSync(path.join(bin,'codex.cmd'),[
+                '@echo off','if /i not "%CD%"=="%ANALYST_QA_FOLDER%" exit /b 12','if not "%GIT_CONFIG_COUNT%"=="2" exit /b 13',
+                'if not "%GIT_CONFIG_KEY_1%"=="safe.directory" exit /b 14','if "%~1"=="" exit /b 15','echo HOME_PERSONAL_ENTRY_QA','exit /b 0'
+              ].join('\r\n')+'\r\n');
+              const q=cp.spawnSync(env.COMSPEC||'cmd.exe',['/d','/c','Open.cmd'],{cwd:fixture,windowsHide:true,encoding:'utf8',timeout:24000,
+                env:{...env,LOCALAPPDATA:path.join(fixture,'user'),ANALYST_QA_FOLDER:work,GIT_CONFIG_COUNT:'1',GIT_CONFIG_KEY_0:'color.ui',GIT_CONFIG_VALUE_0:'false'}});
+              if(q.status!==0||!(q.stdout||'').includes('HOME_PERSONAL_ENTRY_QA')||JSON.parse(fs.readFileSync(path.join(signals,'local.json'))).mode!=='cli-completed')throw Error('Personal launcher did not route correctly');
+              core.info('HOME_CODEX_ENTRY_CHECK='+JSON.stringify({correct_directory:true,absolute_executable:true,project_git_scope:true,personal_auth_used:false,cli:'fixture'}));
               const args=['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(dir,'stage_codex_project.ps1'),context.sha,path.join(dir,'open_codex_project.cmd')];
               for(let i=0;i<2;i++){
                 const p=cp.spawnSync(shell,args,{env,windowsHide:true,encoding:'utf8',timeout:220000});

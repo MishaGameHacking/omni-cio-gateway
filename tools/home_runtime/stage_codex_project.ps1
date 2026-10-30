@@ -64,13 +64,22 @@ $lock=[IO.File]::Open($mutex,'OpenOrCreate','ReadWrite','None')
 try {
     $launcher=Join-Path $root 'Open.cmd'
     $launchBytes=[IO.File]::ReadAllBytes($StartFile)
-    if (-not [IO.File]::Exists($launcher)) {
+    $exists=[IO.File]::Exists($launcher)
+    if ($exists) { Access $launcher 'ReadAndExecute' }
+    $oldLauncher='dce1c7ef556fec32af8fa586ce886277b6ccc18053a47ee6a3b1e7cad052586a'
+    if (-not $exists -or (Get-FileHash $launcher).Hash -eq $oldLauncher) {
         $lt=Join-Path $root ('open-'+[Guid]::NewGuid().ToString('N'))
-        try { [IO.File]::WriteAllBytes($lt,$launchBytes);[IO.File]::Move($lt,$launcher) }
+        try {
+            [IO.File]::WriteAllBytes($lt,$launchBytes)
+            if ($exists) { [IO.File]::Replace($lt,$launcher,[NullString]::Value) } else { [IO.File]::Move($lt,$launcher) }
+        }
         finally { if ([IO.File]::Exists($lt)) { [IO.File]::Delete($lt) } }
     }
     Access $launcher 'ReadAndExecute'
     Must ((Get-FileHash $launcher).Hash -eq (Get-FileHash $StartFile).Hash) 'launcher_conflict'
+    $signals=Join-Path $root 'session-status'
+    if (-not [IO.Directory]::Exists($signals)) { $null=[IO.Directory]::CreateDirectory($signals,(DirectoryRules 'Modify')) }
+    Access $signals 'Modify'
     if ([IO.File]::Exists($receipt)) {
         Access $receipt 'ReadAndExecute'
         $data=Get-Content $receipt -Raw|ConvertFrom-Json
@@ -80,6 +89,10 @@ try {
         if ($data.phase -eq 'prepared') {
             Plain $dest
             Set-Acl -LiteralPath $dest -AclObject (DirectoryRules 'Modify')
+            $data.phase='ready'
+            $stamp=Join-Path $root ('record-'+[guid]::NewGuid().ToString('N'))
+            try { [IO.File]::WriteAllText($stamp,($data|ConvertTo-Json -Compress));[IO.File]::Replace($stamp,$receipt,[NullString]::Value) }
+            finally { if ([IO.File]::Exists($stamp)) { [IO.File]::Delete($stamp) } }
         }
         Access $dest 'Modify'
         Write-Output ('HOME_CODEX_PROJECT='+(@{status='previously_delivered';initial_revision=$data.revision;files=$data.files;owner_modify=$true;personal_login_used=$false}|ConvertTo-Json -Compress))
