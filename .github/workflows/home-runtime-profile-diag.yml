@@ -1,0 +1,26 @@
+name: Diagnose Windows profile preparation for the enrolled local account
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-runtime-profile-diag.yml, tools/home_runtime/profile_diagnostics.ps1]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 4
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-profile-diag-'));
+            try {
+              const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/profile_diagnostics.ps1'});
+              const file=path.join(dir,'diag.ps1');fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA','PSMODULEPATH'].includes(k.toUpperCase())));
+              const r=cp.spawnSync(path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{env,encoding:'utf8',windowsHide:true,timeout:95000});
+              const clean=(r.stdout||'').split(/\r?\n/).filter(s=>s.startsWith('HOME_PROFILE_DIAG='));
+              clean.forEach(s=>core.info(s.slice(0,3000)));
+              if(r.status!==0||clean.length!==1)throw Error('Windows profile diagnostic incomplete');
+            } finally {fs.rmSync(dir,{recursive:true,force:true});}
