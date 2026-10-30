@@ -104,8 +104,14 @@ def probe():
             except subprocess.TimeoutExpired:cf.kill();cf.wait()
         stack.callback(close)
         found=queue.Queue()
+        ready=threading.Event()
+        causes=set()
         def addresses():
             for line in cf.stdout:
+                low=line.lower()
+                if b'registered tunnel connection' in low: ready.set()
+                for word in ('timeout','connection refused','no such host','failed to connect','certificate','network is unreachable'):
+                    if word.encode() in low: causes.add(word.replace(' ','_'))
                 m=re.search(rb'https://[a-z0-9-]+\.trycloudflare\.com\b',line)
                 if m:found.put(m[0].decode())
             found.put(None)
@@ -113,6 +119,8 @@ def probe():
         try: origin=found.get(timeout=65)
         except queue.Empty: raise ValueError('temporary_edge_timeout') from None
         if not origin: raise ValueError('temporary_edge_unavailable')
+        if not ready.wait(95):
+            raise ValueError('edge_registration_'+(sorted(causes)[0] if causes else 'unconfirmed'))
         # Node encrypts this one-use message for the external verifier. It never goes to the action log.
         print(json.dumps({'origin':origin,'nonce':nonce,'proofHash':hashlib.sha256(proof.encode()).hexdigest(),
                           'password':password,'subject':subject}),flush=True)

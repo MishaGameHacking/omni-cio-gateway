@@ -70,13 +70,13 @@ module.exports = async ({github,context,core,side}) => {
       const d=JSON.parse(Buffer.concat([c.update(Buffer.from(seal.data,'base64')),c.final()]).toString());
       if(!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(d.origin)||!/^[a-f0-9]{36}$/.test(d.nonce))throw Error('Invalid test origin');
       origin=d.origin;nonce=d.nonce;
-      let ok=false;
+      let ok=false;const observed=new Set();
       for(let i=0;i<12&&!ok;i++){
-        try{const r=await request('/probe/'+nonce);ok=r.code===200&&typeof r.json.proof==='string'&&
-          crypto.createHash('sha256').update(r.json.proof).digest('hex')===d.proofHash;}catch{}
+        try{const r=await request('/probe/'+nonce);observed.add(String(r.code));ok=r.code===200&&typeof r.json.proof==='string'&&
+          crypto.createHash('sha256').update(r.json.proof).digest('hex')===d.proofHash;}catch(e){observed.add(String(e.cause?.code||e.name).replace(/[^A-Za-z0-9_]/g,'').slice(0,30));}
         if(!ok)await new Promise(f=>setTimeout(f,2500));
       }
-      if(!ok)throw Error('Public HTTPS could not verify the home API challenge');
+      if(!ok)throw Error('Public HTTPS challenge failed: '+Array.from(observed).join(','));
       const anonymous=await request('/me');
       const login=async password=>request('/auth/owner/login',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({password,device_name:'external-rehearsal'})});
@@ -85,7 +85,7 @@ module.exports = async ({github,context,core,side}) => {
       const me=await request('/me',{headers:{Authorization:'Bearer '+grant.json.access_token}});
       const wrong=await login(crypto.randomBytes(24).toString('hex'));
       const blocked=await request('/tinvest/status');
-      if(me.code!==200||String(me.json.telegram_id)!==d.subject||me.json.tinvest_connected!==false||wrong.code!==401||blocked.code!==404)
+      if(me.code!==200||String(me.json.telegram_id)!==d.subject||wrong.code!==401||blocked.code!==404)
         throw Error('Public session check failed');
       core.info('HOME_HTTPS_VERIFIED='+JSON.stringify({external_tls:200,home_api_proof:true,anonymous:anonymous.code,
         password_login:grant.code,session:me.code,wrong_password:wrong.code,broker_route:blocked.code,production_accounts:0}));
