@@ -1,0 +1,68 @@
+# Inspect the requested installation and its own CLI status. Never inspect personal authentication files.
+$ErrorActionPreference='Stop'
+if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016' -or [Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne 'S-1-5-20') { throw 'Unexpected machine or service context' }
+$r=[ordered]@{technical_user='NetworkService';desktop_processes=0;desktop_packages=@();owner_cli_files=@();service_cli='absent_from_path';linux=@()}
+$apps=@(Get-CimInstance -ClassName Win32_Process -Filter "Name='Codex.exe' OR Name='ChatGPT.exe'" -ErrorAction SilentlyContinue)
+$r.desktop_processes=$apps.Count
+$r.desktop_names=@($apps.Name | Where-Object { $_ -in 'Codex.exe','ChatGPT.exe' } | Sort-Object -Unique)
+function PackageInfo([string]$scope) {
+    try {
+        $argsFor=@{ErrorAction='Stop'}
+        if ($scope -eq 'all_users') { $argsFor.AllUsers=$true }
+        $packages=@(Get-AppxPackage @argsFor | Where-Object { $_.Name -match '^OpenAI\.(Codex|ChatGPT[-.]?Desktop|ChatGPT)$' })
+        return [ordered]@{scope=$scope;status='queried';packages=@($packages | ForEach-Object { [ordered]@{name=$_.Name;version=[string]$_.Version} })}
+    } catch { return [ordered]@{scope=$scope;status='unavailable'} }
+}
+$r.desktop_packages=@((PackageInfo 'service'),(PackageInfo 'all_users'))
+# Only publisher/package names or installation metadata from the single owner's confirmed Windows profile.
+$profile=Get-CimInstance Win32_UserProfile | Where-Object { -not $_.Special -and [IO.Path]::GetFileName($_.LocalPath) -ieq 'Klima' } | Select-Object -First 1
+if ($profile) {
+    foreach ($entry in @(@('npm-shim','AppData\Roaming\npm\codex.cmd'),@('npm-package','AppData\Roaming\npm\node_modules\@openai\codex\package.json'),
+                          @('windows-alias','AppData\Local\Microsoft\WindowsApps\codex.exe'),@('desktop-exe','AppData\Local\Programs\Codex\Codex.exe'))) {
+        $path=Join-Path $profile.LocalPath $entry[1]
+        try {
+            $item=Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            $record=[ordered]@{kind=$entry[0];status='present'}
+            if ($entry[0] -eq 'npm-package' -and $item.Length -le 100000 -and -not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                $p=Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+                if ($p.name -eq '@openai/codex' -and $p.version -match '^[0-9][0-9a-zA-Z.+-]{0,45}$') { $record.version=$p.version }
+            }
+        } catch [UnauthorizedAccessException] { $record=[ordered]@{kind=$entry[0];status='unreadable'} }
+          catch { continue }
+        $r.owner_cli_files+=@($record)
+    }
+}
+$cmd=Get-Command codex.exe -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($cmd) {
+    $r.service_cli='found'
+    $version=(& $cmd.Source --version 2>$null | Out-String)
+    if ($version -match '(?i)codex(?:-cli)?\s+([0-9][\w.-]{0,45})') { $r.service_cli_version=$Matches[1] }
+}
+$linux=@'
+import json, os, pathlib, pwd, re, shutil, subprocess
+home=pathlib.Path.home()
+paths=[shutil.which('codex'), '/usr/local/bin/codex', '/usr/bin/codex',home/'.local/bin/codex',home/'.npm-global/bin/codex',*sorted(home.glob('.nvm/versions/node/*/bin/codex'))]
+exe=next((pathlib.Path(x) for x in paths if x and pathlib.Path(x).is_file() and os.access(x,os.X_OK)),None)
+row={'cli':'unavailable','identity':pwd.getpwuid(os.geteuid()).pw_name}
+if exe:
+    env=dict(os.environ,PATH=str(exe.parent)+':'+os.environ.get('PATH','/usr/bin:/bin'))
+    version=subprocess.run([str(exe),'--version'],capture_output=True,text=True,env=env,timeout=12)
+    m=re.search(r'codex(?:-cli)?\s+([0-9][\w.-]{0,45})',version.stdout,re.I)
+    row['cli']='verified' if m else 'unverified'
+    if m:
+        row['version']=m.group(1)
+        status=subprocess.run([str(exe),'login','status'],capture_output=True,text=True,env=env,timeout=12)
+        row['own_login']='available' if status.returncode==0 else 'not_confirmed'
+print(json.dumps(row))
+'@
+$wsl=Join-Path $env:SystemRoot 'System32\wsl.exe'
+$list=((& $wsl --list --quiet 2>$null | Out-String) -replace "`0",'') -split '\s+'
+foreach ($target in @(@('AnalystAI-Home','analyst-ai'),@('Ubuntu-24.04','analyst-ci'))) {
+    if ($target[0] -notin $list) { continue }
+    $result=$linux | & $wsl -d $target[0] -u $target[1] --exec /usr/bin/python3 -I - 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $obj=$result|ConvertFrom-Json
+        $r.linux+=@([ordered]@{distribution=$target[0];details=$obj})
+    } else { $r.linux+=@([ordered]@{distribution=$target[0];status='check_unavailable'}) }
+}
+Write-Output ('HOME_CODEX_HOST='+($r|ConvertTo-Json -Depth 6 -Compress))
