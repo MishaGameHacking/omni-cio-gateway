@@ -2,10 +2,8 @@ package ru.omnicio.app.ui.portfolio
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -126,10 +124,8 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
             TerminalPanel("ИИ · ОБЪЯСНЕНИЯ",trailing={ TerminalGlyph("analyst",Modifier.size(20.dp)) }) {
                 Text("Разобрать портфель, изменения и риски по сохранённым данным.",style=MaterialTheme.typography.bodySmall,
                     color=MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) {
-                    TerminalAction("Спросить ИИ ↗",{ ask(context) })
-                    TerminalAction("Стратегия",{ navigate(WorkspaceRoute.Strategies) })
-                }
+                TerminalActionPair("Спросить ИИ ↗",{ ask(context) },
+                    "Стратегия",{ navigate(WorkspaceRoute.Strategies) })
             }
         }
         item("terminal-footer") { TerminalLabel("Т‑ИНВЕСТИЦИИ · "+(snapshot?.asOf?.let { dateText(it,"dd.MM.yy HH:mm") } ?: "СНИМОК НЕ ПОЛУЧЕН")+" · МСК") }
@@ -138,6 +134,19 @@ internal fun TerminalDashboardContent(snapshot: PortfolioSnapshot?, requests: Li
         PortfolioCurrency.entries.forEach { currency ->
             TerminalAction(currency.name,{ chooseCurrency(currency); currencyPicker=false },Modifier.fillMaxWidth())
         }
+    }
+}
+
+@Composable
+private fun TerminalActionPair(firstText: String, firstClick: ()->Unit, secondText: String, secondClick: ()->Unit) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val actions: @Composable ()->Unit={
+            TerminalAction(firstText,firstClick)
+            TerminalAction(secondText,secondClick)
+        }
+        if(maxWidth<300.dp*LocalDensity.current.fontScale)
+            Column(Modifier.fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(4.dp)) { actions() }
+        else Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween) { actions() }
     }
 }
 
@@ -308,9 +317,7 @@ private fun TerminalSystem(corpus: WorkspaceResource, automation: WorkspaceResou
                     modifier=Modifier.fillMaxWidth().height(4.dp),color=TerminalPurple,trackColor=MaterialTheme.colorScheme.outlineVariant)
             }
         }
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
-            TerminalAction("Документы ↗",{ navigate(WorkspaceRoute.Library) })
-            TerminalAction("Подбор активов ↗",{ navigate(WorkspaceRoute.Discovery) })
-        }
+        TerminalActionPair("Документы ↗",{ navigate(WorkspaceRoute.Library) },
+            "Подбор активов ↗",{ navigate(WorkspaceRoute.Discovery) })
     }
 }
