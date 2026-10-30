@@ -189,7 +189,7 @@ class ContractTests(unittest.TestCase):
     def test_pinned_baseline_and_module_allowlist(self):
         self.assertEqual(release.BASE, 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4')
         self.assertEqual(release.MODULES, {'volume_chat.py', 'investment_chat_policy.py',
-                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py'})
+                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py', 'portfolio_details.py'})
         self.assertEqual(release.MODULES, prepare.MODULES)
         self.assertEqual(len(release.BASELINE_BLOBS), 107)
         self.assertNotIn('order_lifecycle.py', release.BASELINE_BLOBS)

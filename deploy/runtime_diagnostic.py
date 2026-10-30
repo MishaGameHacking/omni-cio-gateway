@@ -23,6 +23,19 @@ INSTALLED = {
     'volume_chat.py': 'fb1b433d9eb1037955991233f6365a600994999628db89cbe56ac3a431b8cfe8',
     'volume_live.py': '7698a89a3b34a03d262e095d3993e1fb00b7c1805b675a3acf5c90b152cd4d5e',
 }
+# These unchanged cc22 Git blob identities cover the other three replaced files.
+CHAT_BASELINE_BLOBS = {
+    'ai_guarded_client.py': 'd274eb0dd00e9c7d0c0bd7cf8a48d6bef4f73a6d',
+    'investment_chat_policy.py': '9452c47b4556a2feecf7fdbdd9c8df32522bbfcd',
+    'volume_jobs.py': '1892299fd4c2d911b4ba430da44a8f0d3bb1b0bf',
+}
+FAILED_RELEASE_ARCHIVE = Path('/var/lib/analyst-ai-chat-reliability-41056552195')
+HEALTH_ENDPOINTS = {
+    'public_health': 'https://analyst-ai-2941515.twc1.net/health',
+    'public_password_status': 'https://analyst-ai-2941515.twc1.net/auth/owner/status',
+    # Port 8080 is pinned in the existing reviewed owner runtime operation.
+    'local_health': 'http://127.0.0.1:8080/health',
+}
 STATES = frozenset({'blocked', 'waiting', 'preview_available', 'queued', 'running',
     'completed', 'failed', 'cancelled', 'uncertain', 'partial', 'stale', 'reserved', 'settled'})
 KINDS = frozenset({'chat', 'analysis', 'refresh', 'events', 'reconcile', 'catalogue', 'osint'})
@@ -232,13 +245,18 @@ def observe_database(path, now):
 def services():
     result = {}
     for name in ('analyst-ai-owner.service', 'analyst-ai-updates.service'):
-        output = subprocess.run(['systemctl', 'show', name, '--property=ActiveState,SubState,NRestarts'],
+        output = subprocess.run(['systemctl', 'show', name, '--property=ActiveState,SubState,NRestarts,MainPID,ExecMainStartTimestampMonotonic'],
                                 capture_output=True, timeout=10, check=True).stdout.decode()
         values = dict(line.split('=', 1) for line in output.splitlines() if '=' in line)
         restarts = values.get('NRestarts', '')
+        pid = values.get('MainPID', '')
+        started = values.get('ExecMainStartTimestampMonotonic', '')
         result[name] = {'active': token(values.get('ActiveState'), {'active', 'inactive', 'failed', 'activating', 'deactivating'}),
             'substate': token(values.get('SubState'), {'running', 'dead', 'failed', 'start-pre', 'auto-restart'}),
-            'restarts': int(restarts) if restarts.isascii() and restarts.isdigit() and len(restarts) < 10 else None}
+            'restarts': int(restarts) if restarts.isascii() and restarts.isdigit() and len(restarts) < 10 else None,
+            'main_pid': int(pid) if pid.isascii() and pid.isdigit() and len(pid) < 10 else None,
+            'process_age_seconds': max(0, int(time.monotonic() - int(started) / 1_000_000))
+                if started.isascii() and started.isdigit() and 0 < len(started) < 20 and int(started) > 0 else None}
     return result
 
 
@@ -247,6 +265,77 @@ def verify_source(root):
         path = regular(root / name)
         need(path.stat().st_size <= 524288, 'runtime_module_size_invalid')
         need(hashlib.sha256(path.read_bytes()).hexdigest() == expected, 'runtime_source_changed')
+    for name, expected in CHAT_BASELINE_BLOBS.items():
+        path = regular(root / name)
+        need(path.stat().st_size <= 524288, 'runtime_module_size_invalid')
+        raw = path.read_bytes()
+        actual = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+        need(actual == expected, 'runtime_chat_baseline_changed')
+    new_module = root / 'order_lifecycle.py'
+    need(not new_module.exists() and not new_module.is_symlink(), 'runtime_order_module_present')
+
+
+def observe_release_archive():
+    archive = FAILED_RELEASE_ARCHIVE
+    exists = archive.exists() or archive.is_symlink()
+    result = {'release_run': 41056552195, 'archive_present': exists,
+              'phase_evidence': 'archive_absent', 'failure': None}
+    if not exists:
+        return result
+    if archive.is_symlink() or not archive.is_dir() or archive.resolve(strict=True) != archive:
+        result['phase_evidence'] = 'archive_path_unsafe'
+        return result
+    result['phase_evidence'] = 'archive_created'
+    result['presence'] = {name: (archive / name).exists() or (archive / name).is_symlink()
+        for name in ('source-bundle.json', 'before.sqlite3', 'previous-source', 'failure.json', 'deployment.json')}
+    failure = archive / 'failure.json'
+    if not result['presence']['failure.json']:
+        return result
+    if failure.is_symlink() or not failure.is_file() or failure.stat().st_size > 65536:
+        result['phase_evidence'] = 'failure_record_unreadable'
+        return result
+    try:
+        value = bounded_json(failure.read_text())
+    except (UnicodeError, OSError):
+        value = None
+    if value is None:
+        result['phase_evidence'] = 'failure_record_invalid'
+        return result
+    result['phase_evidence'] = 'failure_recorded'
+    result['failure'] = {'status': token(value.get('status'), {'failed'}),
+        'code': token(value.get('code'), {'rollback_requires_service_quiescence', 'compatible_source_recovery_not_proven'})
+            if value.get('code') is not None else None}
+    for key in ('previous_service_restarted', 'installed_files_preserved', 'rollback_performed',
+                'owner_credentials_preserved', 'database_restored'):
+        result['failure'][key] = value.get(key) if type(value.get(key)) is bool else None
+    return result
+
+
+def observe_http(label):
+    need(label in HEALTH_ENDPOINTS, 'diagnostic_http_scope_invalid')
+    start = time.monotonic()
+    result = {'http_status': None, 'error': None}
+    try:
+        response = subprocess.run(['curl', '--silent', '--output', os.devnull,
+            '--write-out', '%{http_code}', '--max-time', '8', '--connect-timeout', '3',
+            '--max-filesize', '4096', '--proto', '=http,https', '--max-redirs', '0',
+            HEALTH_ENDPOINTS[label]], capture_output=True, timeout=10, check=False)
+        raw = response.stdout
+        if len(raw) == 3 and raw.isdigit() and 100 <= int(raw) <= 599:
+            result['http_status'] = int(raw)
+        if response.returncode:
+            result['error'] = {6: 'dns_error', 7: 'connect_error', 28: 'timeout',
+                35: 'tls_error', 60: 'tls_error', 63: 'response_too_large'}.get(response.returncode, 'http_transport_error')
+        elif result['http_status'] is None:
+            result['error'] = 'invalid_http_status'
+    except subprocess.TimeoutExpired:
+        result['error'] = 'process_timeout'
+    except FileNotFoundError:
+        result['error'] = 'http_tool_unavailable'
+    except OSError:
+        result['error'] = 'http_tool_error'
+    result['elapsed_ms'] = max(0, round((time.monotonic() - start) * 1000))
+    return result
 
 
 def run(envelope):
@@ -260,7 +349,10 @@ def run(envelope):
         now = int(time.time())
         result = {'schema': 1, 'status': 'observed', 'server_id': 9417611, 'source_commit': SOURCE,
             'observed_at': stamp(now), 'database': observe_database(Path('/var/lib/analyst-ai/backend.db'), now),
-            'services': services(), 'application_imported': False, 'broker_called': False,
+            'services': services(), 'failed_release': observe_release_archive(),
+            'http': {label: observe_http(label) for label in HEALTH_ENDPOINTS},
+            'runtime_baseline_verified': True, 'order_lifecycle_absent': True,
+            'application_imported': False, 'broker_called': False,
             'model_called': False, 'database_written': False, 'service_changed': False}
         verify_source(Path('/opt/analyst-ai/backend'))
         print(json.dumps(result, sort_keys=True), flush=True)

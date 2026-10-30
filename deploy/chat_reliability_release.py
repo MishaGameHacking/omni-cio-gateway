@@ -23,7 +23,7 @@ import zipfile
 BASE = 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4'
 WHEEL_SHA = 'c8ca4d9a360dbd5d4b9bb7a8389e2a9ae6a106bee722b496f918040ba2daa17e'
 MODULES = frozenset({'volume_chat.py', 'investment_chat_policy.py',
-                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py'})
+                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py', 'portfolio_details.py'})
 # Immutable Git blob identities of the deployed cc22 backend (107 files).
 BASELINE_BLOBS = {'ai_broker_access.py': 'b182ad2310f39a518ff329c91ed4fa81a465d1a1',
  'ai_budget.py': '36ae45ae5d7b33c55b3dee614c9ead9ea41f575a',

@@ -8,7 +8,7 @@ import zipfile
 
 BASE = 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4'
 MODULES = {'volume_chat.py', 'investment_chat_policy.py',
-                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py'}
+                     'ai_guarded_client.py', 'volume_jobs.py', 'order_lifecycle.py', 'portfolio_details.py'}
 
 
 def require(value, code):

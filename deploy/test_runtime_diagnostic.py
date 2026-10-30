@@ -1,5 +1,6 @@
 """Synthetic-only read-only observer checks; execute exclusively in owner WSL."""
 from pathlib import Path
+import hashlib
 import importlib.util
 import json
 import sqlite3
@@ -222,6 +223,95 @@ class DiagnosticTests(unittest.TestCase):
         with patch.object(preparer, 'Path', side_effect=lambda relative: self.root / relative):
             with self.assertRaises(RuntimeError):
                 preparer.main()
+
+    def test_failed_archive_projection_omits_private_fields_and_never_reads_backup_or_bundle(self):
+        archive = self.root / 'failed-release'
+        archive.mkdir()
+        (archive / 'source-bundle.json').write_text(SECRET)
+        (archive / 'before.sqlite3').write_text(SECRET)
+        (archive / 'failure.json').write_text(json.dumps({'status': 'failed', 'code': SECRET,
+            'exception': SECRET, 'previous_service_restarted': True, 'owner_credentials_preserved': SECRET}))
+        original = Path.read_text
+        def only_failure(path, *args, **kwargs):
+            self.assertEqual('failure.json', path.name)
+            return original(path, *args, **kwargs)
+        with patch.object(observer, 'FAILED_RELEASE_ARCHIVE', archive), patch.object(Path, 'read_text', only_failure):
+            result = observer.observe_release_archive()
+        self.assertEqual('failure_recorded', result['phase_evidence'])
+        self.assertEqual('unknown', result['failure']['code'])
+        self.assertTrue(result['failure']['previous_service_restarted'])
+        self.assertIsNone(result['failure']['owner_credentials_preserved'])
+        self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_archive_absence_is_reported_without_creating_it(self):
+        archive = self.root / 'absent-release'
+        with patch.object(observer, 'FAILED_RELEASE_ARCHIVE', archive):
+            result = observer.observe_release_archive()
+        self.assertFalse(result['archive_present'])
+        self.assertFalse(archive.exists())
+
+    def test_archive_rejects_symlink_and_malformed_failure(self):
+        archive = self.root / 'failure-source'
+        archive.mkdir()
+        failure = archive / 'failure.json'
+        secret = self.root / 'private'
+        secret.write_text(SECRET)
+        failure.symlink_to(secret)
+        with patch.object(observer, 'FAILED_RELEASE_ARCHIVE', archive):
+            self.assertEqual('failure_record_unreadable', observer.observe_release_archive()['phase_evidence'])
+            failure.unlink()
+            failure.write_bytes(b'\xff\xfe')
+            self.assertEqual('failure_record_invalid', observer.observe_release_archive()['phase_evidence'])
+
+    def test_http_observation_is_bounded_and_does_not_publish_bodies_or_error_text(self):
+        class Result:
+            stdout, stderr, returncode = b'200', SECRET.encode(), 0
+        with patch.object(observer.subprocess, 'run', return_value=Result()) as command:
+            result = observer.observe_http('public_password_status')
+        self.assertEqual(200, result['http_status'])
+        self.assertIsNone(result['error'])
+        self.assertNotIn(SECRET, json.dumps(result))
+        args = command.call_args.args[0]
+        self.assertEqual('https://analyst-ai-2941515.twc1.net/auth/owner/status', args[-1])
+        self.assertEqual('8', args[args.index('--max-time') + 1])
+        self.assertEqual('4096', args[args.index('--max-filesize') + 1])
+        self.assertEqual(10, command.call_args.kwargs['timeout'])
+        self.assertNotIn('--location', args)
+        self.assertNotIn('--insecure', args)
+        self.assertNotIn('-L', args)
+
+    def test_http_timeout_is_sanitized_and_other_targets_are_forbidden(self):
+        error = observer.subprocess.TimeoutExpired(['curl', SECRET], 10, output=SECRET, stderr=SECRET)
+        with patch.object(observer.subprocess, 'run', side_effect=error) as command:
+            result = observer.observe_http('local_health')
+            self.assertEqual('process_timeout', result['error'])
+            self.assertNotIn(SECRET, json.dumps(result))
+            with self.assertRaises(RuntimeError):
+                observer.observe_http('https://unapproved.example')
+        self.assertEqual(1, command.call_count)
+
+    def test_extra_changed_module_baselines_and_new_module_absence_are_required(self):
+        raw = b'synthetic baseline'
+        path = self.root / 'ai_guarded_client.py'
+        path.write_bytes(raw)
+        blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
+        with patch.object(observer, 'INSTALLED', {}), patch.object(observer, 'CHAT_BASELINE_BLOBS', {path.name: blob}):
+            observer.verify_source(self.root)
+            (self.root / 'order_lifecycle.py').write_text('new module')
+            with self.assertRaisesRegex(RuntimeError, 'runtime_order_module_present'):
+                observer.verify_source(self.root)
+            (self.root / 'order_lifecycle.py').unlink()
+            path.write_bytes(b'changed')
+            with self.assertRaisesRegex(RuntimeError, 'runtime_chat_baseline_changed'):
+                observer.verify_source(self.root)
+
+    def test_service_pid_and_age_use_only_numeric_properties(self):
+        class Result:
+            stdout = b'ActiveState=active\nSubState=running\nNRestarts=0\nMainPID=321\nExecMainStartTimestampMonotonic=2000000\n'
+        with patch.object(observer.subprocess, 'run', return_value=Result()), patch.object(observer.time, 'monotonic', return_value=12.5):
+            result = observer.services()['analyst-ai-owner.service']
+        self.assertEqual(321, result['main_pid'])
+        self.assertEqual(10, result['process_age_seconds'])
 
 
 if __name__ == '__main__':
