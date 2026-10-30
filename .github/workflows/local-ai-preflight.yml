@@ -1,0 +1,61 @@
+name: Observe fixed local AI prerequisites on the existing server
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/local-ai-preflight.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-preview-release-publication
+  cancel-in-progress: false
+env:
+  EXPECTED_TOOLS_SHA: 'e9c49b0f7333ecddb0c25890aabc7804ff6dde8f'
+  EXPECTED_TOOLS_RUN: '41087924569'
+jobs:
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Require exact successful owner WSL verification and unchanged reviewed transport
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const e=process.env;
+            if(!/^[a-f0-9]{40}$/.test(e.EXPECTED_TOOLS_SHA)||/^0+$/.test(e.EXPECTED_TOOLS_SHA)) throw new Error('Exact tested source required');
+            if(!/^[1-9][0-9]{7,19}$/.test(e.EXPECTED_TOOLS_RUN)) throw new Error('Exact successful run required');
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN)});
+            if(r.head_sha!==e.EXPECTED_TOOLS_SHA||r.path!=='.github/workflows/local-ai-preflight-tools.yml'||r.head_branch!=='codex/timeweb-owner-prepare-2026-10-23'||r.event!=='push'||r.run_attempt!==1||r.status!=='completed'||r.conclusion!=='success') throw new Error('Exact diagnostic verification did not pass');
+            const jobs=await github.paginate(github.rest.actions.listJobsForWorkflowRun,{...context.repo,run_id:Number(e.EXPECTED_TOOLS_RUN),per_page:100});
+            if(jobs.filter(j=>j.name==='verify'&&j.conclusion==='success'&&j.status==='completed').length!==1) throw new Error('Successful verify job missing');
+            for(const path of ['deploy/local_ai_preflight.py','deploy/test_local_ai_preflight.py','tools/check_local_ai_preflight.py','tools/prepare_local_ai_preflight_transport.py','.github/workflows/local-ai-preflight-tools.yml']) {
+              const {data:tested}=await github.rest.repos.getContent({...context.repo,path,ref:e.EXPECTED_TOOLS_SHA});
+              const {data:current}=await github.rest.repos.getContent({...context.repo,path,ref:context.sha});
+              if(tested.sha!==current.sha) throw new Error('Tested tool changed: '+path);
+            }
+            const {data:transport}=await github.rest.repos.getContent({...context.repo,path:'tools/owner_plan_transport_20261027.py',ref:context.sha});
+            if(transport.sha!=='7478ac9850fe1deeb729d1ccbc8fb0f28b849124') throw new Error('Reviewed transport changed');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: .transport-admin
+          persist-credentials: false
+      - name: Prepare the tested read-only operation
+        run: python3 tools/prepare_local_ai_preflight_transport.py
+      - name: Read hardware, libraries and service health without accessing application secrets
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: python3 tools/owner_plan_transport_20261027.py
+      - name: Preserve sanitized read-only receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: local-ai-preflight-${{ github.run_id }}
+          path: plan-reports/
+          if-no-files-found: warn
+          retention-days: 7
