@@ -1,0 +1,26 @@
+name: Cancel only the superseded terminal57 verification
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-superseded.yml]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  cancel-owned:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const ref='a5e386d950a8200474e69a69907c092df062c032';
+            const {data:branch}=await github.rest.git.getRef({...context.repo,ref:'heads/codex/owner-system-2026-10-29'});
+            if(branch.object.sha!==ref) throw new Error('Current candidate changed');
+            const run_id=41014980768;
+            const {data:run}=await github.rest.actions.getWorkflowRun({...context.repo,run_id});
+            if(run.head_sha!=='b459ddc06127a0b54b1ffc8ad33d16a1ca6adf6f'||run.head_branch!=='codex/owner-system-2026-10-29'||run.path!=='.github/workflows/owner-system.yml'||run.event!=='push')
+              throw new Error('Not the owned superseded verification');
+            if(run.status==='completed') { core.info('Superseded verification already completed'); return; }
+            await github.rest.actions.cancelWorkflowRun({...context.repo,run_id});
+            core.info('Cancelled only superseded run '+run_id+'; current candidate requires all checks');
