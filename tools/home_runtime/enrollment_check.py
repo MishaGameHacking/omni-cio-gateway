@@ -33,6 +33,9 @@ def ps(file,*options,timeout=360):
     if p.returncode:
         # Expose only known script exception labels, no environment, paths or PowerShell transcript.
         low=(p.stdout+p.stderr).decode('utf-8',errors='ignore').lower()
+        diagnosis=re.search(r'home_test_diag=([a-z0-9_-]{1,96})',low)
+        if diagnosis:
+            raise ValueError('windows_contract_'+diagnosis[1][:66])
         keys=('content verification','reparse point','cannot bind','syntax','not recognized','is not recognized',
               'parse','empty string','access is denied','cannot find','exception calling','ambiguous','not supported')
         raise ValueError('powershell_'+next((k.replace(' ','_') for k in keys if k in low),'exit')+'_'+str(p.returncode))
@@ -81,6 +84,10 @@ def stage():
     require(resume.get('legacy_rejected') is True and resume.get('interrupted_payload')=='reused'
             and resume.get('foreign_receipt')=='rejected' and resume.get('native_task_contract')=='verified','unverified_repair')
     print('HOME_ENROLLMENT_REPAIR='+json.dumps(resume),flush=True)
+    recovery=json.loads(ps(HERE/'profile_recovery_check.ps1',str(bootstrap/FILES[0])).splitlines()[-1])
+    require(recovery.get('task_first') is True and recovery.get('coordinated_cases')==4
+            and recovery.get('old_profile_call_removed') is True,'unverified_profile_recovery')
+    print('HOME_PROFILE_REPAIR='+json.dumps(recovery),flush=True)
     out=ps(dest/FILES[1],'-TransportCheck')
     expected=re.search(r'EXPECTED_TRANSPORT=([a-f0-9]{64})',out)
     got=re.search(r'(?m)^([a-f0-9]{64})\s+-\s*$',out)

@@ -107,6 +107,97 @@ function Verify-Task($t,$sid) {
           [string]$t.Principal.LogonType -eq 'Password' -and @($t.Triggers).Count -eq 1 -and
           $t.Triggers[0].CimClass.CimClassName -eq 'MSFT_TaskBootTrigger') 'Unexpected task identity or trigger'
 }
+function Log-Enrollment([string]$step,[string]$code='') {
+    if (-not $journalEnabled) { return }
+    $directory=Join-Path $root 'install-status'
+    $to=Join-Path $directory 'status.json'
+    $next=Join-Path $directory ('next-'+[Guid]::NewGuid().ToString('N'))
+    $row=[ordered]@{package=$PackageCode;stage=$step;code=$code;utc=[DateTime]::UtcNow.ToString('o')}
+    [IO.File]::WriteAllText($next,($row | ConvertTo-Json -Compress))
+    if ([IO.File]::Exists($to)) { [IO.File]::Replace($next,$to,[NullString]::Value) } else { [IO.File]::Move($next,$to) }
+}
+function Error-Code($cause) {
+    $e=$cause.Exception
+    while ($null -ne $e.InnerException) { $e=$e.InnerException }
+    if ($e -is [ComponentModel.Win32Exception]) { return ('win32-'+$e.NativeErrorCode) }
+    return ('hresult-{0:X8}' -f ([long]$e.HResult -band 4294967295L))
+}
+function Read-WorkerPhase([DateTime]$since) {
+    $file=Join-Path $root 'report\status.json'
+    try {
+        if ((Get-Item -Force -LiteralPath $file).Length -gt 4096) { return '' }
+        $row=Get-Content -Raw -LiteralPath $file | ConvertFrom-Json
+        if ($row.package -eq $PackageCode -and $row.phase -match '^(?:failed-)?(?:windows|import|configure|application|local-model|login-check|supervising)$' -and
+            [DateTimeOffset]::Parse([string]$row.utc).UtcDateTime -ge $since.AddSeconds(-3)) { return [string]$row.phase }
+    } catch { }
+    return ''
+}
+function Wait-WorkerPhase([DateTime]$since,[int]$seconds) {
+    $until=[DateTime]::UtcNow.AddSeconds($seconds)
+    do {
+        $phase=Read-WorkerPhase $since
+        if ($phase -and $phase -ne 'windows') { return $phase }
+        Start-Sleep -Seconds 2
+    } while ([DateTime]::UtcNow -lt $until)
+    return (Read-WorkerPhase $since)
+}
+function Initialize-ByLogon([PSCredential]$credential,[string]$ownerSid) {
+    Need ($ownerSid -match '^S-1-5-21-(?:[0-9]+-){3}[0-9]+$') 'Unexpected service account SID'
+    $secondary=Get-Service -Name seclogon
+    if ($secondary.Status -ne 'Running') {
+        Start-Service -Name seclogon
+        $secondary.WaitForStatus([System.ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(25))
+    }
+    # The child runs only a fixed identity/profile check. No password is passed on a command line.
+    $probe=@'
+$ErrorActionPreference='Stop'
+$want='EXPECTED_SID'
+if ([Security.Principal.WindowsIdentity]::GetCurrent().User.Value -ne $want) { exit 41 }
+$p=Get-ItemProperty -LiteralPath ('HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$want)
+$root=[Environment]::ExpandEnvironmentVariables([string]$p.ProfileImagePath)
+if (-not [IO.Directory]::Exists($root) -or $root.TrimEnd('\') -ne $env:USERPROFILE.TrimEnd('\')) { exit 42 }
+if (-not (Test-Path -LiteralPath ('Registry::HKEY_USERS\'+$want))) { exit 43 }
+exit 0
+'@
+    $probe=$probe.Replace('EXPECTED_SID',$ownerSid)
+    $cmd=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probe))
+    $p=Start-Process -FilePath $winPS -ArgumentList ('-NoLogo -NoProfile -NonInteractive -EncodedCommand '+$cmd) -Credential $credential -LoadUserProfile -WorkingDirectory $env:SystemRoot -WindowStyle Hidden -PassThru
+    try {
+        if (-not $p.WaitForExit(60000)) { throw 'The dedicated profile logon timed out' }
+        Need ($p.ExitCode -eq 0) ('The dedicated profile check exited with '+$p.ExitCode)
+    } finally { $p.Dispose() }
+}
+function Start-HomeSupervisor([PSCredential]$credential,[string]$ownerSid) {
+    $since=[DateTime]::UtcNow
+    Log-Enrollment 'starting-task'
+    $profileKey='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$ownerSid
+    try {
+        Start-ScheduledTask -TaskPath '\' -TaskName $task
+        $phase=Wait-WorkerPhase $since 45
+    } catch {
+        if (Test-Path -LiteralPath $profileKey) { throw }
+        Log-Enrollment 'start-needs-profile' (Error-Code $_)
+        $phase=''
+    }
+    if ((-not $phase -or $phase -in 'windows','failed-windows','failed-import') -and -not (Test-Path -LiteralPath $profileKey)) {
+        Log-Enrollment 'loading-profile'
+        Initialize-ByLogon $credential $ownerSid
+        Log-Enrollment 'retrying-task'
+        $since=[DateTime]::UtcNow
+        $registered=Get-ScheduledTask -TaskPath '\' -TaskName $task
+        if ($registered.State -ne 'Running') { Start-ScheduledTask -TaskPath '\' -TaskName $task }
+        $phase=Wait-WorkerPhase $since 65
+    }
+    if (-not $phase -or $phase -eq 'windows') {
+        $result=(Get-ScheduledTaskInfo -TaskPath '\' -TaskName $task).LastTaskResult
+        Log-Enrollment 'waiting-worker' ('task-{0:X8}' -f ([long]$result -band 4294967295L))
+        Write-Output 'Boot task is registered. Windows has not yet reported guest startup.'
+        return
+    }
+    Log-Enrollment ('worker-'+$phase)
+    if ($phase -like 'failed-*') { Write-Output ('Windows registered the boot task. The guest reported '+$phase+'.'); return }
+    Write-Output ('Windows registered the boot task. Guest startup checkpoint: '+$phase+'.')
+}
 $winPS=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 # Apply Windows' actual validation contract before touching protected resources.
 $descriptionRule=@((Get-Command Microsoft.PowerShell.LocalAccounts\New-LocalUser).Parameters['Description'].Attributes | Where-Object { $_ -is [Management.Automation.ValidateLengthAttribute] })
@@ -122,6 +213,8 @@ if ($VerifyOnly) {
     [PSCustomObject]@{package=$PackageCode;items=$expected.Count;media_sha256='verified';powershell_syntax='valid';requires_admin_for_boot=$true;description_chars=$description.Length;description_limit=$descriptionRule[0].MaxLength;account_whatif=$true} | ConvertTo-Json -Compress
     return
 }
+$journalEnabled=$false
+$checkpoint='entry'
 $caller=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 Need ($caller.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) 'One local Windows administrator elevation is required.'
 Need ((Get-Service -Name Schedule).Status -eq 'Running') 'Windows Task Scheduler is unavailable'
@@ -137,16 +230,43 @@ if (-not [IO.Directory]::Exists($root)) {
     Lock-Directory $root $null 'ReadAndExecute' $false
     Save-Enrollment ([ordered]@{marker='analyst-home-runtime-v1';package=$PackageCode;machine=$machine;sid=''})
 }
+$null=Read-Enrollment
+$lockFile=Join-Path $root 'enrollment.lock'
+if ([IO.File]::Exists($lockFile)) { Plain $lockFile }
+$installLock=[IO.File]::Open($lockFile,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+try {
 $info=Read-Enrollment
+$adminStatus=Join-Path $root 'install-status'
+try {
+    if (-not [IO.Directory]::Exists($adminStatus)) { $null=[IO.Directory]::CreateDirectory($adminStatus) }
+    Plain $adminStatus
+    Lock-Directory $adminStatus $null 'ReadAndExecute' $true
+    $journalEnabled=$true
+    Log-Enrollment 'receipt-verified'
+} catch {
+    $journalEnabled=$false
+    Write-Warning 'The optional installer status channel is unavailable.'
+}
+$current=$null
 if ($info.sid) {
     $account=Get-LocalUser -Name $name
     Need ($account.SID.Value -eq $info.sid -and $account.Description -eq $description) 'Owned account identity changed'
     $current=Get-ScheduledTask -TaskPath '\' -TaskName $task -ErrorAction SilentlyContinue
     if ($current) {
         Verify-Task $current $account.SID
-        if ($current.State -ne 'Running') { Start-ScheduledTask -TaskPath '\' -TaskName $task }
-        Write-Output 'Enrolled. Local service startup has been requested.'
-        return
+        if ($current.State -ne 'Running') {
+            Start-ScheduledTask -TaskPath '\' -TaskName $task
+            Start-Sleep -Seconds 3
+            $current=Get-ScheduledTask -TaskPath '\' -TaskName $task
+        }
+        if ($current.State -eq 'Running') {
+            $previous=Read-WorkerPhase ([DateTime]'2000-01-01')
+            if ($previous -and $previous -notlike 'failed-*') {
+                Log-Enrollment ('worker-'+$previous)
+                Write-Output ('Owned task is running. Its last guest checkpoint was '+$previous+'.')
+                return
+            }
+        }
     }
 } else {
     Need (-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) 'The local account name is occupied'
@@ -161,6 +281,7 @@ $plainPassword='Aa1!'+[Convert]::ToBase64String($bytes)
 [Array]::Clear($bytes,0,$bytes.Length)
 $secret=ConvertTo-SecureString -AsPlainText $plainPassword -Force
 try {
+    $checkpoint='service-account'
     if (-not $info.sid) {
         $account=Microsoft.PowerShell.LocalAccounts\New-LocalUser @accountOptions -Password $secret
         $info.sid=$account.SID.Value
@@ -168,6 +289,7 @@ try {
     } else {
         Set-LocalUser -SID $account.SID -Password $secret
     }
+    $checkpoint='account-access'
     $membersId=[Security.Principal.SecurityIdentifier]::new('S-1-5-32-545')
     if ($account.SID.Value -notin @((Get-LocalGroupMember -SID $membersId | ForEach-Object {$_.SID.Value}))) {
         Add-LocalGroupMember -SID $membersId -Member $localUser
@@ -180,20 +302,21 @@ try {
         Plain $path
         Lock-Directory $path $account.SID 'Modify' ($dir -eq 'report')
     }
-    $profileKey='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\'+$account.SID.Value
-    if (-not (Test-Path -LiteralPath $profileKey)) {
-        Add-Type -Namespace AnalystHome -Name UserEnvironment -MemberDefinition @'
-[System.Runtime.InteropServices.DllImport("userenv.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)]
-public static extern int CreateProfile(string sid,string user,System.Text.StringBuilder path,uint size);
-'@
-        $buffer=[Text.StringBuilder]::new(1024)
-        $hr=[AnalystHome.UserEnvironment]::CreateProfile($account.SID.Value,$name,$buffer,1024)
-        Need ($hr -eq 0 -or (Test-Path -LiteralPath $profileKey)) 'Could not create the dedicated WSL user profile'
-    }
+    # Register before the first profile logon. Windows can now restart the limited supervisor at boot.
+    $checkpoint='registering-task'
+    Log-Enrollment $checkpoint
     $taskOptions=Home-TaskOptions
+    if ($current) { $taskOptions.Force=$true }
     $null=Register-ScheduledTask @taskOptions -Password $plainPassword
     $created=Get-ScheduledTask -TaskPath '\' -TaskName $task
     Verify-Task $created $account.SID
-    Start-ScheduledTask -TaskPath '\' -TaskName $task
-    Write-Output 'Enrolled. Private Ubuntu installation has started. See C:\Program Files\AnalystAI-HomeRuntime\report\status.json.'
+    Log-Enrollment 'task-registered'
+    $checkpoint='starting-supervisor'
+    $credential=[PSCredential]::new($localUser,$secret)
+    Start-HomeSupervisor $credential $account.SID.Value
+} catch {
+    $cause=$_
+    try { Log-Enrollment ('failed-'+$checkpoint) (Error-Code $cause) } catch {}
+    throw $cause
 } finally { $plainPassword=$null; $secret.Dispose() }
+} finally { $installLock.Dispose() }
