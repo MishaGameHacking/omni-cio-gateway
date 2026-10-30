@@ -1,0 +1,37 @@
+name: Inspect additional owner CI disk stores
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/home-storage-detail.yml, tools/home_host/storage_detail.py, tools/home_host/guest_storage_detail.py]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 8
+    steps:
+      - name: Read only disk usage of the existing project tools and WSL runner
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          retries: 2
+          script: |
+            const cp=require('node:child_process'),crypto=require('node:crypto'),path=require('node:path');
+            if(process.platform!=='win32'||process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
+            async function read(file){const {data}=await github.rest.repos.getContent({...context.repo,path:'tools/home_host/'+file,ref:context.sha});if(data.encoding!=='base64')throw Error('Missing source');return Buffer.from(data.content,'base64');}
+            function execute(file,args,source,timeout){return new Promise(resolve=>{
+              const p=cp.execFile(file,args,{encoding:'utf8',timeout,windowsHide:true,maxBuffer:180000},(e,out)=>{
+                if(e || !out){resolve({error:e?.code||'empty'});return;} 
+                try{resolve(JSON.parse(out));}catch{resolve({error:'invalid_json'});}
+              });p.stdin.on('error',()=>{});p.stdin.end(source);
+            });}
+            const [win,guest]=await Promise.all([read('storage_detail.py'),read('guest_storage_detail.py')]);
+            const [windows,linux]=await Promise.all([execute('py.exe',['-3','-I','-'],win,125000),
+              execute(path.join(process.env.SystemRoot,'System32','wsl.exe'),['-d','Ubuntu-24.04','-u','root','--exec','python3','-I','-'],guest,180000)]);
+            const r={run:context.runId,sha:context.sha,at:new Date().toISOString(),windows,linux};
+            const key=crypto.randomBytes(32),iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
+            const data=Buffer.concat([cipher.update(JSON.stringify(r),'utf8'),cipher.final()]);
+            const pk=crypto.createPublicKey({key:Buffer.from('MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA0slElljuCS+i/PbObZsjl9UuIfnf62YDAiR5Wn/uHZ9QikUeoSuplse/laSqX7edDjUX3LVfSCElJGYmzGfTOhBzs/5oM1vBr3mTjDy8XsVbPr8I6dwBHOHKn8bxe2nZPSwD6d7wKFsMUHi4VpdyIomEWIb/yjTiPbDFQbjm4curKz1x01RX63BOpbNmRCt2dW4LNSckIqRK1hADmGNAz/2ge/hyY+R+GHDXo8Pg3+mokzQk456DS7xRwvGZ6BXVoj0mJg6t2hNL+/k6GqBGuRwjs/++zR05NtnGnU7LRjpl8h9GZNI0j+FxvPnjae6mM26VSk++tesQxsq/Wn1tyPsqSFQ/ehWqxR2hZu26GBN2rJBsEjld4G8MFvOHmwP2odhkHHdxYzc0SN6aNBak/frz1HJieBRFOjjzJwtFgE5Jue7C+6eVTsJbfK5CScgEJ8/dmerdK6iNX8Ne3DBawXD6/XBLszXiRfiV52AlxY9a0bTN1/o/AMYDWifMmQW1AgMBAAE=','base64'),format:'der',type:'spki'});
+            const k=crypto.publicEncrypt({key:pk,oaepHash:'sha256'},key);
+            core.info('HOME_SPACE_DETAIL='+JSON.stringify({k:k.toString('base64'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),data:data.toString('base64')}));
+            if(windows.error||linux.error)core.setFailed('Disk inventory incomplete; see private receipt');
+
