@@ -1,0 +1,96 @@
+name: Inspect owner57 login state without passwords or account changes
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [.github/workflows/owner57-login-diagnostic.yml]
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: owner-ai-private-operation55
+  cancel-in-progress: false
+env:
+  EXPECTED_AI_ADMIN_TOOLS_SHA: 2558e6d88a223ea1cb4e092e7d84894d1a30888b
+  OWNER_AI_ADMIN_HOST: reviewed-ubuntu24-administration-only
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Require successful exact administration tool tests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const {data:r}=await github.rest.actions.getWorkflowRun({...context.repo,run_id:40954726120});
+            if(r.head_sha!==process.env.EXPECTED_AI_ADMIN_TOOLS_SHA||r.conclusion!=='success'||r.status!=='completed'||
+               r.path!=='.github/workflows/owner-ai-admin-tools55.yml'||r.run_attempt!==1)
+              throw new Error('Exact administration verification required');
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.EXPECTED_AI_ADMIN_TOOLS_SHA }}
+          path: supplied-owner-ai55
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: cd1866ee944ccea2259669f4293379241fd4ee02
+          path: supplied-owner-ai55/.transport-admin
+          persist-credentials: false
+      - name: Read credential metadata, throttle counters and filtered response codes only
+        working-directory: supplied-owner-ai55
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python3 - <<'PY'
+          import json,sys,urllib.request,urllib.error
+          from pathlib import Path
+          from contextlib import redirect_stdout,redirect_stderr
+          sys.path.insert(0,'tools')
+          from admin_owner55_ai import DiscardedOutput
+          from owner_ai_admin_transport import require_admin_guard,transport_admin
+          from owner_ai_private_transport import PrivateTransportError,SAFE_TRANSPORT_FAILURE_CODES
+          operation='import json, os, re, sqlite3, subprocess, time\nfrom pathlib import Path\n\ndef inspect():\n    out={\'status\':\'blocked\',\'server_id\':9417611,\'observed_at\':int(time.time()),\n         \'configured\':False,\'configured_at\':0,\'updated_at\':0,\'scheme_valid\':False,\n         \'credential_rows\':0,\'login_failures\':0,\'login_wait_seconds\':0,\n         \'setup_failures\':0,\'setup_wait_seconds\':0,\'session_locked_buckets\':0,\n         \'active_password_sessions\':0,\'latest_password_session_at\':0,\n         \'service_active\':False,\'logs_read\':False}\n    for route in (\'login\',\'setup\',\'password\'):\n        out[route+\'_last_code\']=0\n        out[route+\'_last_at\']=0\n        for status in (200,401,403,409,422,429,500,503): out[route+\'_\'+str(status)]=0\n    try:\n        if os.getuid()!=0: return out\n        path=Path(\'/var/lib/analyst-ai/backend.db\')\n        if path.resolve(strict=True)!=path: return out\n        db=sqlite3.connect(path.as_uri()+\'?mode=ro\',uri=True,timeout=5)\n        db.execute(\'PRAGMA query_only=ON\')\n        now=out[\'observed_at\']\n        try:\n            rows=db.execute(\'SELECT configured_at,updated_at,scheme FROM owner_password_credentials\').fetchall()\n            out[\'credential_rows\']=len(rows)\n            if len(rows)==1:\n                out[\'configured\']=True\n                out[\'configured_at\'],out[\'updated_at\']=int(rows[0][0]),int(rows[0][1])\n                out[\'scheme_valid\']=rows[0][2]==\'scrypt-n32768-r8-p3-v1\'\n            row=db.execute(\'SELECT failures,locked_until FROM owner_password_attempts WHERE singleton=1\').fetchone()\n            if row:out[\'login_failures\'],out[\'login_wait_seconds\']=int(row[0]),max(0,int(row[1])-now)\n            row=db.execute("SELECT failures,locked_until FROM owner_password_proof_attempts WHERE bucket=\'anonymous-setup\'").fetchone()\n            if row:out[\'setup_failures\'],out[\'setup_wait_seconds\']=int(row[0]),max(0,int(row[1])-now)\n            out[\'session_locked_buckets\']=int(db.execute("SELECT count(*) FROM owner_password_proof_attempts WHERE bucket LIKE \'login-session:%\' AND locked_until>?",(now,)).fetchone()[0])\n            row=db.execute(\'SELECT count(*),coalesce(max(p.created_at),0) FROM owner_password_sessions p JOIN sessions s ON s.token_hash=p.token_hash WHERE s.expires_at>=?\',(now,)).fetchone()\n            out[\'active_password_sessions\'],out[\'latest_password_session_at\']=map(int,row)\n        finally:db.close()\n        active=subprocess.run([\'systemctl\',\'is-active\',\'analyst-ai-owner.service\'],capture_output=True,text=True,timeout=10)\n        out[\'service_active\']=active.stdout.strip()==\'active\'\n        logs=subprocess.run([\'journalctl\',\'-u\',\'analyst-ai-owner.service\',\'--since=-2 hours\',\'-n\',\'10000\',\'-o\',\'json\',\'--no-pager\'],capture_output=True,text=True,timeout=20)\n        if logs.returncode==0 and len(logs.stdout)<=16*1024**2:\n            out[\'logs_read\']=True\n            pattern=re.compile(r\'"POST /auth/owner/(login|setup|password) HTTP/[0-9.]+" ([0-9]{3})\')\n            for line in logs.stdout.splitlines():\n                try:\n                    entry=json.loads(line)\n                    match=pattern.search(entry.get(\'MESSAGE\',\'\'))\n                    if not match: continue\n                    route,code=match[1],int(match[2])\n                    key=route+\'_\'+str(code)\n                    if key in out:out[key]+=1\n                    out[route+\'_last_code\']=code\n                    out[route+\'_last_at\']=int(entry.get(\'__REALTIME_TIMESTAMP\',\'0\'))//1000000\n                except (ValueError,TypeError):continue\n        out[\'status\']=\'inspected\'\n    except Exception:pass\n    return out\n\nprint(json.dumps(inspect()),flush=True)\n'
+          contract={'status':{'blocked','inspected'},'server_id':int,'observed_at':int,
+              'configured':bool,'configured_at':int,'updated_at':int,'scheme_valid':bool,
+              'credential_rows':int,'login_failures':int,'login_wait_seconds':int,
+              'setup_failures':int,'setup_wait_seconds':int,'session_locked_buckets':int,
+              'active_password_sessions':int,'latest_password_session_at':int,
+              'service_active':bool,'logs_read':bool}
+          for route in ('login','setup','password'):
+              contract[route+'_last_code']=int;contract[route+'_last_at']=int
+              for status in (200,401,403,409,422,429,500,503):contract[route+'_'+str(status)]=int
+          receipt={'status':'blocked'}
+          try:
+              with redirect_stdout(DiscardedOutput()),redirect_stderr(DiscardedOutput()):
+                  require_admin_guard()
+                  receipt=transport_admin(operation,{},None,contract)
+          except PrivateTransportError as exc:
+              receipt={'status':'blocked','error_code':exc.code if exc.code in SAFE_TRANSPORT_FAILURE_CODES else 'private_transport_failed'}
+          except BaseException:
+              receipt={'status':'blocked','error_code':'diagnostic_preflight_failed'}
+          public={'status_code':0,'configured':None}
+          try:
+              from owner_plan_transport_20261027 import p
+              opener=urllib.request.build_opener(p.NoRedirect(),urllib.request.HTTPSHandler(context=p.verified_ssl_context()))
+              request=urllib.request.Request('https://analyst-ai-2941515.twc1.net/auth/owner/status',headers={'Cache-Control':'no-cache'})
+              with opener.open(request,timeout=20) as response:
+                  raw=response.read(8193)
+                  if len(raw)>8192:raise ValueError('response size')
+                  value=json.loads(raw)
+                  public={'status_code':response.status,'configured':value.get('configured') if type(value.get('configured')) is bool else None}
+          except urllib.error.HTTPError as exc:public['status_code']=exc.code
+          except Exception:pass
+          result={'inspection':receipt,'public_status':public,'read_only':True,'passwords_read':False,'login_requests_sent':False}
+          Path('plan-reports').mkdir(exist_ok=True)
+          Path('plan-reports/owner57-login-diagnostic.json').write_text(json.dumps(result,indent=2)+'\n')
+          print('OWNER_LOGIN_DIAGNOSTIC='+json.dumps(result,sort_keys=True),flush=True)
+          raise SystemExit(0 if receipt['status']=='inspected' else 1)
+          PY
+      - name: Preserve non-secret diagnosis
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: owner57-login-diagnostic-${{ github.run_id }}
+          path: supplied-owner-ai55/plan-reports/
+          retention-days: 3
+          if-no-files-found: warn
