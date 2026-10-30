@@ -30,8 +30,9 @@ def worker():
 def test_invalid_private_request_never_reaches_engine(worker, change):
     context = {**local_research.packet("Report", "Revenue was 100 RUB."), **change}
     engine = mock.Mock()
+    runtime = mock.Mock()
     with pytest.raises(ValueError):
-        worker.model_select(engine, mock.Mock(), context)
+        worker.model_select(engine, runtime, context)
     engine.tokenize.assert_not_called()
     engine.create_conversation.assert_not_called()
 
@@ -39,9 +40,10 @@ def test_invalid_private_request_never_reaches_engine(worker, change):
 def test_real_token_limit_checked_before_inference(worker):
     context = local_research.packet("Report", "Revenue was 100 RUB.")
     engine = mock.Mock()
+    runtime = mock.Mock()
     engine.tokenize.return_value = [1] * 1900
     with pytest.raises(ValueError, match="local_context_full"):
-        worker.model_select(engine, mock.Mock(), context)
+        worker.model_select(engine, runtime, context)
     engine.create_conversation.assert_not_called()
 
 
@@ -49,11 +51,12 @@ def test_real_token_limit_checked_before_inference(worker):
 def test_invalid_provider_output_rejected(worker, content):
     context = local_research.packet("Report", "Revenue was 100 RUB.")
     engine = mock.Mock()
+    runtime = mock.Mock()
     engine.tokenize.return_value = [1]
     conversation = mock.MagicMock()
     engine.create_conversation.return_value = conversation
     conversation.__enter__.return_value.send_message.return_value = {"content": content}
     with pytest.raises(ValueError):
-        worker.model_select(engine, mock.Mock(), context)
+        worker.model_select(engine, runtime, context)
     assert engine.create_conversation.call_args.kwargs["tools"] == []
     assert engine.create_conversation.call_args.kwargs["automatic_tool_calling"] is False

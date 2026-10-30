@@ -6,7 +6,9 @@ from backend import local_research as subject
 
 
 @pytest.fixture(autouse=True)
-def empty_cache():
+def empty_cache(monkeypatch):
+    # Test the transport contract independently of production model admission.
+    monkeypatch.setattr(subject, "MODEL_QUALIFIED", True)
     subject._cache.clear()
     yield
     subject._cache.clear()
@@ -94,6 +96,15 @@ def test_disabled_never_opens_worker():
     with mock.patch.dict(subject.os.environ, {}, clear=True), mock.patch.object(subject, "_request") as request:
         assert subject.select_public_fragments("Отчёт", "Строка")["status"] == "disabled"
         request.assert_not_called()
+
+
+def test_unqualified_candidate_cannot_be_enabled_with_environment():
+    with mock.patch.object(subject, "MODEL_QUALIFIED", False), \
+            mock.patch.dict(subject.os.environ, {"LOCAL_RESEARCH_ENABLED": "true"}), \
+            mock.patch.object(subject, "_request") as request:
+        result = subject.select_public_fragments("Report", "Revenue was 100 RUB.")
+    assert result["status"] == "not_qualified"
+    request.assert_not_called()
 
 
 def test_timeout_does_not_retry_or_poison_cache():

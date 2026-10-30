@@ -22,6 +22,9 @@ MAX_INPUT_BYTES = 6000
 MAX_RESPONSE_BYTES = 2048
 MAX_SELECTION = 3
 CACHE_TTL = 3600
+# Measured evaluation failed both quality and the current 4 GiB host budget.
+# An environment flag alone must not enable this rejected candidate.
+MODEL_QUALIFIED = False
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, dict]] = {}
 
@@ -152,6 +155,8 @@ def select_public_fragments(title: str, text: str, *, enabled: bool | None = Non
         enabled = os.environ.get("LOCAL_RESEARCH_ENABLED") == "true"
     if enabled is not True:
         return {"status": "disabled", "trade_permission": False}
+    if MODEL_QUALIFIED is not True:
+        return {"status": "not_qualified", "trade_permission": False}
     try:
         context = packet(title, text)
     except (LocalResearchError, UnicodeError):
