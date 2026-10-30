@@ -1,0 +1,64 @@
+name: Verify bounded existing-service recovery in owner WSL
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths:
+      - .github/workflows/runtime-recovery-tools.yml
+      - deploy/runtime_recovery.py
+      - deploy/test_runtime_recovery.py
+      - tools/check_runtime_recovery.py
+      - tools/prepare_runtime_recovery_transport.py
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 25
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      GIT_CONFIG_KEY_1: core.longpaths
+      GIT_CONFIG_VALUE_1: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: recovery-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+          sparse-checkout: |
+            deploy/runtime_recovery.py
+            deploy/test_runtime_recovery.py
+            tools/check_runtime_recovery.py
+            tools/prepare_runtime_recovery_transport.py
+            .github/scripts/emulator_lease.py
+          sparse-checkout-cone-mode: false
+      - name: Verify preservation, bounded restart and private-free failures in WSL
+        shell: cmd
+        working-directory: recovery-tools-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -c "import os,subprocess; assert os.environ.get('COMPUTERNAME')=='LAPTOP-NPSGA016'; assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA']"
+          if errorlevel 1 exit /b 1
+          py -3 tools\check_runtime_recovery.py
+          if errorlevel 1 exit /b 1
+          git diff --exit-code
+          if errorlevel 1 exit /b 1
+      - name: Record exact successful recovery verification
+        shell: py -3 {0}
+        working-directory: recovery-tools-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          import hashlib,json,os
+          from pathlib import Path
+          paths=['deploy/runtime_recovery.py','deploy/test_runtime_recovery.py','tools/check_runtime_recovery.py','tools/prepare_runtime_recovery_transport.py']
+          result={'status':'passed','host':'LAPTOP-NPSGA016','environment':'Ubuntu-24.04 WSL','source_commit':os.environ['GITHUB_SHA'],'run_id':os.environ['GITHUB_RUN_ID'],'run_attempt':os.environ['GITHUB_RUN_ATTEMPT'],'production_modified':False,'sha256':{p:hashlib.sha256(Path(p).read_bytes()).hexdigest() for p in paths}}
+          target=Path(os.environ['RUNNER_TEMP'])/('runtime-recovery-tools-'+os.environ['GITHUB_RUN_ID']+'.json')
+          target.write_text(json.dumps(result,indent=2)+'\n')
+          print(json.dumps(result))
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: runtime-recovery-tools-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runtime-recovery-tools-${{ github.run_id }}.json
+          if-no-files-found: error
+          retention-days: 7

@@ -12,7 +12,8 @@ import sqlite3
 import subprocess
 import time
 
-SOURCE = 'cc22cb7ee3fe82eca28e4162e13c4463cab5ddc4'
+# This observer must only be dispatched after the exact candidate is deployed.
+SOURCE = 'af95e8de8cfd50970d712483b8c17e866f7239c9'
 INSTALLED = {
     'autonomous_controller.py': 'cbb25165004afd4f33a2a76cabc13e56c4c458609303a018bb32bd267e832d83',
     'decision_cycle.py': 'a46331652844cde45ae8d63a2887d97da121d55948cc125844a15b99fe181e95',
@@ -20,14 +21,13 @@ INSTALLED = {
     'margin_policy.py': '8fa653fa401ee5cc322784d92169475022dc463670d218cf854f285b6e609aa3',
     'purchase_policy.py': '36508ad0a99af467d9d0f44a9c26fafb45d16c212b5ae5fc027cab2a5f351eab',
     'strategy_actions.py': 'c0d327eb94a085ef2feb6b2dd5efb44ebdc7c565c41f2964019ab9d8fb01e053',
-    'volume_chat.py': 'fb1b433d9eb1037955991233f6365a600994999628db89cbe56ac3a431b8cfe8',
+    'volume_chat.py': '8abeb8a8fba42e5319ec173f401f29bca778be61aad5d4428b97e34f3d4b167b',
     'volume_live.py': '7698a89a3b34a03d262e095d3993e1fb00b7c1805b675a3acf5c90b152cd4d5e',
-}
-# These unchanged cc22 Git blob identities cover the other three replaced files.
-CHAT_BASELINE_BLOBS = {
-    'ai_guarded_client.py': 'd274eb0dd00e9c7d0c0bd7cf8a48d6bef4f73a6d',
-    'investment_chat_policy.py': '9452c47b4556a2feecf7fdbdd9c8df32522bbfcd',
-    'volume_jobs.py': '1892299fd4c2d911b4ba430da44a8f0d3bb1b0bf',
+    'ai_guarded_client.py': 'd65872bcf5d90f34e852da3155f0b9e5852a713ecfb4e55403505143381a0243',
+    'investment_chat_policy.py': '60d6a4f7ca5d8047eb5fa0b6963cf7ae79f31df624f3341f0c59b1d92a9604b8',
+    'volume_jobs.py': '1ba356d49a4a09f87402ecfb5d959bd9fc4785a4f6ddf5e3cba099f1462d7e6b',
+    'portfolio_details.py': '1dafbf959eb4ffe8fc23a304d3047fa4f95e6705459a733196a5e64b06d43ea1',
+    'order_lifecycle.py': 'e5560f86c27179be3240e7f37615e9b3c0b90f0ef31d9a0adaabc2bffd0b07ca',
 }
 FAILED_RELEASE_ARCHIVE = Path('/var/lib/analyst-ai-chat-reliability-41056552195')
 HEALTH_ENDPOINTS = {
@@ -209,6 +209,19 @@ def observe_ledger(db):
             'max_output_tokens_persisted': False}
 
 
+def observe_background_jobs(db):
+    result = {}
+    for label, prefix in (('collection', 'auto.full.%'), ('events', 'auto.events.%'), ('research', 'auto.osint.%')):
+        total, created, updated = db.execute('''SELECT COUNT(*),MAX(created_at),MAX(updated_at)
+            FROM workspace_jobs WHERE request_id LIKE ?''', (prefix,)).fetchone()
+        states = Counter()
+        for state, count in db.execute('SELECT state,COUNT(*) FROM workspace_jobs WHERE request_id LIKE ? GROUP BY state', (prefix,)):
+            states[token(state, STATES)] += count
+        result[label] = {'rows': total, 'last_created_at': stamp(created),
+                         'last_updated_at': stamp(updated), 'states': dict(sorted(states.items()))}
+    return result
+
+
 def observe_database(path, now):
     regular(path)
     with closing(sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, timeout=3)) as db:
@@ -227,6 +240,7 @@ def observe_database(path, now):
             result['discovery'] = observe_discovery(db)
         if 'workspace_jobs' in tables:
             result['workspace_jobs'] = observe_jobs(db, now, chat_routes='workspace_chat_messages' in tables)
+            result['automatic_jobs'] = observe_background_jobs(db)
         if 'ai_money_reservations' in tables:
             result['model_usage'] = observe_ledger(db)
         if 'automation_preferences' in tables:
@@ -265,14 +279,6 @@ def verify_source(root):
         path = regular(root / name)
         need(path.stat().st_size <= 524288, 'runtime_module_size_invalid')
         need(hashlib.sha256(path.read_bytes()).hexdigest() == expected, 'runtime_source_changed')
-    for name, expected in CHAT_BASELINE_BLOBS.items():
-        path = regular(root / name)
-        need(path.stat().st_size <= 524288, 'runtime_module_size_invalid')
-        raw = path.read_bytes()
-        actual = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
-        need(actual == expected, 'runtime_chat_baseline_changed')
-    new_module = root / 'order_lifecycle.py'
-    need(not new_module.exists() and not new_module.is_symlink(), 'runtime_order_module_present')
 
 
 def observe_release_archive():
@@ -351,7 +357,8 @@ def run(envelope):
             'observed_at': stamp(now), 'database': observe_database(Path('/var/lib/analyst-ai/backend.db'), now),
             'services': services(), 'failed_release': observe_release_archive(),
             'http': {label: observe_http(label) for label in HEALTH_ENDPOINTS},
-            'runtime_baseline_verified': True, 'order_lifecycle_absent': True,
+            'exact_source_verified': True, 'order_lifecycle_source_verified': True,
+            'real_trading_activation_verified': False,
             'application_imported': False, 'broker_called': False,
             'model_called': False, 'database_written': False, 'service_changed': False}
         verify_source(Path('/opt/analyst-ai/backend'))

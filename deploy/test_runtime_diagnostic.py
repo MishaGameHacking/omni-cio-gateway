@@ -31,7 +31,7 @@ class DiagnosticTests(unittest.TestCase):
             CREATE TABLE portfolio_decision_cycles(evaluated_at INTEGER,payload_json TEXT);
             CREATE TABLE automation_discovery(state TEXT,updated_at INTEGER,attempted_at INTEGER,lease_until INTEGER,result_json TEXT);
             CREATE TABLE automation_preferences(enabled INTEGER);
-            CREATE TABLE workspace_jobs(id TEXT,user_id INTEGER,kind TEXT,state TEXT,stage TEXT,error_code TEXT,paid_started INTEGER,created_at INTEGER,updated_at INTEGER,expires_at INTEGER);
+            CREATE TABLE workspace_jobs(id TEXT,user_id INTEGER,kind TEXT,state TEXT,stage TEXT,error_code TEXT,paid_started INTEGER,created_at INTEGER,updated_at INTEGER,expires_at INTEGER,request_id TEXT DEFAULT '');
             CREATE TABLE workspace_chat_messages(job_id TEXT,user_id INTEGER,role TEXT,payload_json TEXT);
             CREATE TABLE ai_money_reservations(model TEXT,state TEXT,input_tokens INTEGER,output_tokens INTEGER,created_at INTEGER,updated_at INTEGER);
             CREATE TABLE ai_work_jobs(status TEXT,updated_at INTEGER,error_code TEXT);
@@ -87,7 +87,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(['research_incomplete', 'unknown'], result['reasons'])
 
     def test_chat_route_and_usage_projection_without_question_or_ids(self):
-        self.db.execute('INSERT INTO workspace_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
+        self.db.execute('INSERT INTO workspace_jobs(id,user_id,kind,state,stage,error_code,paid_started,created_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             (SECRET, 123, 'chat', 'failed', 'model_running', 'ai_incomplete_response', 1, NOW, NOW + 3, None))
         route = {'model': 'dashscope/qwen3.5-flash', 'selected_tier': 'standard', 'required_tier': 'fast',
                  'max_output_tokens': 1200, 'route_id': SECRET, 'pricing_expires_at': SECRET}
@@ -105,7 +105,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertNotIn(SECRET, json.dumps(result))
 
     def test_no_cross_user_route_inheritance(self):
-        self.db.execute('INSERT INTO workspace_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
+        self.db.execute('INSERT INTO workspace_jobs(id,user_id,kind,state,stage,error_code,paid_started,created_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             ('one', 123, 'chat', 'failed', 'model_running', None, 0, NOW, NOW, None))
         self.db.execute('INSERT INTO workspace_chat_messages VALUES (?,?,?,?)',
             ('one', 124, 'user', json.dumps({'routing': {'max_output_tokens': 4000}})))
@@ -113,7 +113,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertIsNone(self.observe()['workspace_jobs']['recent_chat'][0]['saved_route'])
 
     def test_unknown_model_and_arbitrary_errors_are_redacted(self):
-        self.db.execute('INSERT INTO workspace_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
+        self.db.execute('INSERT INTO workspace_jobs(id,user_id,kind,state,stage,error_code,paid_started,created_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             (SECRET, 1, 'chat', SECRET, SECRET, SECRET, 0, NOW, NOW, None))
         self.db.execute('INSERT INTO ai_money_reservations VALUES (?,?,?,?,?,?)', (SECRET, SECRET, None, None, NOW, NOW))
         self.db.commit()
@@ -122,7 +122,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual('unknown', result['model_usage']['recent'][0]['model'])
 
     def test_expired_paid_jobs_are_observed_without_requeue_or_refund(self):
-        self.db.execute('INSERT INTO workspace_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
+        self.db.execute('INSERT INTO workspace_jobs(id,user_id,kind,state,stage,error_code,paid_started,created_at,updated_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             ('one', 1, 'chat', 'running', 'model_running', None, 1, NOW - 999, NOW - 999, NOW - 1))
         self.db.execute('INSERT INTO ai_money_reservations VALUES (?,?,?,?,?,?)',
             ('dashscope/qwen3.5-flash', 'reserved', None, None, NOW, NOW))
@@ -290,20 +290,36 @@ class DiagnosticTests(unittest.TestCase):
                 observer.observe_http('https://unapproved.example')
         self.assertEqual(1, command.call_count)
 
-    def test_extra_changed_module_baselines_and_new_module_absence_are_required(self):
+    def test_six_delivered_modules_including_new_module_require_exact_bytes(self):
         raw = b'synthetic baseline'
-        path = self.root / 'ai_guarded_client.py'
-        path.write_bytes(raw)
-        blob = hashlib.sha1(b'blob ' + str(len(raw)).encode() + b'\0' + raw).hexdigest()
-        with patch.object(observer, 'INSTALLED', {}), patch.object(observer, 'CHAT_BASELINE_BLOBS', {path.name: blob}):
+        names = {'ai_guarded_client.py', 'investment_chat_policy.py', 'order_lifecycle.py',
+                 'portfolio_details.py', 'volume_chat.py', 'volume_jobs.py'}
+        self.assertTrue(names <= observer.INSTALLED.keys())
+        expected = {name: hashlib.sha256(raw).hexdigest() for name in names}
+        for name in names:
+            (self.root / name).write_bytes(raw)
+        with patch.object(observer, 'INSTALLED', expected):
             observer.verify_source(self.root)
-            (self.root / 'order_lifecycle.py').write_text('new module')
-            with self.assertRaisesRegex(RuntimeError, 'runtime_order_module_present'):
+            (self.root / 'order_lifecycle.py').write_text('different module')
+            with self.assertRaisesRegex(RuntimeError, 'runtime_source_changed'):
                 observer.verify_source(self.root)
             (self.root / 'order_lifecycle.py').unlink()
-            path.write_bytes(b'changed')
-            with self.assertRaisesRegex(RuntimeError, 'runtime_chat_baseline_changed'):
+            with self.assertRaises(RuntimeError):
                 observer.verify_source(self.root)
+
+    def test_automatic_job_progress_excludes_manual_requests_and_redacts_identifiers(self):
+        for request, state, created in [('auto.full.' + SECRET, 'completed', NOW),
+                ('auto.events.' + SECRET, 'failed', NOW + 2), ('auto.osint.' + SECRET, 'queued', NOW + 3),
+                ('manual.' + SECRET, 'completed', NOW + 99)]:
+            self.db.execute('INSERT INTO workspace_jobs(request_id,state,created_at,updated_at) VALUES (?,?,?,?)',
+                (request, state, created, created + 1))
+        self.db.commit()
+        result = observer.observe_background_jobs(self.db)
+        self.assertEqual(1, result['collection']['rows'])
+        self.assertEqual(observer.stamp(NOW), result['collection']['last_created_at'])
+        self.assertEqual({'failed': 1}, result['events']['states'])
+        self.assertEqual({'queued': 1}, result['research']['states'])
+        self.assertNotIn(SECRET, json.dumps(result))
 
     def test_service_pid_and_age_use_only_numeric_properties(self):
         class Result:
