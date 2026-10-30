@@ -10,6 +10,7 @@ from contextlib import closing
 import base64
 from datetime import date, datetime, timedelta, timezone
 import json
+import re
 import uuid
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -61,7 +62,149 @@ claims с пустым fact_ids и не придумывай идентифик�
 Общие пояснения не должны звучать как новые факты о пользователе.
 Не обещай будущую прибыль, доставку или исполнение. Не включай персональные
 идентификаторы и не предлагай передавать токены. Не меняй пользовательский план.
+Факт decision_cycle подтверждает только сохранённый статус расчёта алгоритма и
+записанные причины отказа. Он не подтверждает инвестиционную пригодность актива,
+финансовый прогноз, отправку поручения или исполненную сделку. preview_available
+означает только предварительный расчёт. orders_sent_by_this_cycle=false относится
+только к этому циклу, а не ко всем операциям счёта. При current=false называй
+расчёт историческим, укажи evaluated_at и не выдавай его причины за текущие.
+Причины в выбранной области относятся только к ней; не обобщай их на другие
+счета и инструменты. Отсутствие факта означает отсутствие доступного расчёта,
+а не доказательство того, что торговля или анализ были выполнены.
 """
+
+# This allowlist is a privacy boundary: never forward arbitrary persisted code
+# strings or messages to the model. Messages are reconstructed from trusted code.
+_DECISION_CODES = frozenset({
+    "real_order_execution_disabled", "strategy_required", "automation_paused",
+    "account_outside_mandate", "candidate_account_unverified", "investment_profile_incomplete",
+    "fresh_snapshot_required", "portfolio_coverage_incomplete", "broker_connection_required",
+    "evidence_revision_required", "strategy_changed", "snapshot_changed", "evidence_changed",
+    "decision_inputs_changed", "candidate_expired", "decision_expired", "candidate_constraints_failed",
+    "investment_research_incomplete", "tax_and_settlement_effects", "loss_capacity_and_full_investment_profile",
+    "investment_thesis_and_valuation", "no_whole_lot_within_target_and_reserve",
+    "candidate_quantity_unverified", "candidate_cost_unverified", "sell_owned_units_unverified",
+    "protected_reserve_would_be_spent", "own_cash_unverified", "borrowed_cash_not_permitted",
+    "no_candidates_reviewed", "no_action_required", "candidate_input_invalid", "discovery_incomplete",
+    "market_price_polling_paused", "limit_trading_unavailable", "broker_purchase_unavailable",
+    "strategy_rebalance_cooldown", "strategy_turnover_limit", "issuer_rating_required", "issue_rating_required",
+    "share_issuer_aaa_required", "rating_below_owner_mandate", "commission_not_verified",
+})
+_DECISION_GLOBAL_CODES = frozenset({
+    "real_order_execution_disabled", "strategy_required", "automation_paused", "broker_connection_required",
+    "evidence_revision_required", "strategy_changed", "snapshot_changed", "evidence_changed",
+    "decision_inputs_changed", "decision_expired", "fresh_snapshot_required", "discovery_incomplete",
+})
+
+
+def _saved_decision_cycle(user):
+    # SELECT-only helper. Do not call controller.tick/status, broker discovery,
+    # schema initializers or a model from context construction.
+    try:
+        from . import autonomous_controller
+    except ImportError:
+        import autonomous_controller
+    return autonomous_controller._latest_decision(user, int(datetime.now(timezone.utc).timestamp()))
+
+
+def _decision_fact(receipt, snapshot, active, context):
+    """Allowlisted algorithm observation; never an order or financial assertion."""
+    if not isinstance(receipt, dict):
+        return None
+    cycle_id = receipt.get("cycle_id")
+    if not isinstance(cycle_id, str) or re.fullmatch(r"[0-9a-f]{64}", cycle_id) is None:
+        return None
+    execution, lineage = receipt.get("execution"), receipt.get("lineage")
+    if (not isinstance(execution, dict) or not isinstance(lineage, dict)
+            or execution.get("mode") != "read_only" or execution.get("real_orders_enabled") is not False
+            or receipt.get("no_op") is not True or type(receipt.get("current")) is not bool
+            or not isinstance(receipt.get("state"), str)
+            or receipt.get("state") not in {"blocked", "waiting", "preview_available"}):
+        return None
+    observed = receipt.get("evaluated_at")
+    if not isinstance(observed, str) or len(observed) > 40:
+        return None
+    try:
+        observed_at = timestamp(observed)
+    except ValueError:
+        return None
+    expiry = receipt.get("expires_at")
+    try:
+        expiry_at = timestamp(expiry) if isinstance(expiry, str) and len(expiry) <= 40 else None
+    except ValueError:
+        expiry_at = None
+    if expiry_at is None:
+        expiry = None
+    blockers = receipt.get("blockers")
+    candidates = receipt.get("candidates")
+    if not isinstance(blockers, list) or len(blockers) > 100 or not isinstance(candidates, list) or len(candidates) > 100:
+        return None
+    codes = {row.get("code") for row in blockers if isinstance(row, dict) and isinstance(row.get("code"), str)}
+    account = context.get("account_id")
+    target = context.get("explanation") or {}
+    instrument = context.get("instrument_uid") if context.get("mode") == "instrument" else None
+    if isinstance(target, dict) and target.get("kind") == "candidate":
+        instrument = target.get("id")
+    scoped = bool(account or instrument)
+    matching = [row for row in candidates if isinstance(row, dict)
+                and (not account or row.get("account_id") == account)
+                and (not instrument or row.get("instrument_uid") == instrument)]
+    if scoped:
+        # A stale strategy must not bind its former account to a new mandate.
+        config = (active or {}).get("config") or {}
+        mandate = config.get("mandate") if isinstance(config, dict) else None
+        same_account = (account and isinstance(mandate, dict) and mandate.get("account_id") == account
+                        and lineage.get("strategy_version") == (active or {}).get("version")
+                        and "strategy_changed" not in codes)
+        if not matching and (instrument or not same_account):
+            return None
+        scoped_codes = set()
+        for row in matching:
+            values = row.get("decision_blockers")
+            if isinstance(values, list) and len(values) <= 100:
+                scoped_codes.update(value for value in values if isinstance(value, str))
+        codes = scoped_codes | (codes & _DECISION_GLOBAL_CODES)
+    current = receipt["current"]
+    if lineage.get("snapshot_id") != snapshot.get("snapshot_id"):
+        current = False
+        codes.add("snapshot_changed")
+    if lineage.get("strategy_version") != (active or {}).get("version"):
+        current = False
+        codes.add("strategy_changed")
+    # Recheck the deadline at construction; the stored observation never grants
+    # a time lease to a model request that starts after it has expired.
+    now = datetime.now(timezone.utc)
+    if expiry_at is None or expiry_at <= now or observed_at > now:
+        current = False
+        codes.add("decision_expired")
+    try:
+        from .decision_cycle import reason
+    except ImportError:
+        from decision_cycle import reason
+    safe_codes = codes & _DECISION_CODES
+    safe_codes.add("real_order_execution_disabled")
+    reasons = [reason(code) for code in sorted(safe_codes)]
+    if codes - _DECISION_CODES:
+        reasons.append({"code": "additional_check_required", "message": "В расчёте есть дополнительная незавершённая проверка."})
+    value = {"cycle_id": cycle_id, "evaluated_at": observed, "expires_at": expiry,
+             "state": receipt["state"] if current else "blocked", "current": current,
+             "scope": "selected_instrument" if instrument else "selected_account" if account else "portfolio",
+             "blockers": reasons, "real_orders_enabled": False, "orders_sent_by_this_cycle": False,
+             "basis": "recorded_algorithm_status_not_trade_or_financial_truth", "financial_verification": False}
+    ref = source("portfolio_decision_cycle", cycle_id, observed,
+                 provider="Analyst AI: сохранённый результат алгоритма", ttl=0)
+    return {"id": "decision_cycle:" + cycle_id, "value": value, "source_ids": [ref["id"]], "as_of": observed}, ref
+
+
+def _append_decision_context(user, snapshot, active, context, facts, refs_by_id):
+    item = _decision_fact(_saved_decision_cycle(user), snapshot, active, context)
+    if item is None:
+        return {"available": False, "basis": "recorded_algorithm_status_only"}
+    fact, ref = item
+    facts.append(fact)
+    refs_by_id[ref["id"]] = ref
+    return {"available": True, "current": fact["value"]["current"], "scope": fact["value"]["scope"],
+            "basis": "recorded_algorithm_status_only"}
 
 
 def initialize() -> None:
@@ -281,6 +424,7 @@ def fact_packet(user: Any, context: dict) -> dict:
     except ImportError:
         import volume_explanations as explanations
     explanation = _append_explanation(explanations.prepare(user, snapshot, context, risk, active), facts, refs_by_id)
+    decision_coverage = _append_decision_context(user, snapshot, active, context, facts, refs_by_id)
     requested_range = {"start": begin.isoformat(), "end": finish.isoformat(), "coverage_complete": complete,
                        "requested_end": requested_finish.isoformat(), "snapshot_bounds_end": True}
     used_refs = {identifier for fact in facts for identifier in fact["source_ids"]}
@@ -294,6 +438,7 @@ def fact_packet(user: Any, context: dict) -> dict:
                          "history": observations_coverage, "events": {"included": min(len(relevant_events), 15), "scoped_count": len(relevant_events)},
                          "risks": {"included": min(len(relevant_risks), 40), "scoped_count": len(relevant_risks), "basis_scope": "whole_portfolio"},
                          "ratings": {"included": min(len(credit_rows), 24), "scoped_count": len(credit_rows), "scales_are_not_averaged": True},
+                         "decision_cycle": decision_coverage,
                          "unresolved_source_ids": sorted(used_refs - refs_by_id.keys()),
                          "risk_directions": risk["coverage"]}, "strategy_version": (active or {}).get("version", 0),
             "tool_permissions": {"broker": "read_only", "strategy": "preview_requires_separate_confirmation", "orders": False, "external_messages": False}}
@@ -760,3 +905,4 @@ def _is_context_highlight(item, valid_highlights):
 
 def _allowed_instrument_action(item, allowed_uids):
     return isinstance(item.get("id"), str) and item["id"] in allowed_uids
+

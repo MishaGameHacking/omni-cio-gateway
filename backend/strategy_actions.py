@@ -5,7 +5,7 @@ rows cannot spend the same cash or concentration budget. Sales never finance
 buys before the next confirmed broker snapshot. No order API is called.
 """
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_FLOOR
+from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
 
 from fastapi import HTTPException
 
@@ -16,7 +16,7 @@ try:
     from .strategy_yield import key_rate, yield_filter
     from .investment_links import instrument_link
     from .strategy_activity import activity_budget
-    from .volume_contract import decimal, text_number, financial_context, error_code
+    from .volume_contract import decimal, text_number, financial_context, error_code, instrument_currency
 except ImportError:
     import volume_state as state
     import volume_purchases as purchases
@@ -26,9 +26,10 @@ except ImportError:
     from strategy_yield import key_rate, yield_filter
     from investment_links import instrument_link
     from strategy_activity import activity_budget
-    from volume_contract import decimal, text_number, financial_context, error_code
+    from volume_contract import decimal, text_number, financial_context, error_code, instrument_currency
 
 ZERO = Decimal(0)
+QUOTE_ALLOWANCE = Decimal("0.01")
 ACTIVITY_REASONS = {"strategy_operation_window_incomplete", "strategy_operation_window_stale",
     "strategy_operations_conflicting", "strategy_rebalance_cooldown", "strategy_turnover_amount_unknown"}
 
@@ -37,8 +38,12 @@ def held_values(snapshot, account, uid, kind):
     rows = [row for row in snapshot.get("positions", []) if row.get("account_id") == account]
     current = sum((decimal(row.get("value")) or ZERO for row in rows if row.get("instrument_uid") == uid), ZERO)
     held_class = sum((decimal(row.get("value")) or ZERO for row in rows if row.get("instrument_type") == kind), ZERO)
+    # A RUB display valuation of foreign cash is not spendable RUB. Unknown
+    # denomination, valuation currency or blocked quantity cannot fund a plan.
     cash = sum((decimal(row.get("value")) or ZERO for row in rows if row.get("instrument_type") == "cash"
-                and not row.get("blocked") and (decimal(row.get("blocked_quantity")) or ZERO) == 0), ZERO)
+                and instrument_currency(row) == "RUB" and isinstance(row.get("value"), dict)
+                and row["value"].get("currency") == "RUB"
+                and row.get("blocked") is False and decimal(row.get("blocked_quantity")) == ZERO), ZERO)
     return current, held_class, cash
 
 
@@ -57,7 +62,85 @@ def affordable_target_lots(*, total, current, held_class, cash, unit_cost, lot, 
     budget = max(ZERO, min(cash - reserve, desired))
     # Leave one percent for the exact fee/NKD quote. A later check can only
     # reduce this amount; no remote-quote monotonicity is assumed.
-    return min(1_000_000, visible, int((budget / (unit_cost * lot * Decimal("1.01"))).to_integral_value(rounding=ROUND_FLOOR)))
+    return min(1_000_000, visible, int((budget / (unit_cost * lot * (1 + QUOTE_ALLOWANCE))).to_integral_value(rounding=ROUND_FLOOR)))
+
+
+def _planning_lot_amounts(unit_cost, lot):
+    if unit_cost is None or unit_cost <= 0 or type(lot) is not int or lot <= 0:
+        return None, None, None
+    principal = unit_cost * lot
+    allowance = principal * QUOTE_ALLOWANCE
+    return principal, allowance, principal + allowance
+
+
+def _planning_capital(held, minimum, percent):
+    if minimum is None or percent is None or percent <= 0:
+        return None
+    return ((held + minimum) * 100 / percent).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+
+
+def _shortfall(required, available):
+    return max(ZERO, required - available) if required is not None else None
+
+
+def _binding_constraints(policy, minimum, visible, rooms):
+    limited_by = ["allocation_policy"] if policy["missing"] else []
+    if minimum is not None:
+        limited_by.extend(code for code, room in rooms if room is not None and room < minimum)
+        if visible is not None and visible < 1:
+            limited_by.append("visible_liquidity")
+    return limited_by
+
+
+@financial_context
+def budget_diagnostics(*, total, current, held_class, cash, config, kind,
+                       unit_cost=None, lot=None, visible=None, turnover=None):
+    """Explain a planning bound without certifying a broker quote or weakening it.
+
+    Values are decimal text in the strategy currency. Required capital holds the
+    existing position/class values fixed and checks only the named constraint;
+    it is neither a deposit recommendation nor permission for a purchase.
+    """
+    policy = allocation_policy(config)
+    position_percent = decimal(config.get("limits", {}).get("position_percent"))
+    class_percent = decimal(policy["weights_percent"].get(kind)) or ZERO
+    reserve = max(decimal(config.get("reserve")) or ZERO,
+                  total * decimal(policy["weights_percent"]["cash"]) / 100)
+    cash_room = max(ZERO, cash - reserve)
+    position_cap = total * position_percent / 100 if position_percent is not None else None
+    position_room = max(ZERO, position_cap - current) if position_cap is not None else None
+    class_room = max(ZERO, total * class_percent / 100 - held_class)
+    desired = target_value(config, total, kind, held_class, current)
+    target_gap = max(ZERO, desired - current)
+    planning_budget = min(cash_room, target_gap)
+    if turnover is not None:
+        planning_budget = min(planning_budget, max(ZERO, turnover))
+    principal, allowance, minimum = _planning_lot_amounts(unit_cost, lot)
+    limited_by = _binding_constraints(policy, minimum, visible,
+        (("cash_after_reserve", cash_room), ("position_limit", position_room),
+         ("asset_class_target", class_room), ("turnover_budget", turnover)))
+    capital = _planning_capital(current, minimum, position_percent)
+    class_capital = _planning_capital(held_class, minimum, class_percent)
+    amounts = {"account_total": total, "observed_cash": cash, "protected_reserve": reserve,
+        "cash_after_reserve": cash_room, "current_position_value": current,
+        "position_limit_percent": position_percent, "position_cap_value": position_cap,
+        "position_room": position_room, "class_target_percent": class_percent,
+        "class_room": class_room, "target_value": desired, "target_gap": target_gap,
+        "turnover_budget": turnover, "planning_budget": planning_budget,
+        "minimum_lot_principal": principal, "quote_allowance_percent": QUOTE_ALLOWANCE * 100,
+        "quote_allowance_amount": allowance, "minimum_lot_planning_amount": minimum,
+        "planning_budget_shortfall": _shortfall(minimum, planning_budget),
+        "cash_shortfall_at_current_reserve": _shortfall(minimum, cash_room),
+        "planning_capital_for_position_limit": capital,
+        "capital_shortfall_for_position_limit": _shortfall(capital, total),
+        "planning_capital_for_class_target": class_capital}
+    return {"schema_version": 1, "currency": config.get("reserve", {}).get("currency", "RUB"),
+        **{key: text_number(value) for key, value in amounts.items()},
+        "visible_lots": visible, "limited_by": limited_by, "policy_missing": policy["missing"],
+        "basis": "planning_bounds_before_exact_broker_cost",
+        "quote_allowance_is_actual_fee": False, "broker_all_in_quote": None,
+        "broker_quote_lots": None, "automatic_order": False,
+        "capital_calculation_scope": "named_constraint_only_existing_holdings_fixed"}
 
 
 def _book_offer(user, uid):
@@ -90,10 +173,12 @@ def _rate_check(user, config, meta, total_cost, quantity):
 
 
 def _base_candidate(item, active, snapshot):
+    observed = datetime.now(timezone.utc).isoformat()
     return {"instrument_uid": item["uid"], "ticker": item.get("ticker") or "", "name": item.get("name") or item["uid"],
             "instrument_type": item["instrument_type"], "currency": "RUB", "lot": int(decimal(item["lot"])), "lots_checked": 0,
             "suggested_lots": 0, "action": "wait", "constraints_passed": False,
-            "recommendation_complete": False, "as_of": None, "expires_at": None,
+            "recommendation_complete": False, "as_of": observed, "observed_at": observed, "expires_at": None,
+            "quote_as_of": None, "budget_diagnostics": None,
             "total_cost": None, "check_id": None, "snapshot_id": snapshot["snapshot_id"],
             "strategy_version": active["version"], "evidence_revision": None,
             "checks": [], "missing_evidence": [],
@@ -129,23 +214,28 @@ def _assess_addition(user, item, account, active, snapshot, budget, base):
         base["missing_evidence"] = instrument_reasons
         return base
     settlement = decimal(purchases.settlement_price(meta, purchases.price_quotation(text_number(price))))
+    base["budget_diagnostics"] = budget_diagnostics(total=total, current=current, held_class=held_class, cash=cash,
+        config=config, kind=kind, unit_cost=settlement, lot=base["lot"], visible=visible)
     lots = affordable_target_lots(total=total, current=current, held_class=held_class, cash=cash,
         unit_cost=settlement, lot=base["lot"], visible=visible, config=config, kind=kind)
     available = activity_budget(config, snapshot, account, uid, total)
-    lots = min(lots, int((available / (settlement * base["lot"] * Decimal("1.01"))).to_integral_value(rounding=ROUND_FLOOR)))
+    base["budget_diagnostics"] = budget_diagnostics(total=total, current=current, held_class=held_class, cash=cash,
+        config=config, kind=kind, unit_cost=settlement, lot=base["lot"], visible=visible, turnover=available)
+    lots = min(lots, int((available / (settlement * base["lot"] * (1 + QUOTE_ALLOWANCE))).to_integral_value(rounding=ROUND_FLOOR)))
     base.update(target_value=text_number(desired), current_value=text_number(current))
     if lots == 0:
         base["missing_evidence"] = allocation_policy(config)["missing"] or ["no_whole_lot_within_target_and_reserve"]
         return base
     result = purchases._check_purchase(purchases.PurchaseCheck(account_id=account, instrument_uid=uid,
         lots=lots, limit_price=text_number(price), strategy_version=active["version"]), user, archive=False)
-    base.update(lots_checked=lots, as_of=result["as_of"], expires_at=result["expires_at"],
+    base.update(lots_checked=lots, as_of=result["as_of"], quote_as_of=result["as_of"], expires_at=result["expires_at"],
         total_cost=result.get("total_cost"), evidence_revision=result.get("evidence_revision"),
         limit_price=text_number(price), quantity=str(lots * base["lot"]), constraints_passed=result["constraints_passed"],
         investor_qualified=result.get("investor_qualified"), investor_tests=result.get("investor_tests", []),
         limitations=result.get("remaining_checks", []), missing_evidence=list(result["reasons"]))
     if not result["constraints_passed"]:
         return base
+    base["budget_diagnostics"].update(broker_all_in_quote=result.get("total_cost"), broker_quote_lots=lots)
     base["missing_evidence"] = _exact_budget_reasons(result, config, total, cash, desired, current)
     if (decimal(result["total_cost"]) or ZERO) > available:
         base["missing_evidence"].append("strategy_turnover_limit")
@@ -165,18 +255,24 @@ def _assess_addition(user, item, account, active, snapshot, budget, base):
 def assess_candidate(user, item, account, active, snapshot):
     uid, kind, config = item["uid"], item["instrument_type"], active["config"]
     base = _base_candidate(item, active, snapshot)
+    base["account_id"] = account
     try:
         total = decimal(next((row.get("value") for row in snapshot.get("accounts", []) if row.get("id") == account), None))
         if total is None or total <= 0:
             raise ValueError("account_value_unknown")
         current, held_class, cash = held_values(snapshot, account, uid, kind)
         desired = target_value(config, total, kind, held_class, current)
+        base["budget_diagnostics"] = budget_diagnostics(total=total, current=current, held_class=held_class, cash=cash,
+            config=config, kind=kind)
         if current > desired and not allocation_policy(config)["missing"]:
             try:
                 from .strategy_sales import assess_reduction
             except ImportError:
                 from strategy_sales import assess_reduction
-            return assess_reduction(user, item, account, active, snapshot, desired, base)
+            reduction = assess_reduction(user, item, account, active, snapshot, desired, base)
+            if reduction.get("expires_at"):
+                reduction["quote_as_of"] = reduction.get("as_of")
+            return reduction
         if not (config.get("construction") or {}).get("reinvest", True):
             # Cash has no provenance after settlement. Without a verified
             # withdrawal/reserve ledger it must not be silently reinvested.

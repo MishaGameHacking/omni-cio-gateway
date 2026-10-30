@@ -40,7 +40,9 @@ def inputs():
         "meta": {"uid": "new", "instrumentType": "share", "currency": "RUB", "lot": 10,
             "buyAvailableFlag": True, "apiTradeAvailableFlag": True, "sector": "industry", "realExchange": "REAL_EXCHANGE_MOEX"},
         "identity": deepcopy(identity), "info": {},
-        "credit": {"ratings": [{"subject_kind": "issuer", "level_within_agency": 8}], "warnings": []},
+        # Positive share fixtures satisfy the current AAA-only issuer rule.
+        # Weaker grades and the bond BBB boundary have separate negative tests.
+        "credit": {"ratings": [{"subject_kind": "issuer", "level_within_agency": 0}], "warnings": []},
         "quote": {"lotsRequested": "1", "totalOrderAmount": quotation("1002", "RUB"),
             "initialOrderAmount": quotation("1000", "RUB")},
         "capacity": {"currency": "RUB", "buyLimits": {"buyMoneyAmount": quotation("9000"), "buyMaxLots": "8"},
