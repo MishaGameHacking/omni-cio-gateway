@@ -61,3 +61,46 @@ jobs:
               "provider_start_at":stamp.isoformat() if stamp else None,
               "start_timestamp_after_attempt":stamp is not None and attempt<=stamp<=now,
               "ssh_attempted":False,"mutation_sent":False,"password_accessed":False}),flush=True)
+      - name: Read bounded provider event categories without logging event text
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        shell: python
+        run: |
+          import json,os,re,sys,urllib.request,urllib.error
+          from datetime import datetime,timezone
+          sys.path.insert(0,"tools")
+          import inspect_infrastructure_budget as observed
+          endpoint="https://api.timeweb.cloud/api/v1/servers/9417611/logs?limit=100&order=desc"
+          request=urllib.request.Request(endpoint,method="GET",headers={"Authorization":"Bearer "+os.environ["TIMEWEB_CLOUD_TOKEN"],"Accept":"application/json"})
+          counts={}; newest=None; code=None; bounded=False; examined=0
+          try:
+              with urllib.request.build_opener(observed.NoRedirect()).open(request,timeout=20) as response:
+                  code=response.status; raw=response.read(512*1024+1)
+                  if len(raw)>512*1024: raise ValueError("bound")
+              entries=json.loads(raw).get("server_logs")
+              if not isinstance(entries,list) or len(entries)>100: raise ValueError("shape")
+              bounded=True
+              for entry in entries:
+                  if not isinstance(entry,dict) or not isinstance(entry.get("logged_at"),str): continue
+                  try: t=datetime.fromisoformat(entry["logged_at"].replace("Z","+00:00"))
+                  except ValueError: continue
+                  if t.tzinfo is None:continue
+                  stamp=t.astimezone(timezone.utc)
+                  if stamp<datetime.fromisoformat("2026-10-30T18:11:00+00:00"):continue
+                  examined+=1
+                  event=entry.get("event")
+                  text=event.casefold() if isinstance(event,str) else ""
+                  if re.search(r"reboot|restart|перезагруз|рестарт",text):
+                      if re.search(r"fail|denied|error|не удалось|ошиб|отклон",text): key="reboot_error"
+                      elif re.search(r"completed|succeed|success|rebooted|restarted|успеш|перезагружен",text): key="reboot_completion_reported"
+                      else: key="reboot_event_without_completion"
+                  elif re.search(r"qemu|guest.agent|гостев.{0,10}агент",text):key="guest_agent_event"
+                  elif re.search(r"ssh|ssh.ключ",text):key="ssh_key_event"
+                  else: key="other"
+                  counts[key]=counts.get(key,0)+1
+                  if key.startswith("reboot"):newest=max(newest or stamp,stamp)
+          except urllib.error.HTTPError as error: code=error.code
+          except (ValueError,TypeError,OSError): pass
+          print("PROVIDER_EVENT_RECONCILIATION="+json.dumps({"logs_http_code":code,"read_list":bounded,
+               "recent_timestamped_rows":examined,"counts":counts,"latest_reboot_related_at":newest.isoformat() if newest else None,
+               "reboot_requested_by_this_read":False,"raw_event_text_logged":False}),flush=True)
