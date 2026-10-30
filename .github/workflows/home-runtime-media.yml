@@ -1,0 +1,31 @@
+name: Stage verified installation media on Lenovo
+on:
+  push:
+    branches: [codex/timeweb-owner-prepare-2026-10-23]
+    paths: [tools/home_runtime/enrollment_media.py, .github/workflows/home-runtime-media.yml]
+permissions:
+  contents: read
+concurrency:
+  group: analyst-home-runtime-install
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 35
+    steps:
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong host');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'analyst-stage-media-'));
+            try{
+              for(const f of ['platform.py','enrollment_media.py']){
+                const {data}=await github.rest.repos.getContent({...context.repo,ref:context.sha,path:'tools/home_runtime/'+f});
+                fs.writeFileSync(path.join(dir,f),Buffer.from(data.content,'base64'),{flag:'wx'});
+              }
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','PATHEXT','TEMP','TMP','USERPROFILE','LOCALAPPDATA','APPDATA','PROGRAMDATA','PROGRAMFILES'].includes(k.toUpperCase())));
+              const run=cp.spawnSync('py.exe',['-3','-I',path.join(dir,'enrollment_media.py')],{env,encoding:'utf8',windowsHide:true,timeout:1500000});
+              for(const line of (run.stdout||'').split(/\r?\n/))if(/^HOME_MEDIA_(VERIFIED|ERROR)=/.test(line))core.info(line.slice(0,800));
+              if(run.status!==0)core.setFailed('Protected account media staging incomplete');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
