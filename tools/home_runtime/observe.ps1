@@ -14,6 +14,10 @@ function Health([string]$url) {
     catch [Net.WebException] { $r=$_.Exception.Response; if (-not $r) { return 0 } }
     try { return [int]$r.StatusCode } finally { $r.Close() }
 }
+function Account-State {
+    try { $null=Get-LocalUser -Name 'AnalystAIHost' -ErrorAction Stop; return 'present' }
+    catch { if ($_.FullyQualifiedErrorId -like 'UserNotFound,*') { return 'absent' }; return 'unavailable' }
+}
 function Observe {
     try {
         $row=Get-Content -ErrorAction Stop -Raw -LiteralPath $file | ConvertFrom-Json
@@ -24,7 +28,7 @@ function Observe {
     } catch [Management.Automation.ItemNotFoundException] { $phase='awaiting_enrollment' }
       catch [UnauthorizedAccessException] { $phase='status_not_readable' }
       catch { $phase='status_unavailable' }
-    return [ordered]@{phase=$phase;health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
+    return [ordered]@{phase=$phase;checked_utc=[DateTime]::UtcNow.ToString('o');account=(Account-State);health=(Health 'http://127.0.0.1:18158/health');anonymous=(Health 'http://127.0.0.1:18158/me')}
 }
 foreach ($i in 0..4) {
     $status=Observe
