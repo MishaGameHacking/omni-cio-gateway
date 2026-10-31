@@ -18,18 +18,24 @@ route settings in Android or perform a model-authored autonomous escalation.
 
 Before inference, an admission receipt is inserted into existing
 `workspace_records`, kind `agent_analysis_admission_v1`, keyed by owner/job.
-It binds the route, source deadline, context digest, broker-connection version,
-analysis reason, tier and output limit. No prompt, holding, token, account label
-or model output is stored in this receipt. Existing receipts must match exactly;
-they are not updated when settings or input change. A previously bound job cannot
-escape its route by restarting with the feature disabled.
+It binds the route, source deadline, context digest, complete-request digest,
+broker-connection version, analysis reason, tier and output limit. The complete
+request digest also binds notification intent. No prompt, holding, token, account
+label or model output is stored in this receipt. Existing receipts must match
+exactly; they are not updated when settings or input change. A previously bound
+job cannot escape its route by restarting with the feature disabled.
 
-All input messages must match the canonical messages for that receipt. Receipt,
-job lease, cancellation, monitoring permission, automation permission and broker
-binding are rechecked before dispatch; the receipt is checked inside the existing
-budget reservation transaction and after the response. Expired evidence or a
-changed receipt rejects publication, without pretending an incurred cloud charge
-was refunded. Network/model work stays outside SQLite write transactions.
+The admitted messages are kept as an immutable canonical string. Inspection
+returns a copy, not a mutable reference. All input messages must match that
+canonical request. The persisted broker-connection version is compared again
+before readiness/dispatch, so reconnecting cannot analyze old context under the
+new connection even before the downstream guarded client binds its own attempt.
+
+Receipt, job lease, cancellation, monitoring permission, automation permission
+and broker binding are rechecked before dispatch; the receipt is checked inside
+the existing budget reservation transaction and after the response. Expired
+evidence or a changed receipt rejects publication, without pretending an incurred
+cloud charge was refunded. Network/model work stays outside SQLite transactions.
 
 ## Source freshness and privacy
 
@@ -51,7 +57,9 @@ keys are read from files, no AI provider is enabled by this change.
 The factory reuses AgentTaskClient, GuardedAIClient, MoneyLedger and AnalysisQueue.
 Existing call-count limits, cost limits, unknown-outcome accounting and report
 validation are retained. No paid retry, paid fallback, broker order, microphone
-capture, model installation or Android release is included.
+capture, model installation or Android release is included. Legacy status UI
+still describes its previous routing path; per-job route UI and companion chat
+without broker presence are separate work, not claimed complete here.
 
 Acceptance requires controller-path tests through the actual worker, temporary
 SQLite receipt tests, data/permission-change and expiry tests, existing regression

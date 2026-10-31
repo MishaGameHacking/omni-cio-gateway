@@ -1,6 +1,7 @@
 """Real worker/queue/SQLite, synthetic portfolio and model replies only."""
 from contextlib import closing
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -61,10 +62,9 @@ class AgentAnalysisRuntimeTests(unittest.TestCase):
         self.context['portfolio']['accounts'][0]['name'] = 'private-owner-label'
         self.decision = AnalysisDecision(AnalysisTier.PREMIUM, AnalysisReason.RISK_EVENT, True, 1200)
         self.addCleanup(CURRENT_JOB.reset, CURRENT_JOB.set(None))
-        self.local_mock = patch.object(local, 'complete', side_effect=self.respond_local).start()
-        self.addCleanup(patch.stopall)
-        patch.object(local, 'ensure_ready', return_value=None).start()
-        self.cloud_mock = patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud).start()
+        self.local_mock = self.enterContext(patch.object(local, 'complete', side_effect=self.respond_local))
+        self.enterContext(patch.object(local, 'ensure_ready', return_value=None))
+        self.cloud_mock = self.enterContext(patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud))
 
     def claim(self):
         job = self.queue.claim()
@@ -286,6 +286,36 @@ class AgentAnalysisRuntimeTests(unittest.TestCase):
                 with self.assertRaisesRegex(GuardError, 'agent_cloud_not_approved'):
                     self.build()
         self.assertEqual(self.records(), [])
+
+    def test_mutating_returned_messages_does_not_mutate_admission(self):
+        self.claim()
+        client, _ = self.build()
+        observed = client.messages
+        observed[1]['content'] = '{}'
+        self.assertNotEqual(observed, client.messages)
+        with self.assertRaisesRegex(GuardError, 'agent_analysis_payload_changed'):
+            client.complete_json(tier=self.decision.tier, messages=observed, max_output_tokens=1200)
+        self.local_mock.assert_not_called()
+        self.invoke(client)
+        self.local_mock.assert_called_once()
+
+    def test_changed_notification_intent_cannot_reuse_receipt(self):
+        self.claim()
+        self.build()
+        self.decision = replace(self.decision, notify_user=False)
+        with self.assertRaisesRegex(GuardError, 'agent_analysis_receipt_changed'):
+            self.build()
+
+    def test_reconnected_broker_before_readiness_blocks_old_context(self):
+        self.claim()
+        client, _ = self.build()
+        with closing(backend.connect()) as db, db:
+            db.execute('UPDATE broker_connection_versions SET stamp=? WHERE user_id=?',
+                       ('f' * 64 if client.binding != 'f' * 64 else 'e' * 64, self.user_id))
+        with self.assertRaisesRegex(GuardError, 'agent_analysis_broker_changed'):
+            client.check_ready(self.decision.tier)
+        self.local_mock.assert_not_called()
+        self.cloud_mock.assert_not_called()
 
     def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):
         root = Path(__file__).resolve().parents[1]

@@ -181,18 +181,20 @@ class AnalysisTaskAdapter:
             raise GuardError('agent_cloud_not_approved')
         self.original_budget_guard = budget_guard
         self.original_before_send = before_send
-        self.messages = [
+        self._messages_json = _json([
             {'role': 'system', 'content': SYSTEM_PROMPT},
             {'role': 'user', 'content': _json({'analysis_reason': decision.reason.value,
                 'notify_user': decision.notify_user, 'context': self.context})},
-        ]
+        ])
         with transaction(connect) as db:
             _job_in(db, user_id, self.job)
             if budget_guard is not None:
                 budget_guard(db)
+            self.binding = broker_binding_in(db, user_id)
             self.receipt = _json({'version': 1, 'route': self.mode, 'kind': 'portfolio_review',
+                'request_sha256': hashlib.sha256(self._messages_json.encode()).hexdigest(),
                 'context_sha256': hashlib.sha256(_json(self.context).encode()).hexdigest(),
-                'broker_binding': broker_binding_in(db, user_id),
+                'broker_binding': self.binding,
                 'source_deadline': self.deadline, 'tier': decision.tier.value,
                 'reason': decision.reason.value, 'max_output_tokens': decision.max_output_tokens})
             existing = _stored(db, user_id, self.job)
@@ -203,6 +205,11 @@ class AnalysisTaskAdapter:
                 now = int(time.time())
                 db.execute('INSERT INTO workspace_records(user_id,kind,id,payload_json,version,created_at,updated_at) '
                            'VALUES(?,?,?,?,1,?,?)', (user_id, RECEIPT_KIND, self.job[0], self.receipt, now, now))
+
+    @property
+    def messages(self):
+        # A caller may inspect a copy, never change the admitted request in place.
+        return json.loads(self._messages_json)
 
     def _environment(self):
         values = self.environment_provider()
@@ -222,6 +229,8 @@ class AnalysisTaskAdapter:
         row = _stored(db, self.user_id, self.job)
         if row is None or row[0] != self.receipt or row[1] != 1:
             raise GuardError('agent_analysis_receipt_changed')
+        if broker_binding_in(db, self.user_id) != self.binding:
+            raise GuardError('agent_analysis_broker_changed')
         if time.time() >= self.deadline:
             raise GuardError('agent_fresh_sources_required')
         self._environment()
