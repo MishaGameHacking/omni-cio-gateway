@@ -1,11 +1,14 @@
-name: Verify Jarvis admission policy on owner Lenovo
+name: Verify Jarvis admission and dispatch on owner Lenovo
 on:
   push:
     branches: [codex/jarvis-foundation-2026-10-31]
     paths:
       - backend/agent_runtime_policy.py
+      - backend/agent_task_client.py
       - backend/tests/test_agent_runtime_policy.py
+      - backend/tests/test_agent_task_client.py
       - docs/JARVIS_LOCAL_AGENT_2026-10-31.md
+      - docs/JARVIS_STAGE2_INTEGRATION_2026-10-31.md
       - .github/workflows/jarvis-foundation.yml
 permissions:
   contents: read
@@ -21,7 +24,7 @@ jobs:
         shell: cmd
         run: |
           if /I not "%COMPUTERNAME%"=="LAPTOP-NPSGA016" exit /b 1
-          echo Owner Lenovo test host verified; no runtime inspection or deployment.
+          echo Owner Lenovo verified. Synthetic tests only; no deployment or paid calls.
       - name: Checkout isolated candidate without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -29,9 +32,9 @@ jobs:
           path: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Run synthetic policy and existing analysis tests
+      - name: Run synthetic dispatch and existing regression tests
         shell: cmd
         working-directory: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          py -3 -I -c "import pathlib,sys,unittest; sys.path.insert(0,str(pathlib.Path.cwd())); suite=unittest.defaultTestLoader.loadTestsFromNames(['backend.tests.test_agent_runtime_policy','backend.tests.test_ai_policy']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(not result.wasSuccessful())"
+          py -3 -I -c "import pathlib,sys,unittest; sys.path.insert(0,str(pathlib.Path.cwd())); suite=unittest.defaultTestLoader.loadTestsFromNames(['backend.tests.test_agent_runtime_policy','backend.tests.test_agent_task_client','backend.tests.test_ai_policy','backend.tests.test_ai_accounting_audit','backend.tests.test_ai_jobs_schema_atomic','backend.tests.test_ai_budget_schema_atomic']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(not result.wasSuccessful())"
           if errorlevel 1 exit /b 1
