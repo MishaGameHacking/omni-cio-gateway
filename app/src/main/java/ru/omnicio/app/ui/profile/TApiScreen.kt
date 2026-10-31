@@ -397,7 +397,7 @@ private fun TokenSecurityCard() {
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Токен передаётся по HTTPS на backend Analyst AI, проверяется read-only запросом T‑Invest и хранится на Timeweb в зашифрованном виде, привязанном к вашему Telegram ID.",
+                text = "Токен передаётся по HTTPS на ваш Lenovo, проверяется запросом T‑Invest только для чтения и хранится на ноутбуке в зашифрованном виде, привязанном к вашему Telegram ID.",
                 color = TApiMuted,
                 style = MaterialTheme.typography.bodyMedium,
             )

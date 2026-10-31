@@ -343,7 +343,7 @@ fun PendingJobRecovery(checkpoints: WorkspaceCheckpoints = rememberJobCheckpoint
     if (checkpoints.items.isNotEmpty()) SpectrumCard {
         DetailFold("Сохранённые задания · " + checkpoints.items.size,
             initiallyOpen = checkpoints.items.any(JobCheckpointStore::isUnconfirmedChat)) {
-            Text("Сначала проверим прежний запрос по его идентификатору. Проверка не создаёт нового платного задания.")
+            Text("Сначала проверим прежний запрос по его идентификатору. Проверка не создаёт нового задания.")
             checkpoints.items.forEach { point ->
                 val requestId = point.text("request_id", "")
                 val path = point.text("path", "")
