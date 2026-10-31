@@ -10,6 +10,7 @@ from contextlib import closing
 import base64
 from datetime import date, datetime, timedelta, timezone
 import json
+import re
 import uuid
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
@@ -23,7 +24,7 @@ try:
     from .schema_migrations import execute_schema
     from .ai_guarded_client import GuardedAIClient, GuardError
     from .ai_policy import AnalysisTier
-    from .investment_chat_policy import plan_chat, ChatPolicyError
+    from .investment_chat_policy import plan_chat, ChatPolicyError, is_introduction, response_budget
     from .volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 except ImportError:
     import app as backend
@@ -34,7 +35,7 @@ except ImportError:
     from schema_migrations import execute_schema
     from ai_guarded_client import GuardedAIClient, GuardError
     from ai_policy import AnalysisTier
-    from investment_chat_policy import plan_chat, ChatPolicyError
+    from investment_chat_policy import plan_chat, ChatPolicyError, is_introduction, response_budget
     from volume_contract import HTTP_ERRORS, digest, money, now_iso, date_range, decimal, text_number, ZERO, financial_context, source, timestamp
 
 router = APIRouter(prefix="/workspace/chat", tags=["Verified-context AI conversation"])
@@ -58,10 +59,257 @@ uncertainties:[string],actions:[{type:'open_instrument'|'open_risks'|'open_strat
 claims с пустым fact_ids и не придумывай идентификаторы ради заполнения массива.
 Для общего ответа без переходов верни highlights: [] и actions: [].
 Отделяй вывод от наблюдения, указывай неизвестные значения и давность снимка.
+as_of — время сохранённого наблюдения, а не доказательство актуального состояния
+на момент вопроса. Не называй старый снимок текущим и не подтверждай неизменность
+портфеля после него без отдельного более свежего факта.
 Общие пояснения не должны звучать как новые факты о пользователе.
 Не обещай будущую прибыль, доставку или исполнение. Не включай персональные
 идентификаторы и не предлагай передавать токены. Не меняй пользовательский план.
+Факт decision_cycle подтверждает только сохранённый статус расчёта алгоритма и
+записанные причины отказа. Он не подтверждает инвестиционную пригодность актива,
+финансовый прогноз, отправку поручения или исполненную сделку. preview_available
+означает только предварительный расчёт. orders_sent_by_this_cycle=false относится
+только к этому циклу, а не ко всем операциям счёта. При current=false называй
+расчёт историческим, укажи evaluated_at и не выдавай его причины за текущие.
+Причины в выбранной области относятся только к ней; не обобщай их на другие
+счета и инструменты. Отсутствие факта означает отсутствие доступного расчёта,
+а не доказательство того, что торговля или анализ были выполнены.
 """
+
+INTRODUCTION_SYSTEM = """Ты — Analyst AI, русскоязычный инвестиционный помощник.
+На отдельное приветствие ответь одним коротким предложением; на вопрос о своих
+возможностях — двумя. Помогаешь читать данные портфеля и объяснять инвестиционные
+термины. Не заявляй, что управляешь капиталом, уже проверил счёт или совершил сделку.
+В этом запросе финансовые факты и история намеренно не переданы: не сообщай
+персональные сведения, суммы или состояние портфеля. Верни только один завершённый
+JSON-объект с полями answer (строка), claims: [], highlights: [], uncertainties: [],
+actions: []. Без Markdown, рассуждений, дополнительных полей и текста после JSON.
+"""
+
+
+def _response_instruction(max_output_tokens: int, *, impact_request: bool = False) -> str:
+    budget = response_budget(max_output_tokens)
+    instruction = (
+        "\nОграничение всего ответа, включая JSON: " + str(max_output_tokens) + " токенов. "
+        "Сначала выбери главные выводы, затем верни компактный завершённый JSON без Markdown. "
+        "Не перечисляй все facts, не копируй исходные данные и не повторяй answer в claims. "
+        "При нехватке места сократи число выводов, сохрани существенную неопределённость и закрой JSON. "
+        "answer: ориентир до " + str(budget["answer_characters_target"]) + " символов; "
+        "claims: до " + str(budget["claims_max"]) + " элементов, text до 90 символов; "
+        "fact_ids: только необходимые для этого утверждения идентификаторы. "
+        "uncertainties: до " + str(budget["uncertainties_max"]) + " элементов по 100 символов. "
+        "highlights и actions: до 2 элементов каждый, пустые массивы допустимы. "
+        "Не повторяй одинаковую неопределённость в нескольких полях."
+    )
+    if impact_request:
+        instruction += (
+            " Для impact_request оставь место под обязательный impact_hypothesis: ровно 1 канал. "
+            "answer до 120 символов; claims пустой массив, если отдельные наблюдения не нужны. "
+            "mechanism до 120 символов, assumptions ровно 1 короткий пункт, uncertainty до 100 символов. "
+            "Сохрани все обязательные fact_ids канала; сокращай текст, а не основания. "
+            "highlights и actions оставь пустыми. Не дублируй гипотезу в answer или claims."
+        )
+    return instruction
+
+
+def _introduction_packet() -> dict:
+    return {"as_of": None, "snapshot_id": None, "facts": [], "sources": [],
+            "allowed_highlights": [], "tools_used": [], "impact_context": None,
+            "explanation_context": None, "coverage": {"purpose": "introduction_only",
+            "financial_context_included": False}, "strategy_version": None,
+            "tool_permissions": {"broker": "none", "orders": False, "external_messages": False}}
+
+# This allowlist is a privacy boundary: never forward arbitrary persisted code
+# strings or messages to the model. Messages are reconstructed from trusted code.
+_DECISION_CODES = frozenset({
+    "real_order_execution_disabled", "strategy_required", "automation_paused",
+    "account_outside_mandate", "candidate_account_unverified", "investment_profile_incomplete",
+    "fresh_snapshot_required", "portfolio_coverage_incomplete", "broker_connection_required",
+    "evidence_revision_required", "strategy_changed", "snapshot_changed", "evidence_changed",
+    "decision_inputs_changed", "candidate_expired", "decision_expired", "candidate_constraints_failed",
+    "investment_research_incomplete", "tax_and_settlement_effects", "loss_capacity_and_full_investment_profile",
+    "investment_thesis_and_valuation", "no_whole_lot_within_target_and_reserve",
+    "candidate_quantity_unverified", "candidate_cost_unverified", "sell_owned_units_unverified",
+    "protected_reserve_would_be_spent", "own_cash_unverified", "borrowed_cash_not_permitted",
+    "no_candidates_reviewed", "no_action_required", "candidate_input_invalid", "discovery_incomplete",
+    "market_price_polling_paused", "limit_trading_unavailable", "broker_purchase_unavailable",
+    "strategy_rebalance_cooldown", "strategy_turnover_limit", "issuer_rating_required", "issue_rating_required",
+    "share_issuer_aaa_required", "rating_below_owner_mandate", "commission_not_verified", "cash_floor_breached",
+})
+_DECISION_GLOBAL_CODES = frozenset({
+    "real_order_execution_disabled", "strategy_required", "automation_paused", "broker_connection_required",
+    "evidence_revision_required", "strategy_changed", "snapshot_changed", "evidence_changed",
+    "decision_inputs_changed", "decision_expired", "fresh_snapshot_required", "discovery_incomplete",
+})
+
+
+def _saved_decision_cycle(user):
+    # SELECT-only helper. Do not call controller.tick/status, broker discovery,
+    # schema initializers or a model from context construction.
+    try:
+        from . import autonomous_controller
+    except ImportError:
+        import autonomous_controller
+    return autonomous_controller._latest_decision(user, int(datetime.now(timezone.utc).timestamp()))
+
+
+def _decision_moment(value):
+    if not isinstance(value, str) or len(value) > 40:
+        return None
+    try:
+        return timestamp(value)
+    except ValueError:
+        return None
+
+
+def _bounded_decision_rows(value):
+    return isinstance(value, list) and len(value) <= 100
+
+
+def _read_only_decision(receipt):
+    execution = receipt.get("execution")
+    if not isinstance(execution, dict):
+        return False
+    return (execution.get("mode") == "read_only" and execution.get("real_orders_enabled") is False
+            and receipt.get("no_op") is True and type(receipt.get("current")) is bool)
+
+
+def _decision_header_valid(receipt):
+    if not isinstance(receipt, dict):
+        return False
+    identifier = receipt.get("cycle_id")
+    if not isinstance(identifier, str) or re.fullmatch(r"[0-9a-f]{64}", identifier) is None:
+        return False
+    if not isinstance(receipt.get("state"), str) or receipt["state"] not in {"blocked", "waiting", "preview_available"}:
+        return False
+    return (_read_only_decision(receipt) and isinstance(receipt.get("lineage"), dict)
+            and _bounded_decision_rows(receipt.get("blockers")) and _bounded_decision_rows(receipt.get("candidates")))
+
+
+def _decision_scope_ids(context):
+    target = context.get("explanation")
+    instrument = context.get("instrument_uid") if context.get("mode") == "instrument" else None
+    if isinstance(target, dict) and target.get("kind") == "candidate":
+        instrument = target.get("id")
+    return context.get("account_id"), instrument
+
+
+def _candidate_in_chat_scope(row, account, instrument):
+    return (isinstance(row, dict) and (not account or row.get("account_id") == account)
+            and (not instrument or row.get("instrument_uid") == instrument))
+
+
+def _decision_mandate_matches(active, lineage, account, codes):
+    config = (active or {}).get("config")
+    mandate = config.get("mandate") if isinstance(config, dict) else None
+    # A stale strategy must not bind its former account to a new mandate.
+    return (bool(account) and isinstance(mandate, dict) and mandate.get("account_id") == account
+            and lineage.get("strategy_version") == (active or {}).get("version") and "strategy_changed" not in codes)
+
+
+def _scoped_decision_codes(codes, matching, same_account):
+    result = codes & _DECISION_GLOBAL_CODES
+    for row in matching:
+        values = row.get("decision_blockers")
+        if _bounded_decision_rows(values):
+            result.update(value for value in values if isinstance(value, str))
+    # The cash-floor observation belongs to the mandate's account. A candidate
+    # code alone cannot make it a verified observation about another account.
+    result.discard("cash_floor_breached")
+    if same_account and "cash_floor_breached" in codes:
+        result.add("cash_floor_breached")
+    return result
+
+
+def _decision_proposal_in_scope(receipt, matching):
+    proposal = receipt.get("proposed_action")
+    if receipt["state"] != "preview_available" or not isinstance(proposal, dict):
+        return False
+    return any(row.get("preview_eligible") is True
+               and row.get("instrument_uid") == proposal.get("instrument_uid")
+               and row.get("account_id") == proposal.get("account_id") for row in matching)
+
+
+def _decision_scope(receipt, active, context, codes):
+    account, instrument = _decision_scope_ids(context)
+    if not account and not instrument:
+        return "portfolio", receipt["state"], codes
+    matching = [row for row in receipt["candidates"] if _candidate_in_chat_scope(row, account, instrument)]
+    same_account = _decision_mandate_matches(active, receipt["lineage"], account, codes)
+    if not matching and (instrument or not same_account):
+        return None
+    scoped_codes = _scoped_decision_codes(codes, matching, same_account)
+    scoped_state = "blocked" if scoped_codes - {"real_order_execution_disabled"} else "waiting"
+    if _decision_proposal_in_scope(receipt, matching):
+        scoped_state = "preview_available"
+    return "selected_instrument" if instrument else "selected_account", scoped_state, scoped_codes
+
+
+def _decision_current(receipt, snapshot, active, codes, observed_at, expiry_at):
+    current = receipt["current"]
+    lineage = receipt["lineage"]
+    if lineage.get("snapshot_id") != snapshot.get("snapshot_id"):
+        current = False
+        codes.add("snapshot_changed")
+    if lineage.get("strategy_version") != (active or {}).get("version"):
+        current = False
+        codes.add("strategy_changed")
+    # Recheck the deadline at construction; the stored observation never grants
+    # a time lease to a model request that starts after it has expired.
+    now = datetime.now(timezone.utc)
+    if expiry_at is None or expiry_at <= now or observed_at > now:
+        current = False
+        codes.add("decision_expired")
+    return current
+
+
+def _decision_reasons(codes):
+    try:
+        from .decision_cycle import reason
+    except ImportError:
+        from decision_cycle import reason
+    safe_codes = codes & _DECISION_CODES
+    safe_codes.add("real_order_execution_disabled")
+    reasons = [reason(code) for code in sorted(safe_codes)]
+    if codes - _DECISION_CODES:
+        reasons.append({"code": "additional_check_required", "message": "В расчёте есть дополнительная незавершённая проверка."})
+    return reasons
+
+
+def _decision_fact(receipt, snapshot, active, context):
+    """Allowlisted algorithm observation; never an order or financial assertion."""
+    if not _decision_header_valid(receipt):
+        return None
+    observed_at = _decision_moment(receipt.get("evaluated_at"))
+    if observed_at is None:
+        return None
+    codes = {row.get("code") for row in receipt["blockers"] if isinstance(row, dict) and isinstance(row.get("code"), str)}
+    scoped = _decision_scope(receipt, active, context, codes)
+    if scoped is None:
+        return None
+    scope, scoped_state, codes = scoped
+    expiry_at = _decision_moment(receipt.get("expires_at"))
+    current = _decision_current(receipt, snapshot, active, codes, observed_at, expiry_at)
+    cycle_id, observed = receipt["cycle_id"], receipt["evaluated_at"]
+    value = {"cycle_id": cycle_id, "evaluated_at": observed,
+             "expires_at": receipt.get("expires_at") if expiry_at is not None else None,
+             "state": scoped_state if current else "blocked", "current": current, "scope": scope,
+             "blockers": _decision_reasons(codes), "real_orders_enabled": False, "orders_sent_by_this_cycle": False,
+             "basis": "recorded_algorithm_status_not_trade_or_financial_truth", "financial_verification": False}
+    ref = source("portfolio_decision_cycle", cycle_id, observed,
+                 provider="Analyst AI: сохранённый результат алгоритма", ttl=0)
+    return {"id": "decision_cycle:" + cycle_id, "value": value, "source_ids": [ref["id"]], "as_of": observed}, ref
+
+
+def _append_decision_context(user, snapshot, active, context, facts, refs_by_id):
+    item = _decision_fact(_saved_decision_cycle(user), snapshot, active, context)
+    if item is None:
+        return {"available": False, "basis": "recorded_algorithm_status_only"}
+    fact, ref = item
+    facts.append(fact)
+    refs_by_id[ref["id"]] = ref
+    return {"available": True, "current": fact["value"]["current"], "scope": fact["value"]["scope"],
+            "basis": "recorded_algorithm_status_only"}
 
 
 def initialize() -> None:
@@ -281,6 +529,7 @@ def fact_packet(user: Any, context: dict) -> dict:
     except ImportError:
         import volume_explanations as explanations
     explanation = _append_explanation(explanations.prepare(user, snapshot, context, risk, active), facts, refs_by_id)
+    decision_coverage = _append_decision_context(user, snapshot, active, context, facts, refs_by_id)
     requested_range = {"start": begin.isoformat(), "end": finish.isoformat(), "coverage_complete": complete,
                        "requested_end": requested_finish.isoformat(), "snapshot_bounds_end": True}
     used_refs = {identifier for fact in facts for identifier in fact["source_ids"]}
@@ -294,12 +543,14 @@ def fact_packet(user: Any, context: dict) -> dict:
                          "history": observations_coverage, "events": {"included": min(len(relevant_events), 15), "scoped_count": len(relevant_events)},
                          "risks": {"included": min(len(relevant_risks), 40), "scoped_count": len(relevant_risks), "basis_scope": "whole_portfolio"},
                          "ratings": {"included": min(len(credit_rows), 24), "scoped_count": len(credit_rows), "scales_are_not_averaged": True},
+                         "decision_cycle": decision_coverage,
                          "unresolved_source_ids": sorted(used_refs - refs_by_id.keys()),
                          "risk_directions": risk["coverage"]}, "strategy_version": (active or {}).get("version", 0),
             "tool_permissions": {"broker": "read_only", "strategy": "preview_requires_separate_confirmation", "orders": False, "external_messages": False}}
 
 
-def model_messages(user: Any, text: str, context: dict, thread_id: str | None = None, before_job_id: str | None = None) -> tuple[list[dict], dict]:
+def model_messages(user: Any, text: str, context: dict, thread_id: str | None = None, before_job_id: str | None = None,
+                   *, max_output_tokens: int = MAX_OUTPUT) -> tuple[list[dict], dict]:
     packet = fact_packet(user, context)
     history = []
     if thread_id:
@@ -310,6 +561,13 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
                 AND (? IS NULL OR rowid<?) ORDER BY rowid DESC LIMIT 4""",
                 (thread_id, int(user["id"]), boundary, boundary)).fetchall()
         history = [{"role": row["role"], "text": row["text"][:4000]} for row in reversed(rows)]
+    # Keep the same context/thread ownership checks, but a standalone greeting
+    # has no financial task. Past analyses must not inflate it into another one.
+    if is_introduction(text):
+        packet = _introduction_packet()
+        messages = [{"role": "system", "content": INTRODUCTION_SYSTEM + _response_instruction(max_output_tokens)},
+                    {"role": "user", "content": state.encode({"question": text})}]
+        return messages, packet
     # Navigation metadata is bound by the server for the user's device. Account
     # IDs and source subject IDs are unnecessary for the paid model call.
     model_packet = {key: value for key, value in packet.items() if key not in {"sources", "allowed_highlights", "impact_context"}}
@@ -325,6 +583,7 @@ def model_messages(user: Any, text: str, context: dict, thread_id: str | None = 
     if packet.get("impact_context") is not None:
         model_packet["impact_request"] = packet["impact_context"]["model_request"]
         instructions += impact.MODEL_INSTRUCTION
+    instructions += _response_instruction(max_output_tokens, impact_request=packet.get("impact_context") is not None)
     contents = {"question": text, "context": model_packet, "recent_conversation": history}
     messages = [{"role": "system", "content": instructions}, {"role": "user", "content": state.encode(contents)}]
     if len(json.dumps(messages, ensure_ascii=False).encode()) > 110_000:
@@ -404,7 +663,8 @@ def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> di
     try:
         plan = _chat_plan(int(user["id"]), payload.text, payload.tier, payload.thread_id,
                           context=payload.context.model_dump(mode="json"))
-        messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id)
+        messages, packet = model_messages(user, payload.text, payload.context.model_dump(mode="json"), payload.thread_id,
+                                          max_output_tokens=plan.max_output_tokens)
         _, route = ready(int(user["id"]), plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
         selected = _route_snapshot(plan, route, _encoded_size(messages))
         from decimal import Decimal
@@ -452,7 +712,8 @@ def send_message(identifier: str, payload: MessageCreate, tasks: BackgroundTasks
             raise HTTPException(409, "request_id_payload_conflict")
         return jobs.get_job(user_id, prior["job_id"])
     plan = _admit_send(user_id, identifier, payload)
-    messages, _ = model_messages(user, payload.text, payload.context.model_dump(mode="json"), identifier)
+    messages, _ = model_messages(user, payload.text, payload.context.model_dump(mode="json"), identifier,
+                                 max_output_tokens=plan.max_output_tokens)
     try:
         _, route = ready(user_id, plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
     except GuardError as error:
@@ -530,7 +791,8 @@ def run_message(user: Any, job: dict, payload: dict) -> dict:
     except ChatPolicyError as error:
         raise GuardError(error.code) from None
     selected = _saved_route(user_id, job["id"])
-    messages, packet = model_messages(user, payload["text"], payload["context"], payload["thread_id"], job["id"])
+    messages, packet = model_messages(user, payload["text"], payload["context"], payload["thread_id"], job["id"],
+                                      max_output_tokens=plan.max_output_tokens)
     ready(user_id, plan.tier, input_bytes=_encoded_size(messages), max_output_tokens=plan.max_output_tokens)
     jobs.progress("context_ready")
     client = GuardedAIClient(user_id, backend.connect, attempt_id="workspace:" + job["id"],
@@ -760,3 +1022,4 @@ def _is_context_highlight(item, valid_highlights):
 
 def _allowed_instrument_action(item, allowed_uids):
     return isinstance(item.get("id"), str) and item["id"] in allowed_uids
+

@@ -44,7 +44,7 @@ USER_TABLES = (
     "portfolio_snapshots", "analysis_budget_usage", "ai_money_reservations",
     "broker_connection_versions",
     "automation_preferences", "automation_observations",
-    "automation_discovery", "automation_events",
+    "automation_discovery", "automation_events", "portfolio_decision_cycles",
 )
 GLOBAL_TABLES = ("market_facts", "research_revision_v1", "osint_revision_v1")
 _waiters: dict[int, int] = {}

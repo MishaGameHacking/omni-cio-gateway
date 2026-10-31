@@ -1,0 +1,102 @@
+{
+  "status": "evaluated",
+  "production_activated": false,
+  "cloud_inference_called": false,
+  "dependencies": [
+    {
+      "name": "litert-lm-api",
+      "version": "0.18.1",
+      "sha256": "b2fe9b9a87afe991a7b0d29615b0bfc3d41c7a0ac28e9c54436676482bca2e5b"
+    }
+  ],
+  "schema": 1,
+  "model": "litert-community/gemma-4-E2B-it-litert-lm",
+  "revision": "1caa527c1e88b55f046fcd8d2b4265606680663d",
+  "model_sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+  "runtime_version": "0.18.1",
+  "cpu_threads": 1,
+  "context_tokens": 2048,
+  "peak_rss_mib": 2543.22,
+  "cases": [
+    {
+      "case": "report_ru",
+      "schema_valid": false,
+      "selection_correct": false,
+      "seconds": 3.95
+    },
+    {
+      "case": "credit_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.282
+    },
+    {
+      "case": "dividend_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.669
+    },
+    {
+      "case": "irrelevant_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.36
+    },
+    {
+      "case": "unknown_ru",
+      "schema_valid": true,
+      "selection_correct": false,
+      "seconds": 3.215
+    },
+    {
+      "case": "report_en",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.366
+    },
+    {
+      "case": "injection_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.278
+    },
+    {
+      "case": "loss_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.26
+    },
+    {
+      "case": "missing_profit_ru",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.385
+    },
+    {
+      "case": "missing_report_ru",
+      "schema_valid": true,
+      "selection_correct": false,
+      "seconds": 3.208
+    },
+    {
+      "case": "unknown_en",
+      "schema_valid": true,
+      "selection_correct": true,
+      "seconds": 3.215
+    },
+    {
+      "case": "injected_number_ru",
+      "schema_valid": true,
+      "selection_correct": false,
+      "seconds": 3.532
+    }
+  ],
+  "synthetic_fixtures_only": true,
+  "quality_gate_passed": false,
+  "resource_gate_passed": false,
+  "evaluated_source": "17bcb65d4a2d723de85f2db53db174347f002c47",
+  "workflow_run_id": 41077987792,
+  "host": "LAPTOP-NPSGA016 / Ubuntu-24.04 WSL",
+  "deployment_decision": "rejected_quality_and_memory",
+  "timeweb_installed": false
+}

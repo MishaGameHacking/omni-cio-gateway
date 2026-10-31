@@ -17,6 +17,7 @@ try:
     from . import app as backend, osint_store as store, osint_network as net, osint_content as content
     from .osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF, MAX_FEED
     from .osint_analysis import analyze, clean_text
+    from .local_research import select_public_fragments
     from .osint_retention import cleanup
     from .ai_budget import transaction
 except ImportError:
@@ -26,6 +27,7 @@ except ImportError:
     import osint_content as content
     from osint_catalogue import BY_ID, GDELT_QUERY, IntakeError, MAX_BODY, MAX_PDF, MAX_FEED
     from osint_analysis import analyze, clean_text
+    from local_research import select_public_fragments
     from osint_retention import cleanup
     from ai_budget import transaction
 
@@ -132,6 +134,16 @@ def _discovery_url(target, now):
         "gaps": int(cursor.get("gaps", 0)) + int(int(cursor.get("start", start)) < floor)}
 
 
+def _local_report_analysis(item, analysis):
+    if item["kind"] != "report" or not analysis["relevant"]:
+        return
+    selected = select_public_fragments(item["title"], item["text"])
+    if selected["status"] != "disabled":
+        analysis["local_research"] = selected
+    if selected["status"] == "source_excerpt_selection":
+        analysis["version"] += ":local:" + selected["model_sha256"][:16] + ":" + selected["selector_sha256"][:16]
+
+
 def _parse(target, source, raw, final_url, now, window):
     children, cursor = [], None
     if target["kind"] == "rss":
@@ -166,6 +178,7 @@ def _parse(target, source, raw, final_url, now, window):
         analysis = analyze(item["title"], item["text"], report=item["kind"] == "report", pages=item.get("pages"))
         if item["kind"] == "report":
             analysis["extraction"] = {key: coverage[key] for key in ("page_count", "truncated", "needs_ocr")}
+        _local_report_analysis(item, analysis)
         analysis["issuer_hint"] = source.issuer
         analysis["issuer_identity_verified"] = False
         rows.append((item, analysis))
@@ -247,4 +260,5 @@ def collect(user, _payload, _checkpoint, progress):
                            (target["id"], target["lease_owner"]))
         outcomes.append({"source_id": target["source_id"], **outcome})
     return {"sources": outcomes, "retention": retention, "paid_model_calls": 0, "orders": 0}
+
 

@@ -10,16 +10,21 @@ import pytest
 
 SCHEMA_QUERY = "SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name"
 EVENT_INDEX = 'automation_events_user'
+DECISION_TABLE = 'portfolio_decision_cycles'
+DECISION_INDEX = 'portfolio_decision_cycles_latest'
+SCHEMA_INDEXES = {EVENT_INDEX, DECISION_INDEX}
 QUERIES = {
     'n00_retained': 'SELECT * FROM n00_retained ORDER BY rowid',
     'automation_preferences': 'SELECT * FROM automation_preferences ORDER BY user_id',
     'automation_observations': 'SELECT * FROM automation_observations ORDER BY user_id,broker_key',
     'automation_discovery': 'SELECT * FROM automation_discovery ORDER BY user_id',
     'automation_events': 'SELECT * FROM automation_events ORDER BY user_id,id',
+    DECISION_TABLE: 'SELECT * FROM portfolio_decision_cycles ORDER BY user_id,broker_key,cycle_id',
 }
 OBSERVATION_INSERT = 'INSERT INTO automation_observations VALUES (?,?,?,?)'
 DISCOVERY_INSERT = 'INSERT INTO automation_discovery VALUES (?,?,?,?,?,?,?,?,?,?,?)'
 EVENT_INSERT = 'INSERT INTO automation_events VALUES (?,?,?,?,?,?)'
+DECISION_INSERT = 'INSERT INTO portfolio_decision_cycles VALUES (?,?,?,?,?,?)'
 
 
 def connect_file(path, *, timeout=3, factory=sqlite3.Connection):
@@ -91,6 +96,14 @@ def seed(controller, *, populated=False):
             (101, 'synthetic-old-connection', 'same-event', 'initial_observation', '{"old":true}', 1),
             (202, 'synthetic-current-connection', 'same-event', 'initial_observation', '{"other":true}', 2),
         ])
+        # Startup must retain immutable audit bytes, including historical broker
+        # bindings and an identical cycle identity belonging to another owner.
+        decision = '{ "schema_version": 1, "state": "blocked", "no_op": true, "synthetic_audit": "retain exactly" }'
+        db.executemany(DECISION_INSERT, [
+            (101, 'synthetic-old-connection', 'a' * 64, 'b' * 64, 13, decision),
+            (101, 'synthetic-current-connection', 'a' * 64, 'b' * 64, 14, decision),
+            (202, 'synthetic-current-connection', 'a' * 64, 'b' * 64, 15, decision),
+        ])
 
 
 def denying_factory(path, expected_action, expected_name):
@@ -122,6 +135,8 @@ def assert_closed(opened):
 @pytest.mark.parametrize('action,name', [
     (sqlite3.SQLITE_CREATE_TABLE, 'automation_events'),
     (sqlite3.SQLITE_CREATE_INDEX, EVENT_INDEX),
+    (sqlite3.SQLITE_CREATE_TABLE, DECISION_TABLE),
+    (sqlite3.SQLITE_CREATE_INDEX, DECISION_INDEX),
     (sqlite3.SQLITE_TRANSACTION, 'COMMIT'),
 ])
 def test_late_refusal_rolls_back_all_controller_objects(controller, monkeypatch, action, name):
@@ -137,21 +152,24 @@ def test_late_refusal_rolls_back_all_controller_objects(controller, monkeypatch,
     assert_closed(opened)
     controller.module.initialize()
     schema, rows = snapshot(controller.path)
-    assert {name for _, name, _ in schema} == set(QUERIES) | {EVENT_INDEX}
+    assert {name for _, name, _ in schema} == set(QUERIES) | SCHEMA_INDEXES
     assert rows['n00_retained'] == before[1]['n00_retained']
 
 
-@pytest.mark.parametrize('action,name', [
-    (sqlite3.SQLITE_CREATE_INDEX, EVENT_INDEX), (sqlite3.SQLITE_TRANSACTION, 'COMMIT'),
+@pytest.mark.parametrize('index_name,action,name', [
+    (EVENT_INDEX, sqlite3.SQLITE_CREATE_INDEX, EVENT_INDEX),
+    (EVENT_INDEX, sqlite3.SQLITE_TRANSACTION, 'COMMIT'),
+    (DECISION_INDEX, sqlite3.SQLITE_CREATE_INDEX, DECISION_INDEX),
+    (DECISION_INDEX, sqlite3.SQLITE_TRANSACTION, 'COMMIT'),
 ])
-def test_index_repair_preserves_rows_and_really_restores_schema(controller, monkeypatch, action, name):
+def test_index_repair_preserves_rows_and_really_restores_schema(controller, monkeypatch, index_name, action, name):
     seed(controller, populated=True)
     healthy = snapshot(controller.path)
-    assert any(kind == 'index' and identifier == EVENT_INDEX for kind, identifier, _ in healthy[0])
+    assert any(kind == 'index' and identifier == index_name for kind, identifier, _ in healthy[0])
     with closing(connect_file(controller.path)) as db, db:
-        db.execute('DROP INDEX automation_events_user')
+        db.execute('DROP INDEX ' + index_name)
     broken = snapshot(controller.path)
-    assert not any(identifier == EVENT_INDEX for _, identifier, _ in broken[0])
+    assert not any(identifier == index_name for _, identifier, _ in broken[0])
     connect, opened, refused = denying_factory(controller.path, action, name)
     with monkeypatch.context() as patch:
         patch.setattr(controller.backend, 'connect', connect)
@@ -164,7 +182,8 @@ def test_index_repair_preserves_rows_and_really_restores_schema(controller, monk
     assert snapshot(controller.path) == healthy
 
 
-def test_interrupt_after_index_creation_does_not_commit_partial_startup(controller, monkeypatch):
+@pytest.mark.parametrize('index_name', [EVENT_INDEX, DECISION_INDEX])
+def test_interrupt_after_index_creation_does_not_commit_partial_startup(controller, monkeypatch, index_name):
     seed(controller)
     before = snapshot(controller.path)
     opened, written = [], []
@@ -172,7 +191,7 @@ def test_interrupt_after_index_creation_does_not_commit_partial_startup(controll
     class InterruptedConnection(sqlite3.Connection):
         def execute(self, statement, parameters=()):
             cursor = super().execute(statement, parameters)
-            if 'CREATE INDEX IF NOT EXISTS automation_events_user' in statement:
+            if 'CREATE INDEX IF NOT EXISTS ' + index_name in statement:
                 written.append(True)
                 raise KeyboardInterrupt('synthetic-after-controller-index')
             return cursor
@@ -222,7 +241,7 @@ def test_schema_starts_with_write_reservation_and_commits_once(controller, monke
     assert statements[0] == 'BEGIN IMMEDIATE'
     assert statements[-1] == 'COMMIT'
     assert statements.count('BEGIN IMMEDIATE') == statements.count('COMMIT') == 1
-    assert len(statements[1:-1]) == 5
+    assert len(statements[1:-1]) == 7
     assert all(statement.startswith('CREATE ') for statement in statements[1:-1])
     assert_closed(opened)
 
@@ -236,7 +255,7 @@ def test_concurrent_startups_preserve_state_and_close_handles(controller, monkey
     before = snapshot(controller.path)[1]
     concurrent_startups(controller, monkeypatch, controller.module.initialize)
     schema, rows = snapshot(controller.path)
-    assert {name for _, name, _ in schema} == set(QUERIES) | {EVENT_INDEX}
+    assert {name for _, name, _ in schema} == set(QUERIES) | SCHEMA_INDEXES
     assert all(rows[name] == values for name, values in before.items())
 
 

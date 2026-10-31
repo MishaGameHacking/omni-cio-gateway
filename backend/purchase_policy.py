@@ -16,7 +16,7 @@ try:
 except ImportError:
     from portfolio_mandate import mandate_purchase_reasons
 
-POLICY_VERSION = "purchase-constraints-bbb-floor-v2"
+POLICY_VERSION = "purchase-constraints-share-aaa-v3"
 AXES = ("position", "issuer", "group", "sector", "currency")
 
 
@@ -75,8 +75,18 @@ def credit_reasons(assessment: dict, kind: str) -> list[str]:
     reasons = []
     if assessment.get("warnings"):
         reasons.append("rating_evidence_incomplete_or_conflicting")
-    if not any(row.get("subject_kind") == "issuer" for row in rows):
+    issuer_rows = [row for row in rows if row.get("subject_kind") == "issuer"]
+    if not issuer_rows:
         reasons.append("issuer_rating_required")
+    # The owner's new-share rule concerns the issuer's verified national
+    # credit rating. An issue rating, a weaker agency's opinion, or an old AAA
+    # cannot substitute for the current issuer assessment. Freshness, source
+    # authenticity and issuer binding are established by reviewed_credit;
+    # warnings from that assessment remain independent hard blockers above.
+    if kind == "share" and (not issuer_rows or any(
+            type(row.get("level_within_agency")) is not int
+            or row["level_within_agency"] != 0 for row in issuer_rows)):
+        reasons.append("share_issuer_aaa_required")
     if kind == "bond" and not any(row.get("subject_kind") == "issue" for row in rows):
         reasons.append("issue_rating_required")
     if any(type(row.get("level_within_agency")) is not int
@@ -255,6 +265,9 @@ def assess_purchase(*, snapshot: dict, config: dict, meta: dict, identity: dict,
     lot = decimal(meta.get("lot"))
     paid, initial, available = costs["total"], costs["initial"], costs["available"]
     return {"policy_version": POLICY_VERSION, "constraints_passed": not reasons, "reasons": sorted(set(reasons)),
+            "rating_rule": {"share_issuer_minimum_grade": "AAA", "bond_minimum_grade": "BBB",
+                "stricter_owner_mandate_preserved": True,
+                "scope": "national_creditworthiness_not_share_price_or_return_guarantee"},
             "lots": lots, "quantity": text_number(lot * lots) if lot is not None else None,
             "total_cost": money(paid, currency), "clean_principal": money(initial, currency),
             "cash_after": money(available - paid, currency) if available is not None and paid is not None else None,

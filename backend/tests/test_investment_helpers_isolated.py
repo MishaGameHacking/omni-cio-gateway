@@ -6,6 +6,7 @@ provider compatibility, full worker execution or Android readiness.
 """
 import ast
 from contextlib import closing
+from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
@@ -18,28 +19,32 @@ import pytest
 from backend.ai_policy import AnalysisTier
 from backend.ai_route_catalog import Candidate, CatalogError
 from backend.model_json_limits import ModelJsonLimitError, checked_model_json_text
+from backend.investment_chat_policy import is_introduction, response_budget
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def definitions(path, names, namespace):
+def definitions(path, names, namespace, *, preserve_decorators=()):
     tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+    future_imports = [node for node in tree.body if isinstance(node, ast.ImportFrom) and node.module == "__future__"]
     selected = [node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names]
     assert {node.name for node in selected} == set(names)
     for node in selected:
-        node.decorator_list = []
-    exec(compile(ast.Module(body=selected, type_ignores=[]), str(ROOT / path), "exec"), namespace)
+        if node.name not in preserve_decorators:
+            node.decorator_list = []
+    namespace.setdefault("__name__", __name__)
+    exec(compile(ast.Module(body=future_imports + selected, type_ignores=[]), str(ROOT / path), "exec"), namespace)
     return namespace
 
 
 @pytest.fixture
 def guard():
-    names = ["GuardError", "_reject_nonfinite", "_finite_float", "_unique_json_object", "_model_json", "_result_content", "reject", "_encoded_messages", "_assert_complete_response", "configured_route", "GuardedAIClient"]
+    names = ["GuardError", "ModelUsage", "IncompleteModelResponse", "_reject_nonfinite", "_finite_float", "_unique_json_object", "_model_json", "_result_content", "reject", "_encoded_messages", "_assert_complete_response", "configured_route", "GuardedAIClient"]
     return definitions("ai_guarded_client.py", names, {
-        "json": json, "math": math, "Route": SimpleNamespace, "CatalogError": CatalogError,
+        "json": json, "math": math, "dataclass": dataclass, "Route": SimpleNamespace, "CatalogError": CatalogError,
         "ModelJsonLimitError": ModelJsonLimitError, "checked_model_json_text": checked_model_json_text,
         "token_cost": lambda inputs, outputs, in_rate, out_rate: inputs * in_rate + outputs * out_rate,
-    })
+    }, preserve_decorators={"ModelUsage"})
 
 
 @pytest.mark.parametrize("text", ['{"x":NaN}', '{"x":Infinity}', '{"x":-Infinity}', '{"x":1e999}', '{"x":-1e999}'])
@@ -56,6 +61,18 @@ def test_duplicate_json_keys_fail_closed(guard, text):
 
 def test_finite_json_is_preserved(guard):
     assert guard["_model_json"]('{"amount":-0.125,"items":[1,true,null]}') == {"amount": -0.125, "items": [1, True, None]}
+
+
+def test_isolated_completion_guard_uses_real_accounted_usage_and_failure_type(guard):
+    usage = guard["ModelUsage"](10, 600, 610)
+    with pytest.raises(guard["IncompleteModelResponse"]) as rejected:
+        guard["_assert_complete_response"]({"choices": [{"finish_reason": "length"}]}, usage, 600)
+    diagnostic = rejected.value.diagnostics()
+    assert diagnostic["finish_reason"] == "length"
+    assert diagnostic["completion_tokens"] == 600
+    assert diagnostic["usage_accounted"] is True
+    assert diagnostic["automatic_retry"] is False
+    guard["_assert_complete_response"]({"choices": [{"finish_reason": "stop"}]}, usage, 600)
 
 
 @pytest.mark.parametrize("content", ['{"x":NaN}', '{"x":1e999}', '{"x":1,"x":2}'])
@@ -104,9 +121,11 @@ def chat(tmp_path, guard):
         INSERT INTO workspace_chat_messages VALUES (2,'two','foreign','user','Чужой вопрос');
         """)
         db.commit()
-    return definitions("volume_chat.py", ["_thread", "_message_boundary", "_policy_history", "model_messages", "_dispatch_guard"], {
+    return definitions("volume_chat.py", ["_thread", "_message_boundary", "_policy_history", "_response_instruction", "_introduction_packet", "model_messages", "_dispatch_guard"], {
         "closing": closing, "backend": SimpleNamespace(connect=connect), "GuardError": guard["GuardError"],
         "HTTPException": HTTPException, "Any": Any, "json": json, "SYSTEM": "fixture",
+        "INTRODUCTION_SYSTEM": "fixture introduction", "MAX_OUTPUT": 1600,
+        "is_introduction": is_introduction, "response_budget": response_budget,
         "state": SimpleNamespace(encode=json.dumps),
         "fact_packet": lambda user, context: {"sources": [], "allowed_highlights": [], "facts": []},
     })
@@ -117,6 +136,14 @@ def test_queued_history_excludes_current_and_later_questions(chat):
     model, _ = chat["model_messages"]({"id": 1}, "Почему?", {}, "one", "current")
     history = json.loads(model[1]["content"])["recent_conversation"]
     assert history == [{"role": "user", "text": "Объясни инфляцию"}]
+
+
+def test_isolated_introduction_uses_real_prompt_helpers_without_history(chat):
+    model, packet = chat["model_messages"]({"id": 1}, "Привет", {}, "one", "current", max_output_tokens=600)
+    assert json.loads(model[1]["content"]) == {"question": "Привет"}
+    assert "600 токенов" in model[0]["content"]
+    assert packet["facts"] == []
+    assert packet["coverage"]["financial_context_included"] is False
 
 
 def test_history_cannot_borrow_another_users_thread(chat):
@@ -153,3 +180,4 @@ def test_cost_change_is_rejected_before_ledger_or_provider(guard):
     # of them would fail the test rather than masquerade as successful dispatch.
     with pytest.raises(guard["GuardError"], match="quote_changed_before_spend"):
         client._complete(AnalysisTier.STANDARD, [{"role": "user", "content": "fixture"}], 10)
+

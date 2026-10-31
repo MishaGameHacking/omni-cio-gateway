@@ -25,7 +25,7 @@ def project(discovery: dict, events: list, now: int) -> dict:
     candidates = discovery.get("candidates") or []
     current, pending = [], []
     for row in candidates:
-        if not _fresh(row.get("as_of"), now, 86400):
+        if not _fresh(row.get("observed_at") or row.get("as_of"), now, 86400):
             continue
         if row.get("evidence_current") is True:
             current.append(row)
@@ -55,3 +55,4 @@ def prune_obsolete_events(db, user_id: int, now: int) -> int:
         AND kind IN ('candidate_research','initial_observation')
         ORDER BY created_at LIMIT 200)""", (user_id, user_id, now - 30 * 86400))
     return cursor.rowcount
+

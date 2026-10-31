@@ -23,7 +23,7 @@ try:
     from . import volume_catalogue as catalogue, volume_market as market
     from . import portfolio_details as details, volume_purchases as purchases
     from .ai_budget import transaction, micro_rub, BudgetDenied
-    from . import server_version
+    from . import server_version, decision_cycle
     from .schema_migrations import execute_schema
     from .ai_jobs import assert_current_owner_in
     from .ai_guarded_client import configured_route, GuardError
@@ -40,6 +40,7 @@ except ImportError:
     import volume_purchases as purchases
     from ai_budget import transaction, micro_rub, BudgetDenied
     import server_version
+    import decision_cycle
     from schema_migrations import execute_schema
     from ai_jobs import assert_current_owner_in
     from ai_guarded_client import configured_route, GuardError
@@ -56,6 +57,27 @@ LEASE_SECONDS = 900
 AUTO_REQUEST_PREFIX = "auto.full."
 
 _MESSAGES = {
+    "real_order_execution_disabled": "На сервере работает анализ; отправка реальных торговых поручений не включена.",
+    "decision_inputs_changed": "Данные счёта или стратегии изменились во время расчёта; действие отклонено до новой проверки.",
+    "share_issuer_aaa_required": "Для новой покупки акции нужен текущий проверенный кредитный рейтинг эмитента AAA.",
+    "no_whole_lot_within_target_and_reserve": "Один целый лот не помещается в бюджет после резерва и лимита доли позиции.",
+    "loss_capacity_not_confirmed": "В стратегии не подтверждён допустимый размер потерь.",
+    "income_stability_unknown": "В стратегии не указана устойчивость дохода; новые рисковые вложения не рассчитаны.",
+    "new_risk_not_permitted": "Текущие условия стратегии не допускают увеличение рискованных вложений.",
+    "enabled_asset_class_required": "Ни один класс активов не разрешён текущей стратегией.",
+    "reinvestment_disabled_new_buys_paused": "Реинвестирование отключено; новые покупки приостановлены.",
+    "commission_not_verified": "Нет проверенной полной комиссии по расчёту брокера.",
+    "commission_above_strategy_limit": "Комиссия превышает предел, заданный стратегией.",
+    "exact_quote_exceeds_target_or_reserve": "Полная стоимость с комиссией и НКД превышает бюджет или целевую долю.",
+    "strategy_turnover_limit": "Исчерпан лимит оборота стратегии; частые перекладки не разрешены.",
+    "strategy_rebalance_cooldown": "Ещё не истёк интервал между изменениями этой позиции.",
+    "strategy_operation_window_incomplete": "История операций неполна; нельзя проверить частоту сделок.",
+    "strategy_operation_window_stale": "Для проверки частоты сделок нужна свежая история операций.",
+    "strategy_operations_conflicting": "В истории операций есть противоречия; расчёт приостановлен.",
+    "strategy_turnover_amount_unknown": "Не подтверждена сумма оборота по предыдущим операциям.",
+    "strategy_calculation_evidence_incomplete": "Недостаточно согласованных данных для расчёта стратегии.",
+    "bond_maturity_unknown": "Не подтверждена дата погашения облигации.",
+    "bond_maturity_outside_horizon": "Срок погашения облигации не соответствует горизонту стратегии.",
     "automation_paused": "Автоматический анализ приостановлен в настройках.",
     "market_price_polling_paused": "Опрос цен ожидает торгового окна. Проверка событий продолжается.",
     "tinvest_not_connected": "Подключите T-Invest в настройках: сервер пока не получает данные счёта.",
@@ -122,6 +144,7 @@ def initialize() -> None:
             CREATE INDEX IF NOT EXISTS automation_events_user
                 ON automation_events(user_id,created_at DESC);
         """)
+        decision_cycle.initialize_in(db)
 
 
 def _preferences_in(db, user_id: int) -> dict:
@@ -396,7 +419,8 @@ def _legacy_candidate(user, item, account, version):
     base = {"instrument_uid": uid, "ticker": item.get("ticker") or "", "name": item.get("name") or uid,
             "instrument_type": item["instrument_type"], "currency": str(item.get("currency") or "").upper(),
             "lot": int(decimal(item["lot"])), "lots_checked": 1, "constraints_passed": False,
-            "as_of": None, "expires_at": None, "total_cost": None, "check_id": None,
+            "as_of": now_iso(), "observed_at": now_iso(), "account_id": account,
+            "expires_at": None, "total_cost": None, "check_id": None,
             "snapshot_id": None, "strategy_version": version, "evidence_revision": None,
             "checks": [], "missing_evidence": [], "recommendation_complete": False}
     assert_enabled(int(user["id"]))
@@ -538,6 +562,8 @@ def observe_and_discover(user: Any, snapshot: dict, current_time: datetime, *, f
         # Persist a bounded diagnostic, never a provider response or credential.
         result, next_cursor = _empty_discovery("failed", ["discovery_failed"]), cursor
     result["as_of"] = result["as_of"] or _iso(now)
+    completed_at = int(time.time())
+    prepared = _prepare_decision(user, result, datetime.now(timezone.utc))
     with transaction(backend.connect) as db:
         assert_monitoring_access_in(db)
         assert_current_owner_in(db)
@@ -552,10 +578,98 @@ def observe_and_discover(user: Any, snapshot: dict, current_time: datetime, *, f
              user_id, key, owner, int(time.time())))
         if changed.rowcount != 1:
             raise HTTPException(409, "automation_discovery_lease_lost")
-        reviewed = result["coverage"]["reviewed"]
-        if reviewed:
-            _event_in(db, user_id, key, "candidate_research", owner, "Проверка инструментов завершена",
-                      f"Проверено инструментов: {reviewed}. Недостающие основания сохранены; торговые поручения не отправлялись.", now)
+        _persist_decision_in(db, user, prepared, completed_at)
+
+
+def _decision_context_in(db, user):
+    """Read comparable raw input versions, without parsing or hashing a large snapshot."""
+    active = state.active_strategy(int(user["id"]), db)
+    currency = (active or {}).get("config", {}).get("reserve", {}).get("currency", "RUB")
+    row = db.execute("SELECT id,broker_key,payload_json FROM workspace_snapshots WHERE user_id=? AND currency=?",
+                     (int(user["id"]), currency)).fetchone()
+    raw = (row["id"], row["payload_json"]) if row is not None and row["broker_key"] == state.broker_key(user) else None
+    try:
+        revision = asdict(purchases.research_store.read_revision(db))
+    except purchases.research_store.RevisionUnavailable:
+        revision = None
+    return active, raw, revision
+
+
+def _decision_inputs(context):
+    active, raw, revision = context
+    snapshot = {**json.loads(raw[1]), "snapshot_id": raw[0]} if raw is not None else None
+    return active, snapshot, revision
+
+
+def _prepare_decision(user, discovery, now):
+    with closing(backend.connect()) as db:
+        db.execute("BEGIN")
+        context = _decision_context_in(db, user)
+    active, snapshot, revision = _decision_inputs(context)
+    # Full JSON hashing and evaluation happen before the writer transaction.
+    cycle = decision_cycle.evaluate(active, snapshot, discovery, revision, now=now, broker_key=state.broker_key(user))
+    return {"context": context, "cycle": cycle}
+
+
+def _persist_decision_in(db, user, prepared, now):
+    """Commit a prepared receipt only after checking its exact input versions."""
+    user_id, key = int(user["id"]), state.broker_key(user)
+    cycle = prepared["cycle"]
+    if _decision_context_in(db, user) != prepared["context"]:
+        cycle = decision_cycle.invalidate(cycle, ["decision_inputs_changed"])
+    if not decision_cycle.persist_in(db, user_id, cycle):
+        return cycle
+    codes = [item["code"] for item in cycle["blockers"]]
+    priority = ("strategy_required", "investment_profile_incomplete", "account_outside_mandate",
+                "fresh_snapshot_required", "portfolio_coverage_incomplete", "no_whole_lot_within_target_and_reserve")
+    ordered = sorted((code for code in codes if code != "real_order_execution_disabled"),
+                     key=lambda code: (priority.index(code) if code in priority else len(priority), code))
+    details = [_MESSAGES.get(code, decision_cycle.reason(code)["message"]) for code in ordered]
+    # This is a result notification, not an order receipt. Exact duplicate
+    # explanations are coalesced by the existing daily outbox rule.
+    body = reason("real_order_execution_disabled")["message"]
+    if details:
+        body += " " + " ".join(details[:3])
+    title = "Почему портфель не изменён"
+    event = state.event(db, user_id, "portfolio_decision", cycle["lineage"].get("snapshot_id"),
+                        {"title": title, "summary": body, "cycle_id": cycle["cycle_id"],
+                         "state": cycle["state"], "reason_codes": codes, "real_orders_enabled": False},
+                        cycle["cycle_id"])
+    _event_in(db, user_id, key, "portfolio_decision", cycle["cycle_id"], title, body, now)
+    try:
+        from .volume_notifications import enqueue_in
+    except ImportError:
+        from volume_notifications import enqueue_in
+    enqueue_in(db, user_id, kind="brief", title=title, body=body, event_id=event["id"], at=now)
+    _notify_margin_breach_in(db, user_id, cycle, now, enqueue_in)
+    return cycle
+
+
+def _notify_margin_breach_in(db, user_id, cycle, now, enqueue_in):
+    margin = cycle["margin"]
+    if margin["fresh"] is not True or margin["observed_floor_breached"] is not True:
+        return
+    # The writer may have waited after evaluation. Recheck observation time at
+    # notification creation; a once-fresh receipt is not a fresh alert forever.
+    if not purchases.policy.fresh(margin["as_of"], datetime.now(timezone.utc), margin["max_age_seconds"]):
+        return
+    title = "Остаток ниже предела −4 999 ₽"
+    body = ("По свежему снимку рублёвый остаток: " + margin["observed_cash_rub"] + " ₽. "
+            "Для возврата к пределу требуется не менее " + margin["minimum_observed_shortfall_rub"] + " ₽. "
+            "Отложенные списания и расходы на сделки не подтверждены; полная сумма может быть выше. "
+            "Автоматическая продажа не выполнялась.")
+    event = state.event(db, user_id, "cash_floor_breached", cycle["lineage"].get("snapshot_id"),
+                        {"title": title, "summary": body, "cycle_id": cycle["cycle_id"],
+                         "margin": margin, "real_orders_enabled": False}, cycle["cycle_id"] + ":margin")
+    enqueue_in(db, user_id, kind="risk", title=title, body=body, event_id=event["id"], at=now)
+
+
+def _latest_decision(user, now):
+    with closing(backend.connect()) as db:
+        db.execute("BEGIN")
+        active, snapshot, revision = _decision_inputs(_decision_context_in(db, user))
+        return decision_cycle.latest(db, int(user["id"]), state.broker_key(user), active, snapshot, revision, now,
+                                     enabled=_preferences_in(db, int(user["id"]))["enabled"])
 
 
 def _discovery(user: Any, active: dict | None, now: int) -> dict:
@@ -677,6 +791,9 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
             and not dispatch["regular_price_polling_allowed"] and events.get("complete") is True
             and event_age is not None and event_age < 1200):
         state_name, codes = "waiting", ["market_price_polling_paused"]
+    if connected:
+        codes.append("real_order_execution_disabled")
+    cycle = _latest_decision(user, int(now))
     return {"schema_version": 1, "server_version": server_version.current(),
             "enabled": pref["enabled"], "preference_version": pref["version"],
             "broker_connected": connected, "scheduler_enabled": SCHEDULER_ENABLED, "state": state_name,
@@ -684,7 +801,8 @@ def status(user: Any = Depends(backend.current_user), response: Response = None)
             "current_job": current_job, "dispatch": dispatch, "osint": osint_read.status(backend.connect),
             "initial_observation": None if initial is None else {"at": _iso(initial["first_observed_at"]),
                 "snapshot_id": initial["first_snapshot_id"], "summary": "Первый снимок счёта получен и сохранён."},
-            "discovery": discovery, "execution": {"mode": "read_only", "real_orders_enabled": False},
+            "discovery": discovery, "decision_cycle": cycle,
+            "execution": {"mode": "read_only", "real_orders_enabled": False},
             "ai": _ai_configuration()}
 
 
@@ -702,7 +820,8 @@ def decisions(user: Any = Depends(backend.current_user)) -> dict:
     views = project(summary["discovery"], [json.loads(row[0]) for row in rows], int(time.time()))
     return {"schema_version": 1, "views": views, "events": views["history"],
             "state": summary["state"], "blockers": summary["blockers"],
-            "discovery": summary["discovery"], "execution": summary["execution"]}
+            "discovery": summary["discovery"], "execution": summary["execution"],
+            "decision_cycle": summary["decision_cycle"]}
 
 
 @router.get("/strategy-plan")
@@ -712,4 +831,5 @@ def strategy_plan(user: Any = Depends(backend.current_user)) -> dict:
     except ImportError:
         from strategy_actions import next_action_plan
     active = state.active_strategy(int(user["id"]))
-    return next_action_plan(_discovery(user, active, int(time.time())))
+    now = int(time.time())
+    return {**next_action_plan(_discovery(user, active, now)), "decision_cycle": _latest_decision(user, now)}
