@@ -16,6 +16,40 @@ jobs:
           script: |
             if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong source-edit host');
             const base='c692a8fa9e51a7ec85944a18f1ac9aa8e0390a76';
+            const addedTests=[
+              '    def test_mutating_returned_messages_does_not_mutate_admission(self):',
+              '        self.claim()',
+              '        client, _ = self.build()',
+              '        observed = client.messages',
+              "        observed[1]['content'] = '{}'",
+              '        self.assertNotEqual(observed, client.messages)',
+              "        with self.assertRaisesRegex(GuardError, 'agent_analysis_payload_changed'):",
+              '            client.complete_json(tier=self.decision.tier, messages=observed, max_output_tokens=1200)',
+              '        self.local_mock.assert_not_called()',
+              '        self.invoke(client)',
+              '        self.local_mock.assert_called_once()',
+              '',
+              '    def test_changed_notification_intent_cannot_reuse_receipt(self):',
+              '        self.claim()',
+              '        self.build()',
+              '        self.decision = replace(self.decision, notify_user=False)',
+              "        with self.assertRaisesRegex(GuardError, 'agent_analysis_receipt_changed'):",
+              '            self.build()',
+              '',
+              '    def test_reconnected_broker_before_readiness_blocks_old_context(self):',
+              '        self.claim()',
+              '        client, _ = self.build()',
+              '        with closing(backend.connect()) as db, db:',
+              "            db.execute('UPDATE broker_connection_versions SET stamp=? WHERE user_id=?',",
+              "                       ('f' * 64 if client.binding != 'f' * 64 else 'e' * 64, self.user_id))",
+              "        with self.assertRaisesRegex(GuardError, 'agent_analysis_broker_changed'):",
+              '            client.check_ready(self.decision.tier)',
+              '        self.local_mock.assert_not_called()',
+              '        self.cloud_mock.assert_not_called()',
+              '',
+              '    def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):',
+              ''
+            ].join('\n');
             const patches=[{
               path:'backend/agent_analysis_runtime.py',
               expected:'eee83b532d8285c22b5a704a97686082faa51d59',
@@ -48,39 +82,7 @@ jobs:
                 "        self.local_mock = patch.object(local, 'complete', side_effect=self.respond_local).start()\n        self.addCleanup(patch.stopall)\n        patch.object(local, 'ensure_ready', return_value=None).start()\n        self.cloud_mock = patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud).start()\n",
                 "        self.local_mock = self.enterContext(patch.object(local, 'complete', side_effect=self.respond_local))\n        self.enterContext(patch.object(local, 'ensure_ready', return_value=None))\n        self.cloud_mock = self.enterContext(patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud))\n"
               ],[
-                '    def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):\n',
-                `    def test_mutating_returned_messages_does_not_mutate_admission(self):
-                    self.claim()
-                    client, _ = self.build()
-                    observed = client.messages
-                    observed[1]['content'] = '{}'
-                    self.assertNotEqual(observed, client.messages)
-                    with self.assertRaisesRegex(GuardError, 'agent_analysis_payload_changed'):
-                        client.complete_json(tier=self.decision.tier, messages=observed, max_output_tokens=1200)
-                    self.local_mock.assert_not_called()
-                    self.invoke(client)
-                    self.local_mock.assert_called_once()
-
-                def test_changed_notification_intent_cannot_reuse_receipt(self):
-                    self.claim()
-                    self.build()
-                    self.decision = replace(self.decision, notify_user=False)
-                    with self.assertRaisesRegex(GuardError, 'agent_analysis_receipt_changed'):
-                        self.build()
-
-                def test_reconnected_broker_before_readiness_blocks_old_context(self):
-                    self.claim()
-                    client, _ = self.build()
-                    with closing(backend.connect()) as db, db:
-                        db.execute('UPDATE broker_connection_versions SET stamp=? WHERE user_id=?',
-                                   ('f' * 64 if client.binding != 'f' * 64 else 'e' * 64, self.user_id))
-                    with self.assertRaisesRegex(GuardError, 'agent_analysis_broker_changed'):
-                        client.check_ready(self.decision.tier)
-                    self.local_mock.assert_not_called()
-                    self.cloud_mock.assert_not_called()
-
-                def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):
-            `.replace(/^            /gm,'')
+                '    def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):\n', addedTests
               ]]
             }];
             for(const patch of patches){
