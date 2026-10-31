@@ -98,8 +98,11 @@ class AgentTaskClientTests(unittest.TestCase):
     def prepare_next_job(self):
         CURRENT_JOB.set(None)
         self.queue.finish(self.job, {'state': 'synthetic-done'})
+        # These are two logical scheduling windows. Move the completed fixture
+        # to the earlier window instead of relying on wall-clock/UUID ordering.
         with closing(self.connect()) as db, db:
-            db.execute('UPDATE ai_work_jobs SET bucket=bucket-1 WHERE id=?', (self.job['id'],))
+            db.execute('UPDATE ai_work_jobs SET bucket=bucket-1,created_at=created_at-300 WHERE id=?',
+                       (self.job['id'],))
         self.queue.enqueue(1)
 
     def test_local_uses_existing_adapter_without_paid_reservation(self):
