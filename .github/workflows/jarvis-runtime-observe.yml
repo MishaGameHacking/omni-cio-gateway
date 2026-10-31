@@ -1,0 +1,32 @@
+name: Observe existing protected Jarvis runtime without changes
+on:
+  push:
+    branches: [codex/jarvis-status-source-2026-10-31]
+    paths: [.github/workflows/jarvis-runtime-observe.yml]
+permissions:
+  contents: read
+jobs:
+  observe:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Run reviewed metadata-only observer, never installer or inference
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const fs=require('node:fs'),path=require('node:path'),cp=require('node:child_process');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Unexpected observer host');
+            const {data}=await github.rest.repos.getContent({...context.repo,path:'tools/home_runtime/observe.ps1',ref:'e80408d36f582a59ec905c6eaea5c5f9ce44832c'});
+            if(data.type!=='file'||data.sha!=='8a06c52cf9db55e3a6dcd926e21eb69dbc6a3145'||data.encoding!=='base64')throw Error('Reviewed observer identity changed');
+            const dir=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP,'jarvis-observe-'));
+            try{
+              const file=path.join(dir,'observe.ps1');
+              fs.writeFileSync(file,Buffer.from(data.content,'base64'),{flag:'wx'});
+              const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>['SYSTEMROOT','WINDIR','SYSTEMDRIVE','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'].includes(k.toUpperCase())));
+              const exe=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+              const p=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',file],{env,encoding:'utf8',timeout:240000,windowsHide:true});
+              const lines=(p.stdout||'').split(/\r?\n/).filter(line=>/^HOME_PROTECTED_(OBSERVATION|PENDING|READY)=/.test(line));
+              for(const line of lines)core.info(line);
+              if(p.status!==0||!lines.some(line=>line.startsWith('HOME_PROTECTED_READY=')))throw Error('Protected runtime not confirmed by read-only observer');
+              core.info('JARVIS_EXISTING_RUNTIME_UNCHANGED=true; this is health/auth observation, not new deployment or inference proof');
+            }finally{fs.rmSync(dir,{recursive:true,force:true});}
