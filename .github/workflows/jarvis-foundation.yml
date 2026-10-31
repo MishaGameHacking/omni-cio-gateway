@@ -1,0 +1,37 @@
+name: Verify Jarvis admission policy on owner Lenovo
+on:
+  push:
+    branches: [codex/jarvis-foundation-2026-10-31]
+    paths:
+      - backend/agent_runtime_policy.py
+      - backend/tests/test_agent_runtime_policy.py
+      - docs/JARVIS_LOCAL_AGENT_2026-10-31.md
+      - .github/workflows/jarvis-foundation.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-jarvis-foundation
+  cancel-in-progress: false
+jobs:
+  policy:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - name: Verify intended owner machine
+        shell: powershell
+        run: |
+          if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'Unexpected test host' }
+          Write-Output 'Owner Lenovo test host verified; no runtime inspection or deployment.'
+      - name: Checkout isolated candidate without retained credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run synthetic policy and existing analysis tests
+        shell: cmd
+        working-directory: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 -I -c "import pathlib,sys,unittest; sys.path.insert(0,str(pathlib.Path.cwd())); suite=unittest.defaultTestLoader.loadTestsFromNames(['backend.tests.test_agent_runtime_policy','backend.tests.test_ai_policy']); result=unittest.TextTestRunner(verbosity=2).run(suite); raise SystemExit(not result.wasSuccessful())"
+          if errorlevel 1 exit /b 1
