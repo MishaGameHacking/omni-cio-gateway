@@ -31,11 +31,17 @@ class AssistantEstimateFeedbackTest {
     }
 
     @Test fun malformedApprovalCannotSilentlyLookReady() {
-        for (quote in listOf(approved.copy(ceilingMicroRub = null), approved.copy(ceilingMicroRub = 0),
+        for (quote in listOf(approved.copy(ceilingMicroRub = null), approved.copy(ceilingMicroRub = -1),
             approved.copy(routeId = ""), approved.copy(selectedTier = "unknown"))) {
             assertFalse(quote.usable)
             assertNotNull(assistantEstimateFeedback(quote, true, null))
         }
+    }
+
+    @Test fun localInferenceWithZeroCostIsAUsableQuote() {
+        val local = approved.copy(ceilingMicroRub = 0)
+        assertTrue(local.usable)
+        assertNull(assistantEstimateFeedback(local, true, null))
     }
 
     @Test fun unknownReasonUsesAFixedMessageInsteadOfUpstreamData() {
