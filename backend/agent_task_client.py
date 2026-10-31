@@ -14,13 +14,22 @@ import json
 import time
 from types import MappingProxyType
 
-from .ai_budget import MoneyLedger, SCALE, day_key
-from .ai_guarded_client import GuardedAIClient, GuardError, _encoded_messages
-from .ai_jobs import CURRENT_JOB, LeaseLost
-from .agent_runtime_policy import (
-    AgentPolicy, Availability, BudgetSnapshot, PolicyError, Target,
-    TaskRequest, plan_task,
-)
+if __package__:
+    from .ai_budget import MoneyLedger, SCALE, day_key
+    from .ai_guarded_client import GuardedAIClient, GuardError, _encoded_messages
+    from .ai_jobs import CURRENT_JOB, LeaseLost
+    from .agent_runtime_policy import (
+        AgentPolicy, Availability, BudgetSnapshot, PolicyError, Target,
+        TaskRequest, plan_task,
+    )
+else:
+    from ai_budget import MoneyLedger, SCALE, day_key
+    from ai_guarded_client import GuardedAIClient, GuardError, _encoded_messages
+    from ai_jobs import CURRENT_JOB, LeaseLost
+    from agent_runtime_policy import (
+        AgentPolicy, Availability, BudgetSnapshot, PolicyError, Target,
+        TaskRequest, plan_task,
+    )
 
 
 @dataclass(frozen=True)
