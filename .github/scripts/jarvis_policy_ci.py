@@ -1,8 +1,4 @@
-"""Synthetic Jarvis tests in a disposable venv on the owner's existing Lenovo.
-
-No production environment, secrets, private files, model/socket or broker calls.
-Use the project's pinned backend requirements; never install into global Python.
-"""
+"""Synthetic Jarvis integration tests in a disposable Lenovo virtual environment."""
 from pathlib import Path
 import os
 import subprocess
@@ -12,6 +8,8 @@ import tempfile
 TESTS = [
     'backend/tests/test_agent_runtime_policy.py',
     'backend/tests/test_agent_task_client.py',
+    'backend/tests/test_agent_analysis_runtime.py',
+    'backend/tests/test_autonomous_ai.py',
     'backend/tests/test_ai_policy.py',
     'backend/tests/test_ai_accounting_audit.py',
     'backend/tests/test_ai_jobs_schema_atomic.py',
@@ -35,7 +33,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='jarvis-ci-', dir=runner_temp) as temp:
         venv = Path(temp) / 'venv'
         env['DATABASE_PATH'] = str(Path(temp) / 'unused-test-only.sqlite3')
-        def run(args, timeout=240):
+        def run(args, timeout=180):
             subprocess.run(args, cwd=root, env=env, stdin=subprocess.DEVNULL,
                            timeout=timeout, check=True)
         run([sys.executable, '-I', '-m', 'venv', str(venv)])

@@ -893,8 +893,13 @@ def _run_connected_analysis(
         # Missing credentials are free; uncertain network failures are not retried
         # for free. Reservation is never rolled back after a model attempt.
         assert_monitoring_access(backend.connect)
-        guarded_client = GuardedAIClient(
-            user_id, backend.connect,
+        if __package__:
+            from .agent_analysis_runtime import build_analysis_client
+        else:
+            from agent_analysis_runtime import build_analysis_client
+        guarded_client, model_context = build_analysis_client(
+            user_id, backend.connect, context=context, decision=decision,
+            environment_provider=lambda: os.environ, legacy_factory=GuardedAIClient,
             budget_guard=lambda db: _automation().assert_enabled_in(db, user_id),
             before_send=lambda: _automation().assert_enabled(user_id),
         )
@@ -904,7 +909,7 @@ def _run_connected_analysis(
         result = analyze_if_needed(
             signals=signals,
             budget=budget,
-            context=context,
+            context=model_context,
             client=guarded_client,
         )
         decision = result.decision

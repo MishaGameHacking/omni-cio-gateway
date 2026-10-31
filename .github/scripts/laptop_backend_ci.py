@@ -202,6 +202,7 @@ def main():
                  'refs/heads/codex/owner-system-2026-10-29',
                  'refs/heads/codex/lenovo-only-2026-10-31',
                  'refs/heads/codex/lenovo-local-json-2026-10-31',
+                 'refs/heads/codex/jarvis-foundation-2026-10-31',
                  'refs/heads/codex/portfolio-engine-2026-10-30',
                  'refs/heads/codex/chat-order-reliability-2026-10-30',
                  'refs/heads/codex/gpt6-analysis-routing-2026-10-30'}

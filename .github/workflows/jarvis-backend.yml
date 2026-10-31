@@ -1,0 +1,58 @@
+name: Full Jarvis backend verification on owner Lenovo WSL
+on:
+  push:
+    branches: [codex/jarvis-foundation-2026-10-31]
+    paths:
+      - backend/**
+      - .github/scripts/laptop_backend_ci.py
+      - .github/scripts/laptop_backend_guest.py
+      - .github/workflows/jarvis-backend.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-jarvis-full-backend
+  cancel-in-progress: false
+jobs:
+  backend:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 45
+    env:
+      EXPECTED_TESTED_MERGE_SHA: ${{ github.sha }}
+      EXPECTED_PR_HEAD_SHA: ''
+      EXPECTED_PR_BASE_SHA: ''
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '2'
+      GIT_CONFIG_KEY_0: core.longpaths
+      GIT_CONFIG_VALUE_0: 'true'
+      GIT_CONFIG_KEY_1: core.autocrlf
+      GIT_CONFIG_VALUE_1: 'false'
+    steps:
+      - name: Checkout exact candidate in run-owned workspace
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Run full existing backend gate in isolated build WSL
+        shell: cmd
+        working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          py -3 .github\scripts\laptop_backend_ci.py
+          if errorlevel 1 exit /b 1
+      - name: Retain synthetic verification evidence only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: jarvis-backend-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/windows-backend-report.json
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/python-source-audit.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/sonar-helper-tests.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/backend-ci-regressions.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/linux-backend.log
+            ${{ runner.temp }}/backend-ci-${{ github.run_id }}-${{ github.run_attempt }}/guest-evidence/
+          if-no-files-found: error
+          retention-days: 7

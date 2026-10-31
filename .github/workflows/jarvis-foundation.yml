@@ -1,14 +1,12 @@
-name: Verify Jarvis admission and dispatch on owner Lenovo
+name: Verify Jarvis worker integration on owner Lenovo
 on:
   push:
     branches: [codex/jarvis-foundation-2026-10-31]
     paths:
-      - backend/agent_runtime_policy.py
-      - backend/agent_task_client.py
-      - backend/tests/test_agent_runtime_policy.py
-      - backend/tests/test_agent_task_client.py
-      - docs/JARVIS_LOCAL_AGENT_2026-10-31.md
-      - docs/JARVIS_STAGE2_INTEGRATION_2026-10-31.md
+      - backend/agent_*.py
+      - backend/autonomous_ai.py
+      - backend/tests/test_agent_*.py
+      - docs/JARVIS*.md
       - .github/scripts/jarvis_policy_ci.py
       - .github/workflows/jarvis-foundation.yml
 permissions:
@@ -19,7 +17,7 @@ concurrency:
 jobs:
   policy:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
-    timeout-minutes: 8
+    timeout-minutes: 7
     steps:
       - name: Verify intended owner machine
         shell: cmd
@@ -33,7 +31,7 @@ jobs:
           path: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Run synthetic dispatch and existing regression tests in disposable venv
+      - name: Run real worker with synthetic inputs in disposable venv
         shell: cmd
         working-directory: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
         run: |

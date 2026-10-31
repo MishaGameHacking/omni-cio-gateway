@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Mapping
 
-from .ai_budget import BudgetDenied, MAX_MONEY, SCALE, configured_limits, micro_rub
+if __package__:
+    from .ai_budget import BudgetDenied, MAX_MONEY, SCALE, configured_limits, micro_rub
+else:
+    from ai_budget import BudgetDenied, MAX_MONEY, SCALE, configured_limits, micro_rub
 
 PLANNED_DAILY_CAP = 95 * SCALE
 PLANNED_MONTHLY_CAP = 2000 * SCALE
