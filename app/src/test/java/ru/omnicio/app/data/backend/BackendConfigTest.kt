@@ -12,7 +12,7 @@ class BackendConfigTest {
     @Test
     fun verifiedOwnerInstallationUsesTheExactHttpsOrigin() {
         assertTrue(BackendConfig.isConfigured)
-        assertEquals("https://analyst-ai-2941515.twc1.net", BackendConfig.BASE_URL)
+        assertEquals("https://laptop-npsga016.tail9f8db0.ts.net", BackendConfig.BASE_URL)
         val destination = URI(BackendConfig.BASE_URL + "/me")
         val connection = BackendConfig.openConnection(destination)
         assertEquals(destination, connection.url.toURI())
@@ -23,6 +23,7 @@ class BackendConfigTest {
     @Test
     fun retiredAndForeignAddressesCannotBecomeFallbacks() {
         val destinations = listOf(
+            URI("https://analyst-ai-2941515.twc1.net/me"),
             URI("https://176.98.178.81.sslip.io/me"),
             URI("https://backend-not-configured.invalid/me"),
             URI("https://other.invalid/me"),
@@ -47,6 +48,9 @@ class BackendConfigTest {
         )
         assertThrows(IllegalArgumentException::class.java) {
             UpdateProtocol.requestUri("https://176.98.178.81.sslip.io", path)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            UpdateProtocol.requestUri("https://analyst-ai-2941515.twc1.net", path)
         }
     }
 }

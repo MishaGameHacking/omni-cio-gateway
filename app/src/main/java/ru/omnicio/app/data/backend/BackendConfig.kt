@@ -4,8 +4,8 @@ import java.net.URI
 import javax.net.ssl.HttpsURLConnection
 
 object BackendConfig {
-    // Verified owner installation on Timeweb; every client shares this HTTPS origin.
-    const val HOST = "analyst-ai-2941515.twc1.net"
+    // The owner runtime is hosted on Lenovo; every client shares this HTTPS origin.
+    const val HOST = "laptop-npsga016.tail9f8db0.ts.net"
     const val BASE_URL = "https://$HOST"
     const val UNAVAILABLE_MESSAGE = "Новый сервер Analyst AI ещё не настроен. Вход и синхронизация пока недоступны."
     private const val RETIRED_HOST = "176.98.178.81.sslip.io"

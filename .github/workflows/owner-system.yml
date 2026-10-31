@@ -1,7 +1,7 @@
 name: Verify owner access, evidence and interface on owner laptop
 on:
   push:
-    branches: [codex/owner-system-2026-10-29]
+    branches: [codex/owner-system-2026-10-29, codex/lenovo-only-2026-10-31]
 permissions:
   contents: read
 concurrency:
