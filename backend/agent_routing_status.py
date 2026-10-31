@@ -26,7 +26,7 @@ else:
 TIERS = (AnalysisTier.FAST, AnalysisTier.STANDARD, AnalysisTier.PREMIUM)
 # Never serialize exception bodies: they can originate in configuration providers.
 PUBLIC_REASONS = frozenset({
-    'agent_routing_flag_invalid', 'agent_portfolio_route_invalid',
+    'agent_routing_flag_invalid', 'agent_portfolio_route_invalid', 'agent_route_mismatch',
     'agent_invalid_budget_configuration', 'agent_invalid_cloud_flag',
     'agent_cloud_not_approved', 'local_ai_not_enabled', 'local_ai_unavailable',
     'local_ai_output_limit_exceeded', 'ai_broker_connection_required',
@@ -90,7 +90,9 @@ def route_status(user_id: int, connect, *, environment: Mapping[str, str],
         client = client_factory(user_id, connect, env=selected)
         for tier in TIERS:
             try:
-                client.check_ready(tier)
+                checked = client.check_ready(tier)
+                if enabled and getattr(checked, 'mode', None) != ('gateway' if mode == 'timeweb' else 'local'):
+                    raise GuardError('agent_route_mismatch')
                 readiness.append({'tier': tier.value, 'ready': True, 'reason': None})
             except (GuardError, BudgetDenied) as error:
                 readiness.append({'tier': tier.value, 'ready': False, 'reason': _reason(error)})

@@ -10,6 +10,7 @@ TESTS = [
     'backend/tests/test_agent_task_client.py',
     'backend/tests/test_agent_analysis_runtime.py',
     'backend/tests/test_agent_routing_status.py',
+    'backend/tests/test_agent_status_transport.py',
     'backend/tests/test_autonomous_ai.py',
     'backend/tests/test_ai_policy.py',
     'backend/tests/test_ai_accounting_audit.py',
