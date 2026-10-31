@@ -21,10 +21,19 @@ def main():
         request=urllib.request.Request('https://api.timeweb.cloud/api/v1'+path,method=method,
             headers={'Authorization':'Bearer '+token,'Content-Type':'application/json','Accept':'application/json'},
             data=None if body is None else json.dumps(body).encode())
-        with opener.open(request,timeout=45) as response:
-            raw=response.read(1024*1024+1)
-            assert len(raw)<=1024*1024
-            return response.status,json.loads(raw) if raw else {}
+        try:
+            with opener.open(request,timeout=45) as response:
+                raw=response.read(1024*1024+1)
+                assert len(raw)<=1024*1024
+                return response.status,json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as exc:
+            # The previous request was rejected with 400 before any state change.
+            # Capture only provider validation fields for this fixed boot-mode request.
+            if method=='POST' and exc.code==400:
+                data=json.loads(exc.read(16384))
+                print(json.dumps({'provider_validation':{k:data[k] for k in
+                    ('error_code','error','message','errors','response_id') if k in data}}),flush=True)
+            raise
     def server():
         status,data=call('GET','/servers/9417611');s=data['server']
         ips=[ip.get('ip') for net in s.get('networks',[]) if net.get('type')=='public'
