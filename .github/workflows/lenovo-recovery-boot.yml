@@ -1,0 +1,22 @@
+name: Boot existing Timeweb disk into recovery for Lenovo migration
+on:
+  push:
+    branches: [codex/lenovo-transfer-2026-10-31]
+    paths:
+      - tools/lenovo_recovery_boot.py
+      - .github/workflows/lenovo-recovery-boot.yml
+permissions:
+  contents: read
+jobs:
+  boot:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Request recovery boot once and observe authoritative server state
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: python3 tools/lenovo_recovery_boot.py
