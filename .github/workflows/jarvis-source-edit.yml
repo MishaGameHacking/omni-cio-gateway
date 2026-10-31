@@ -1,4 +1,4 @@
-name: Apply two reviewed Jarvis source edits on owner Lenovo
+name: Derive reviewed Jarvis hardening on owner Lenovo
 on:
   push:
     branches: [codex/jarvis-source-edit-2026-10-31]
@@ -10,28 +10,77 @@ jobs:
     runs-on: [self-hosted, Windows, X64, omni-cio-ci]
     timeout-minutes: 3
     steps:
-      - name: Derive public repository blobs without touching installed files
+      - name: Derive public repository blobs without installed-file access
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
           script: |
             if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('Wrong source-edit host');
-            const base='22999cc5deebf899304ce95f20bc7960b6b06246';
+            const base='c692a8fa9e51a7ec85944a18f1ac9aa8e0390a76';
             const patches=[{
-              path:'backend/autonomous_ai.py',
-              expected:'7d3796b749953f339fe605f4c73660d62c8851a2',
+              path:'backend/agent_analysis_runtime.py',
+              expected:'eee83b532d8285c22b5a704a97686082faa51d59',
               edits:[[
-                '        guarded_client = GuardedAIClient(\n            user_id, backend.connect,\n',
-                '        if __package__:\n            from .agent_analysis_runtime import build_analysis_client\n        else:\n            from agent_analysis_runtime import build_analysis_client\n        guarded_client, model_context = build_analysis_client(\n            user_id, backend.connect, context=context, decision=decision,\n            environment_provider=lambda: os.environ, legacy_factory=GuardedAIClient,\n'
+                '        self.messages = [\n',
+                '        self._messages_json = _json([\n'
               ],[
-                '            context=context,\n            client=guarded_client,\n',
-                '            context=model_context,\n            client=guarded_client,\n'
+                '        ]\n        with transaction(connect) as db:\n',
+                '        ])\n        with transaction(connect) as db:\n'
+              ],[
+                "            self.receipt = _json({'version': 1, 'route': self.mode, 'kind': 'portfolio_review',\n",
+                "            self.binding = broker_binding_in(db, user_id)\n            self.receipt = _json({'version': 1, 'route': self.mode, 'kind': 'portfolio_review',\n                'request_sha256': hashlib.sha256(self._messages_json.encode()).hexdigest(),\n"
+              ],[
+                "                'broker_binding': broker_binding_in(db, user_id),\n",
+                "                'broker_binding': self.binding,\n"
+              ],[
+                '    def _environment(self):\n',
+                '    @property\n    def messages(self):\n        # A caller may inspect a copy, never change the admitted request in place.\n        return json.loads(self._messages_json)\n\n    def _environment(self):\n'
+              ],[
+                "        if time.time() >= self.deadline:\n            raise GuardError('agent_fresh_sources_required')\n",
+                "        if broker_binding_in(db, self.user_id) != self.binding:\n            raise GuardError('agent_analysis_broker_changed')\n        if time.time() >= self.deadline:\n            raise GuardError('agent_fresh_sources_required')\n"
               ]]
             },{
-              path:'.github/scripts/laptop_backend_ci.py',
-              expected:'02a2c5d9954b475224196964bdb45e7d26b75628',
+              path:'backend/tests/test_agent_analysis_runtime.py',
+              expected:'da6a439fa0352b6a4d22a25d9ca546597f8c15ed',
               edits:[[
-                "                 'refs/heads/codex/lenovo-local-json-2026-10-31',\n",
-                "                 'refs/heads/codex/lenovo-local-json-2026-10-31',\n                 'refs/heads/codex/jarvis-foundation-2026-10-31',\n"
+                'from copy import deepcopy\n',
+                'from copy import deepcopy\nfrom dataclasses import replace\n'
+              ],[
+                "        self.local_mock = patch.object(local, 'complete', side_effect=self.respond_local).start()\n        self.addCleanup(patch.stopall)\n        patch.object(local, 'ensure_ready', return_value=None).start()\n        self.cloud_mock = patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud).start()\n",
+                "        self.local_mock = self.enterContext(patch.object(local, 'complete', side_effect=self.respond_local))\n        self.enterContext(patch.object(local, 'ensure_ready', return_value=None))\n        self.cloud_mock = self.enterContext(patch.object(GuardedAIClient, '_send', side_effect=self.respond_cloud))\n"
+              ],[
+                '    def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):\n',
+                `    def test_mutating_returned_messages_does_not_mutate_admission(self):
+                    self.claim()
+                    client, _ = self.build()
+                    observed = client.messages
+                    observed[1]['content'] = '{}'
+                    self.assertNotEqual(observed, client.messages)
+                    with self.assertRaisesRegex(GuardError, 'agent_analysis_payload_changed'):
+                        client.complete_json(tier=self.decision.tier, messages=observed, max_output_tokens=1200)
+                    self.local_mock.assert_not_called()
+                    self.invoke(client)
+                    self.local_mock.assert_called_once()
+
+                def test_changed_notification_intent_cannot_reuse_receipt(self):
+                    self.claim()
+                    self.build()
+                    self.decision = replace(self.decision, notify_user=False)
+                    with self.assertRaisesRegex(GuardError, 'agent_analysis_receipt_changed'):
+                        self.build()
+
+                def test_reconnected_broker_before_readiness_blocks_old_context(self):
+                    self.claim()
+                    client, _ = self.build()
+                    with closing(backend.connect()) as db, db:
+                        db.execute('UPDATE broker_connection_versions SET stamp=? WHERE user_id=?',
+                                   ('f' * 64 if client.binding != 'f' * 64 else 'e' * 64, self.user_id))
+                    with self.assertRaisesRegex(GuardError, 'agent_analysis_broker_changed'):
+                        client.check_ready(self.decision.tier)
+                    self.local_mock.assert_not_called()
+                    self.cloud_mock.assert_not_called()
+
+                def test_top_level_runtime_import_has_no_process_or_model_side_effects(self):
+            `.replace(/^            /gm,'')
               ]]
             }];
             for(const patch of patches){
