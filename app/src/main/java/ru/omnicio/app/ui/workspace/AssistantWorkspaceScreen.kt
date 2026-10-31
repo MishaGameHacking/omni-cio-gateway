@@ -432,13 +432,14 @@ private const val CHAT_DEPTH_DEEP = "Глубокий разбор"
 @Composable
 private fun AssistantEstimateCard(value: JSONObject, current: Boolean) {
     val quote = routeQuote(value)
+    val local = value.optString("basis") == "local_model_no_provider_charge"
     SpectrumCard {
-        Text(if (quote.usable) "Оценка расхода" else "Вопрос не отправлен", style = MaterialTheme.typography.titleMedium)
+        Text(if (quote.usable) { if (local) "ИИ на Lenovo" else "Оценка расхода" } else "Вопрос не отправлен", style = MaterialTheme.typography.titleMedium)
         if (quote.usable) {
             Text(PrivateValue(value.optJSONObject("estimated_upper_bound")?.let(::moneyText) ?: "Стоимость не подтверждена"))
             val depth = when (quote.selectedTier) { "fast" -> CHAT_DEPTH_BRIEF; "standard" -> CHAT_DEPTH_DETAIL; else -> CHAT_DEPTH_DEEP }
             Text("Выбрано сервером: " + depth, style = MaterialTheme.typography.bodySmall)
-            Text("Оценка ограничивает расход: при смене маршрута или увеличении суммы сервер запросит новую проверку.", style = MaterialTheme.typography.bodySmall)
+            Text(if (local) "Ответ готовится на вашем ноутбуке, без оплаты облачного ИИ. Ноутбук должен быть включён." else "Оценка ограничивает расход: при смене маршрута или увеличении суммы сервер запросит новую проверку.", style = MaterialTheme.typography.bodySmall)
             if (quote.needsConfirmation(quote.selectedTier)) Text("Глубокий запрос будет отправлен только после отдельного подтверждения кнопкой ниже.")
         } else {
             Text(checkNotNull(assistantEstimateFeedback(quote, current = true, reason = value.optString("reason"))))

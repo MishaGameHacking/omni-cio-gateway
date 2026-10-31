@@ -19,9 +19,14 @@ class ChatRouteQuoteTest {
     }
 
     @Test fun missingOrMalformedCeilingsFailClosed() {
-        listOf(null, 0L, -1L, 1_000_000_000_000_001L).forEach {
+        listOf(null, -1L, 1_000_000_000_000_001L).forEach {
             assertFalse(standard.copy(ceilingMicroRub = it).usable)
         }
+    }
+
+    @Test fun zeroCostLocalRouteCanBeSentWithItsExactQuote() {
+        assertTrue(standard.copy(ceilingMicroRub = 0L).usable)
+        assertFalse(standard.copy(ceilingMicroRub = 0L, routeId = "").usable)
     }
 
     @Test fun incompleteOrUnknownRoutesFailClosed() {

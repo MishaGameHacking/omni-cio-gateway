@@ -419,7 +419,7 @@ class Estimate(state.StrictModel):
 
 class MessageCreate(state.RequestId):
     confirm_premium: bool = Field(default=False, strict=True)
-    max_cost_micro_rub: int | None = Field(default=None, ge=1, le=1_000_000_000_000_000, strict=True)
+    max_cost_micro_rub: int | None = Field(default=None, ge=0, le=1_000_000_000_000_000, strict=True)
     expected_route_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     text: str = Field(min_length=1, max_length=8000)
     context: Context = Field(default_factory=Context)
@@ -647,7 +647,7 @@ def _encoded_size(messages: list[dict]) -> int:
 def ready(user_id: int, tier: AnalysisTier, *, input_bytes: int = 0, max_output_tokens: int = MAX_OUTPUT) -> tuple[GuardedAIClient, Any]:
     client = GuardedAIClient(user_id, backend.connect)
     route = client.check_ready(tier, input_bytes=input_bytes, max_output_tokens=max_output_tokens)
-    if client.ledger.user_summary(user_id)["unresolved_attempts"]:
+    if route.mode != "local" and client.ledger.user_summary(user_id)["unresolved_attempts"]:
         raise GuardError("ai_workspace_reconciliation_required")
     return client, route
 
@@ -670,7 +670,7 @@ def estimate(payload: Estimate, user: Any = Depends(backend.current_user)) -> di
         from decimal import Decimal
         return {"available": True, "reason": None, "estimated_upper_bound": money(Decimal(selected["cost_ceiling_micro_rub"]) / Decimal(1_000_000), "RUB"),
                 "exact_invoice": False, "context_as_of": packet["as_of"], "model": route.model,
-                "basis": "conservative_configured_token_price_ceiling", "tools": packet["tools_used"],
+                "basis": "local_model_no_provider_charge" if route.mode == "local" else "conservative_configured_token_price_ceiling", "tools": packet["tools_used"],
                 "cost_ceiling_micro_rub": selected["cost_ceiling_micro_rub"], "route_id": selected["route_id"], **plan.metadata()}
     except (GuardError, ChatPolicyError) as error:
         return {"available": False, "reason": error.code, "estimated_upper_bound": None, "exact_invoice": False,

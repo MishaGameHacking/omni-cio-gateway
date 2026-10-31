@@ -35,9 +35,9 @@ jobs:
         shell: cmd
         working-directory: backend-ci-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          git fetch --no-tags --depth=1 origin b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+          git fetch --no-tags --depth=1 origin 68e0fb73feddf178c29d990633edae42aa7adda3
           if errorlevel 1 exit /b 1
-          git cat-file -t b69169abb4e750985ba79bf4c08f8f0f1a2ef596
+          git cat-file -t 68e0fb73feddf178c29d990633edae42aa7adda3
           if errorlevel 1 exit /b 1
       - name: Verify all Python sources and complete backend suite in existing WSL
         shell: cmd

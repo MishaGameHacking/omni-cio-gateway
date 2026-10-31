@@ -1,5 +1,5 @@
 [Unit]
-Description=Analyst AI isolated public document excerpt selection
+Description=Analyst AI isolated local inference
 After=network.target
 StartLimitIntervalSec=600
 StartLimitBurst=3
@@ -19,8 +19,8 @@ RuntimeDirectoryMode=0750
 CacheDirectory=analyst-local-ai
 CacheDirectoryMode=0750
 UMask=0007
-MemoryHigh=4352M
-MemoryMax=5120M
+MemoryHigh=5120M
+MemoryMax=6144M
 MemorySwapMax=0
 CPUQuota=200%
 TasksMax=32

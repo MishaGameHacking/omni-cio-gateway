@@ -9,7 +9,7 @@ internal data class ChatRouteQuote(
     val routeId: String,
 ) {
     val usable: Boolean get() = available && selectedTier in setOf("fast", "standard", "premium") &&
-        ceilingMicroRub != null && ceilingMicroRub in 1L..1_000_000_000_000_000L &&
+        ceilingMicroRub != null && ceilingMicroRub in 0L..1_000_000_000_000_000L &&
         Regex("[a-f0-9]{64}").matches(routeId)
 
     fun needsConfirmation(requestedTier: String): Boolean = confirmationRequired ||

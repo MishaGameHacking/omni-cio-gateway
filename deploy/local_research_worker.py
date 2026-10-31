@@ -1,4 +1,4 @@
-"""Isolated local public-document selector. Never imports the owner application."""
+"""Isolated local inference without account storage, network or tool access."""
 from __future__ import annotations
 
 import hashlib
@@ -12,9 +12,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import local_research as contract
+import local_ai_transport as chat_contract
 
 MODEL_FILE = Path("/opt/analyst-local-ai/model.litertlm")
 MAX_CONTEXT_TOKENS = 2048
+ENGINE_CONTEXT_TOKENS = 8192
 MAX_OUTPUT_TOKENS = 64
 CPU_THREADS = 2
 
@@ -77,6 +79,55 @@ def model_select(engine, runtime, context):
     return raw
 
 
+def model_complete(engine, runtime, request):
+    if not isinstance(request, dict) or set(request) != {"messages", "max_output_tokens"}:
+        raise ValueError("invalid_completion_request")
+    messages, limit = request["messages"], request["max_output_tokens"]
+    if type(limit) is not int or not 1 <= limit <= chat_contract.MAX_OUTPUT_TOKENS:
+        raise ValueError("invalid_completion_limit")
+    if not isinstance(messages, list) or not 1 <= len(messages) <= 4:
+        raise ValueError("invalid_completion_messages")
+    for index, message in enumerate(messages):
+        if (not isinstance(message, dict) or set(message) != {"role", "content"}
+                or message["role"] not in {"system", "user", "assistant"}
+                or not isinstance(message["content"], str)
+                or (message["role"] == "system" and index != 0)):
+            raise ValueError("invalid_completion_messages")
+    if messages[-1]["role"] != "user":
+        raise ValueError("invalid_completion_messages")
+    if len(json.dumps(request, ensure_ascii=False).encode()) > chat_contract.MAX_INPUT_BYTES:
+        raise ValueError("local_context_full")
+    system = messages[0]["content"] if messages[0]["role"] == "system" else "Return one complete JSON object."
+    turns = messages[1:] if messages[0]["role"] == "system" else messages
+    prompt = turns[0]["content"] if len(turns) == 1 else json.dumps(turns, ensure_ascii=False)
+    input_tokens = len(engine.tokenize(system + prompt))
+    if input_tokens + limit + 256 > ENGINE_CONTEXT_TOKENS:
+        raise ValueError("local_context_full")
+    with engine.create_conversation(
+            messages=[runtime.Message.system(system)], tools=[],
+            automatic_tool_calling=False, max_output_tokens=limit,
+            thinking_config=runtime.ThinkingConfig(enable_thinking=False, thinking_token_budget=0),
+            sampler_config=runtime.SamplerConfig(top_k=1, temperature=0.0, seed=7),
+            extra_context={"enable_thinking": False}) as conversation:
+        response = conversation.send_message(prompt)
+    content = response.get("content") if isinstance(response, dict) else None
+    if (not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict)
+            or content[0].get("type") != "text" or not isinstance(content[0].get("text"), str)):
+        raise ValueError("local_response_invalid")
+    raw = content[0]["text"]
+    if len(raw.encode()) > chat_contract.MAX_OUTPUT_BYTES // 2:
+        raise ValueError("local_response_invalid")
+    if not isinstance(json.loads(raw), dict):
+        raise ValueError("local_response_invalid")
+    output_tokens = len(engine.tokenize(raw))
+    if output_tokens >= limit:
+        raise ValueError("local_incomplete_response")
+    return {"model": chat_contract.MODEL_ID,
+            "usage": {"prompt_tokens": max(1, input_tokens), "completion_tokens": output_tokens,
+                      "total_tokens": max(1, input_tokens) + output_tokens},
+            "choices": [{"finish_reason": "stop", "message": {"content": raw}}]}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # No public source text, prompts or model prose in service logs.
@@ -86,12 +137,13 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.settimeout(3)
 
     def do_POST(self):
-        if self.path != "/select" or self.headers.get("Transfer-Encoding"):
+        if self.path not in {"/select", "/complete"} or self.headers.get("Transfer-Encoding"):
             self.send_error(400)
             return
         try:
             size = int(self.headers.get("Content-Length", "0"))
-            if not 0 < size <= contract.MAX_INPUT_BYTES:
+            maximum = contract.MAX_INPUT_BYTES if self.path == "/select" else chat_contract.MAX_INPUT_BYTES
+            if not 0 < size <= maximum:
                 raise ValueError("input_bound")
             raw = self.rfile.read(size)
             if len(raw) != size:
@@ -99,10 +151,14 @@ class Handler(BaseHTTPRequestHandler):
             context = json.loads(raw)
             # SIGALRM default terminates stuck native inference. systemd restarts
             # only this isolated worker; the owner API and DB remain separate.
-            signal.alarm(15)
-            output = model_select(self.server.engine, self.server.runtime, context).encode()
+            signal.alarm(15 if self.path == "/select" else chat_contract.TIMEOUT_SECONDS - 5)
+            if self.path == "/select":
+                output = model_select(self.server.engine, self.server.runtime, context).encode()
+            else:
+                output = json.dumps(model_complete(self.server.engine, self.server.runtime, context),
+                                    ensure_ascii=False).encode()
             signal.alarm(0)
-        except (ValueError, TypeError, RuntimeError, OSError):
+        except (ValueError, TypeError, RuntimeError, OSError, RecursionError):
             signal.alarm(0)
             self.send_error(503)
             return
@@ -124,7 +180,7 @@ def main():
     import litert_lm
     litert_lm.set_min_log_severity(litert_lm.LogSeverity.ERROR)
     with litert_lm.Engine(str(MODEL_FILE), backend=litert_lm.Backend.CPU(thread_count=CPU_THREADS),
-                          max_num_tokens=MAX_CONTEXT_TOKENS,
+                          max_num_tokens=ENGINE_CONTEXT_TOKENS,
                           cache_dir="/var/cache/analyst-local-ai") as engine:
         path = Path(contract.SOCKET)
         # systemd RuntimeDirectory owns and recreates this private directory.

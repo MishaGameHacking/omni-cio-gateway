@@ -197,6 +197,19 @@ def configured_route(tier, env=None, *, at: int | None = None,
         reject('ai_context_size_invalid')
     if type(max_output_tokens) is not int or not 1 <= max_output_tokens <= 4000:
         reject('ai_output_limit_invalid')
+    if env.get('AI_TRANSPORT') == 'local':
+        try:
+            from . import local_ai_transport as local
+        except ImportError:
+            import local_ai_transport as local
+        if env.get('LOCAL_AI_ENABLED') != 'true':
+            reject('local_ai_not_enabled')
+        if getattr(tier, 'value', None) not in {'fast', 'standard', 'premium'}:
+            reject('ai_route_invalid_tier')
+        if max_output_tokens > local.MAX_OUTPUT_TOKENS:
+            reject('local_ai_output_limit_exceeded')
+        return Route('local', local.SOCKET, '', local.MODEL_ID, 0, 0, 1024,
+                     'max_tokens', 'LOCAL', 2147483647)
     try:
         candidates = approved_candidates(str(tier.value), env, now=now)
     except (CatalogError, AttributeError) as error:
@@ -312,8 +325,17 @@ class GuardedAIClient:
 
     def check_ready(self, tier, *, input_bytes: int = 0, max_output_tokens: int = 1600) -> Route:
         route = configured_route(tier, self.env, input_bytes=input_bytes, max_output_tokens=max_output_tokens)
+        if route.mode == 'local':
+            try:
+                from . import local_ai_transport as local
+            except ImportError:
+                import local_ai_transport as local
+            try:
+                local.ensure_ready()
+            except local.LocalAIError as error:
+                raise GuardError(str(error)) from None
         try:
-            if any(cap <= 0 for cap in configured_limits(self.env)):
+            if route.mode != 'local' and any(cap <= 0 for cap in configured_limits(self.env)):
                 reject('ai_ruble_budget_not_enabled')
             broker_binding(self.connect, self.user_id)
         except BudgetDenied as error:
@@ -346,6 +368,8 @@ class GuardedAIClient:
         # Readiness already checked presence; bind the version only after the
         # caller accepts this exact route and conservative cost ceiling.
         binding = broker_binding(self.connect, self.user_id)
+        if route.mode == 'local':
+            return self._complete_local(route, messages, max_output_tokens, binding)
         job = CURRENT_JOB.get()
         if job:
             queue = AnalysisQueue(self.connect)
@@ -396,6 +420,41 @@ class GuardedAIClient:
         finally:
             # No refund for timeouts, missing usage or interrupted workers.
             self.ledger.uncertain(reservation)
+
+    def _complete_local(self, route, messages, max_output_tokens, binding):
+        try:
+            from . import local_ai_transport as local
+            from .ai_budget import transaction
+        except ImportError:
+            import local_ai_transport as local
+            from ai_budget import transaction
+        job = CURRENT_JOB.get()
+        if job:
+            AnalysisQueue(self.connect).assert_owner(*job)
+        with transaction(self.connect) as db:
+            self._reserve_guard(binding)(db)
+        assert_monitoring_access(self.connect)
+        if self.before_send is not None:
+            self.before_send()
+        assert_broker_binding(self.connect, self.user_id, binding)
+        try:
+            local.ensure_ready()
+            response = _model_json(local.complete(messages, max_output_tokens))
+        except local.LocalAIError as error:
+            raise GuardError(str(error)) from None
+        if not isinstance(response, dict) or response.get('model') != route.model:
+            reject('local_ai_model_changed')
+        usage = self._usage(response)
+        if usage.completion_tokens > max_output_tokens:
+            reject('ai_usage_outside_reserved_bounds')
+        _assert_complete_response(response, usage, max_output_tokens)
+        content = _result_content(response)
+        if job:
+            AnalysisQueue(self.connect).assert_owner(*job)
+        if self.after_response is not None:
+            self.after_response()
+        assert_broker_binding(self.connect, self.user_id, binding)
+        return ModelResult(model=route.model, data=content, usage=usage)
 
     def _account_usage(self, response, route, reservation, input_bound, output_bound):
         """Keep charge evidence even when token bounds invalidate the answer."""
