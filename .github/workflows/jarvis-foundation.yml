@@ -18,10 +18,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Verify intended owner machine
-        shell: powershell
+        shell: cmd
         run: |
-          if ($env:COMPUTERNAME -ne 'LAPTOP-NPSGA016') { throw 'Unexpected test host' }
-          Write-Output 'Owner Lenovo test host verified; no runtime inspection or deployment.'
+          if /I not "%COMPUTERNAME%"=="LAPTOP-NPSGA016" exit /b 1
+          echo Owner Lenovo test host verified; no runtime inspection or deployment.
       - name: Checkout isolated candidate without retained credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
