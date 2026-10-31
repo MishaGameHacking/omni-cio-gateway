@@ -1269,23 +1269,18 @@ def status(user: sqlite3.Row = Depends(backend.current_user)) -> dict[str, Any]:
             (user_id,),
         ).fetchone()
     init_autonomous_db()
-    readiness = []
-    guarded = GuardedAIClient(user_id, backend.connect)
-    for tier in (AnalysisTier.FAST, AnalysisTier.STANDARD, AnalysisTier.PREMIUM):
-        try:
-            guarded.check_ready(tier)
-            readiness.append({'tier': tier.value, 'ready': True, 'reason': None})
-        except (GuardError, BudgetDenied) as error:
-            readiness.append({'tier': tier.value, 'ready': False, 'reason': str(error)})
-    ai_configured = all(item['ready'] for item in readiness)
+    if __package__:
+        from .agent_routing_status import route_status
+    else:
+        from agent_routing_status import route_status
+    model_status = route_status(user_id, backend.connect,
+                                environment=os.environ, client_factory=GuardedAIClient)
     queue_status = AnalysisQueue(backend.connect).user_status(user_id)
     return {
         "scheduler_enabled": SCHEDULER_ENABLED,
-        "ai_configured": ai_configured,
-        "route_readiness": readiness,
+        **model_status,
         "queue": queue_status,
         "monitoring": monitoring_status(user, queue_status),
-        "spending": MoneyLedger(backend.connect).user_summary(user_id),
         "configuration_is_not_live_inference_proof": True,
         "deterministic_monitoring": True,
         "unread_count": int(unread["count"] if unread else 0),
