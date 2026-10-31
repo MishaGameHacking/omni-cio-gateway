@@ -106,10 +106,14 @@ def model_complete(engine, runtime, request):
     with engine.create_conversation(
             messages=[runtime.Message.system(system)], tools=[],
             automatic_tool_calling=False, max_output_tokens=limit,
+            constrained_decoding_config=runtime.interfaces.ConstrainedDecodingConfig(
+                provider=runtime.LiteRtLmConstraintProviderType.LL_GUIDANCE),
             thinking_config=runtime.ThinkingConfig(enable_thinking=False, thinking_token_budget=0),
             sampler_config=runtime.SamplerConfig(top_k=1, temperature=0.0, seed=7),
             extra_context={"enable_thinking": False}) as conversation:
-        response = conversation.send_message(prompt)
+        response = conversation.send_message(
+            runtime.Message.user(prompt),
+            response_format=runtime.interfaces.ResponseFormat.json({"type": "object"}))
     content = response.get("content") if isinstance(response, dict) else None
     if (not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict)
             or content[0].get("type") != "text" or not isinstance(content[0].get("text"), str)):

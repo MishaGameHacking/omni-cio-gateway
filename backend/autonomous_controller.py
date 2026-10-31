@@ -715,8 +715,9 @@ def _discovery(user: Any, active: dict | None, now: int) -> dict:
 def _ai_configuration() -> dict:
     """Pure configuration inspection; no ledger initialization or model request."""
     try:
-        configured_route(AnalysisTier.FAST)
-        if micro_rub(os.getenv("AI_USER_DAILY_RUB", "0")) <= 0 or micro_rub(os.getenv("AI_PROJECT_DAILY_RUB", "0")) <= 0:
+        route = configured_route(AnalysisTier.FAST)
+        if route.mode != "local" and (micro_rub(os.getenv("AI_USER_DAILY_RUB", "0")) <= 0
+                                      or micro_rub(os.getenv("AI_PROJECT_DAILY_RUB", "0")) <= 0):
             raise BudgetDenied("ai_ruble_budget_not_enabled")
         return {"available": True, "reason": None, "live_inference_verified": False}
     except (GuardError, BudgetDenied) as error:

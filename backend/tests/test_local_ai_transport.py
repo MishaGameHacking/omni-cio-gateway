@@ -78,6 +78,23 @@ def test_local_route_is_explicit_and_has_a_stable_free_quote():
         configured_route(FAST, local_environment(), max_output_tokens=1601)
 
 
+@pytest.mark.parametrize("enabled", [True, False])
+def test_controller_status_accepts_zero_cloud_budget_only_for_enabled_local_ai(enabled):
+    from backend import autonomous_controller as controller
+    env = {**local_environment(), "LOCAL_AI_ENABLED": str(enabled).lower()}
+    with mock.patch.dict("os.environ", env):
+        status = controller._ai_configuration()
+    assert status["available"] is enabled
+    assert status["live_inference_verified"] is False
+    assert status["reason"] == (None if enabled else "local_ai_not_enabled")
+
+
+def test_controller_status_still_requires_budget_for_cloud_ai():
+    from backend import autonomous_controller as controller
+    with mock.patch.dict("os.environ", {**environment(), "AI_USER_DAILY_RUB": "0"}):
+        assert controller._ai_configuration()["reason"] == "ai_ruble_budget_not_enabled"
+
+
 def test_zero_cost_chat_runs_once_and_recovers_the_saved_answer(fixture):
     fixture["patch"].setattr(chat, "GuardedAIClient", lambda user, connect, **kwargs:
                             GuardedAIClient(user, connect, env=local_environment(), **kwargs))
@@ -118,11 +135,28 @@ def test_worker_keeps_context_bound_and_disables_tools(worker):
     assert worker.model_complete(engine, runtime, request)["model"] == local.MODEL_ID
     assert engine.create_conversation.call_args.kwargs["tools"] == []
     assert engine.create_conversation.call_args.kwargs["automatic_tool_calling"] is False
+    runtime.interfaces.ConstrainedDecodingConfig.assert_called_once_with(
+        provider=runtime.LiteRtLmConstraintProviderType.LL_GUIDANCE)
+    runtime.Message.user.assert_called_once_with("fixture")
+    runtime.interfaces.ResponseFormat.json.assert_called_once_with({"type": "object"})
     engine.create_conversation.reset_mock()
     engine.tokenize.return_value = [1] * 8192
     with pytest.raises(ValueError, match="local_context_full"):
         worker.model_complete(engine, runtime, request)
     engine.create_conversation.assert_not_called()
+
+
+@pytest.mark.parametrize("raw", ['prefix {"ok":true}', '{"ok":true} suffix', '[]', '{"ok":'])
+def test_local_worker_does_not_repair_or_extract_untrusted_json(worker, raw):
+    engine, runtime = mock.Mock(), mock.Mock()
+    engine.tokenize.return_value = [1]
+    conversation = mock.MagicMock()
+    engine.create_conversation.return_value = conversation
+    conversation.__enter__.return_value.send_message.return_value = {
+        "content": [{"type": "text", "text": raw}]}
+    with pytest.raises(ValueError):
+        worker.model_complete(engine, runtime, {
+            "messages": [{"role": "user", "content": "fixture"}], "max_output_tokens": 100})
 
 
 @pytest.mark.parametrize("status,checksum", [(302, local.MODEL_SHA256), (200, "wrong-model")])
