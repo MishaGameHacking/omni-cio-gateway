@@ -1,0 +1,56 @@
+name: Inspect existing Jarvis model test entrypoints without execution
+on:
+  push:
+    branches: [codex/jarvis-runtime-access-2026-11-01]
+    paths: [.github/workflows/jarvis-runtime-access.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Inspect parameters and execution boundary, not private script contents
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            const cp=require('node:child_process'),path=require('node:path');
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('wrong_host');
+            const ps=String.raw`
+            $ErrorActionPreference='Stop'
+            $id=[Security.Principal.WindowsIdentity]::GetCurrent()
+            $p=[Security.Principal.WindowsPrincipal]::new($id)
+            $report=[ordered]@{network_service=($id.User.Value -eq 'S-1-5-20');administrator=$p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator);scripts=@();tasks=@()}
+            $root='C:\Program Files\AnalystAI-HomeRuntime'
+            $paths=@('model-state-guest.ps1','local-chat-guest.ps1','model-probe-guest.ps1','diagnose-guest.ps1')|ForEach-Object{Join-Path $root $_}
+            try {
+              $dirs=@(Get-ChildItem -LiteralPath $root -Directory -ErrorAction Stop|Where-Object{$_.Name -like 'AnalystAI-Studio59-*'}|Sort-Object LastWriteTimeUtc -Descending|Select-Object -First 2)
+              foreach($dir in $dirs){$paths+=Join-Path $dir.FullName 'lenovo_runtime.ps1'}
+            }catch{$report.directory_metadata='unavailable'}
+            foreach($file in $paths){
+              $r=[ordered]@{name=[IO.Path]::GetFileName($file);state='unavailable'}
+              try {
+                $item=Get-Item -LiteralPath $file -ErrorAction Stop
+                if(($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.Length -gt 262144){throw 'not_regular_bounded_script'}
+                $tokens=$null;$errors=$null
+                $ast=[Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
+                if(@($errors).Count){throw 'parse_failed'}
+                $r.state='readable_not_executed'
+                $r.sha256=(Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+                $r.parameters=@($ast.ParamBlock.Parameters|ForEach-Object{$_.Name.VariablePath.UserPath}|Where-Object{$_ -match '^[A-Za-z][A-Za-z0-9_]{0,59}$'})
+                $r.functions=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst]},$true)|ForEach-Object{$_.Name}|Where-Object{$_ -match '^[A-Za-z][A-Za-z0-9_-]{0,79}$'}|Sort-Object -Unique)
+                $r.commands=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.CommandAst]},$true)|ForEach-Object{$_.GetCommandName()}|Where-Object{$_ -and $_ -match '^[A-Za-z][A-Za-z0-9_.-]{0,79}$'}|Sort-Object -Unique)
+                $r.validate_set=@($ast.FindAll({param($n)$n -is [Management.Automation.Language.AttributeAst] -and $n.TypeName.Name -eq 'ValidateSet'},$true)|ForEach-Object{$_.PositionalArguments}|ForEach-Object{if($_ -is [Management.Automation.Language.StringConstantExpressionAst] -and $_.Value -match '^[A-Za-z][A-Za-z0-9_-]{0,59}$'){$_.Value}})
+              }catch{}
+              $report.scripts+=$r
+            }
+            try{$report.tasks=@(Get-ScheduledTask -ErrorAction Stop|Where-Object{$_.TaskName -match '^AnalystAI' -and $_.TaskName -match '^[A-Za-z0-9_.-]{1,100}$'}|Select-Object -First 20|ForEach-Object{[ordered]@{name=$_.TaskName;state=[string]$_.State;limited=([string]$_.Principal.RunLevel -eq 'Limited')}})}catch{$report.task_metadata='unavailable'}
+            Write-Output ('JARVIS_ENTRYPOINT_METADATA='+($report|ConvertTo-Json -Depth 6 -Compress))
+            `;
+            const names=['SYSTEMROOT','WINDIR','COMSPEC','COMPUTERNAME','PATH','TEMP','TMP','USERPROFILE','PROGRAMFILES','PROGRAMDATA','LOCALAPPDATA'];
+            const env=Object.fromEntries(Object.entries(process.env).filter(([k])=>names.includes(k.toUpperCase())));
+            const exe=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+            const r=cp.spawnSync(exe,['-NoLogo','-NoProfile','-NonInteractive','-Command',ps],{env,encoding:'utf8',timeout:60000,windowsHide:true});
+            const lines=(r.stdout||'').split(/\r?\n/).filter(x=>x.startsWith('JARVIS_ENTRYPOINT_METADATA='));
+            for(const line of lines)core.info(line);
+            if(r.status!==0||lines.length!==1)throw Error('entrypoint_metadata_unavailable');
