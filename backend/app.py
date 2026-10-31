@@ -794,3 +794,11 @@ for volume_router in (volume_live_router, volume_workspace_router, volume_state_
                       volume_catalogue_router, volume_purchases_router):
     app.include_router(volume_router)
 
+
+
+# General companion conversation has session/device authority, not broker authority.
+if __package__:
+    from . import companion_chat
+else:
+    import companion_chat
+companion_chat.install_routes(app, connect, FERNET, current_user, lambda: os.environ)

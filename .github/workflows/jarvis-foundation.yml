@@ -1,11 +1,14 @@
-name: Verify Jarvis worker integration on owner Lenovo
+name: Verify Jarvis worker and companion integration on owner Lenovo
 on:
   push:
     branches: [codex/jarvis-foundation-2026-10-31]
     paths:
       - backend/agent_*.py
+      - backend/companion_chat.py
+      - backend/app.py
       - backend/autonomous_ai.py
       - backend/tests/test_agent_*.py
+      - backend/tests/test_companion*.py
       - docs/JARVIS*.md
       - .github/scripts/jarvis_policy_ci.py
       - .github/workflows/jarvis-foundation.yml
@@ -31,7 +34,7 @@ jobs:
           path: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
           fetch-depth: 1
           persist-credentials: false
-      - name: Run real worker with synthetic inputs in disposable venv
+      - name: Run workers and companion with synthetic inputs in disposable venv
         shell: cmd
         working-directory: jarvis-policy-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
