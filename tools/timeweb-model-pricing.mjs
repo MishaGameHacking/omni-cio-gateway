@@ -19,9 +19,9 @@ function smallScalar(value) {
 export function summarizePrices(catalogue, dictionary) {
   const models = rows(catalogue?.models);
   const parameters = rows(dictionary?.model_parameters);
-  const identityKeys = ['id','name','slug','model','model_id','api_name','api_id','is_deprecated','is_stopped'];
-  const requested = models.filter(row => identityKeys.some(key => typeof row[key] === 'string' &&
-    /gpt[ -]?6([. -]?1)?[ /_-]?(luna|sol|astra)/i.test(row[key])));
+  const identityKeys = ['id','name','title','model_name','slug','model','model_id','api_name','api_id',
+    'litellm_id','provider_model_id','is_deprecated','is_stopped','currency','currency_code'];
+  const requested = models.filter(row => /gpt[ -]?6([. -]?1)?[ /_-]?(luna|sol|astra)/i.test(JSON.stringify(row)));
   const selected = requested.map(row => ({
     identity:Object.fromEntries(identityKeys.filter(key => key in row && smallScalar(row[key])).map(key => [key,row[key]])),
     parameter_values:Object.fromEntries(Object.entries(row.parameter_values ?? {}).filter(([key,value]) =>
@@ -31,7 +31,8 @@ export function summarizePrices(catalogue, dictionary) {
     typeof value === 'string' && /cost|price|руб|RUB/i.test(value)));
   return {models:selected, price_parameters:costParameters.map(row => Object.fromEntries(
     Object.entries(row).filter(([key,value]) => ['key','id','name','slug','code','description','unit','units','type'].includes(key) && smallScalar(value)))),
-    catalogue_count:models.length};
+    catalogue_count:models.length,
+    catalogue_row_fields:[...new Set(models.flatMap(row => Object.keys(row)))].filter(key => /^[a-zA-Z0-9_]{1,80}$/.test(key))};
 }
 
 export async function inspectPrices(apiKey, request = gatewayRequest) {
@@ -56,3 +57,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   console.log(JSON.stringify({status:report.status,reason:report.reason,model_invocations:0,report:'timeweb-model-pricing.json'}));
   process.exitCode=report.status === 'metadata_received' ? 0 : 2;
 }
+
