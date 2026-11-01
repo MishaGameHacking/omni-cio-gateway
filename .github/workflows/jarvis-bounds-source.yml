@@ -1,0 +1,51 @@
+name: Derive companion HTTP validation fix on owner Lenovo
+on:
+  push:
+    branches: [codex/jarvis-runtime-access-2026-11-01]
+    paths: [.github/workflows/jarvis-bounds-source.yml]
+permissions:
+  contents: write
+jobs:
+  source:
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 3
+    steps:
+      - name: Derive exact public source blobs without reading installed files
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        with:
+          script: |
+            if(process.env.COMPUTERNAME!=='LAPTOP-NPSGA016')throw Error('wrong_host');
+            const base='9747df64a6653a958ebd1f9d450b431a60a26d1d';
+            const handler=[
+              'class _CompanionRoute(APIRoute):',
+              '    """Do not echo invalid/private input through the framework error encoder."""',
+              '    def get_route_handler(self):',
+              '        original = super().get_route_handler()',
+              '        async def checked(request):',
+              '            try:',
+              '                return await original(request)',
+              '            except RequestValidationError:',
+              "                return JSONResponse({'detail': 'companion_input_invalid'}, status_code=422,",
+              "                                    headers={'Cache-Control': 'no-store, private'})",
+              '        return checked', '', '',
+              'def install_routes(app, connect, cipher, current_user, environment_provider):', ''
+            ].join('\n');
+            const patches=[
+              {path:'backend/companion_chat.py',expected:'0a87b183ef73d5a980d45a2dc1ba023e0ba7bcf8',edits:[
+                ['from fastapi.responses import JSONResponse\n','from fastapi.responses import JSONResponse\nfrom fastapi.exceptions import RequestValidationError\nfrom fastapi.routing import APIRoute\n'],
+                ['def install_routes(app, connect, cipher, current_user, environment_provider):\n',handler],
+                ["    router = APIRouter(prefix='/assistant/chat', tags=['Local companion'])\n","    router = APIRouter(prefix='/assistant/chat', tags=['Local companion'], route_class=_CompanionRoute)\n"]
+              ]},
+              {path:'.github/scripts/jarvis_policy_ci.py',edits:[[
+                "    'backend/tests/test_companion_bounds.py',\n",
+                "    'backend/tests/test_companion_bounds.py',\n    'backend/tests/test_companion_http_errors.py',\n"
+              ]]}
+            ];
+            for(const patch of patches){
+              const {data}=await github.rest.repos.getContent({...context.repo,path:patch.path,ref:base});
+              if(data.type!=='file'||data.encoding!=='base64'||(patch.expected&&patch.expected!==data.sha))throw Error('source_identity');
+              let text=Buffer.from(data.content,'base64').toString('utf8');
+              for(const [before,after] of patch.edits){if(text.split(before).length!==2)throw Error('nonunique_anchor');text=text.replace(before,after);}
+              const {data:blob}=await github.rest.git.createBlob({...context.repo,content:text,encoding:'utf-8'});
+              core.info('COMPANION_BOUNDARY_BLOB='+JSON.stringify({path:patch.path,base_blob:data.sha,sha:blob.sha}));
+            }
