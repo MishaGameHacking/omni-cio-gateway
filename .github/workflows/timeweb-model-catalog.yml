@@ -23,19 +23,19 @@ jobs:
           path: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
       - name: Verify catalogue parser before loading the existing secret
-        shell: powershell
+        shell: cmd
         working-directory: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          node --test tools/tests/timeweb-model-catalog.test.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files\nodejs\node.exe" --test tools/tests/timeweb-model-catalog.test.mjs
+          if errorlevel 1 exit /b 1
       - name: Read only the provider catalogue with the existing key
-        shell: powershell
+        shell: cmd
         working-directory: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
         env:
           TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
         run: |
-          node tools/timeweb-model-catalog.mjs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files\nodejs\node.exe" tools/timeweb-model-catalog.mjs
+          if errorlevel 1 exit /b 1
       - name: Preserve sanitized access result
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
