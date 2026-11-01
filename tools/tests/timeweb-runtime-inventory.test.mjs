@@ -25,7 +25,17 @@ test('transport errors are redacted and all three read requests are inspected',a
   const result=await inspectRuntime('synthetic-key',async(name)=>{
     calls.push(name);throw new Error('sensitive-provider-error');
   });
-  assert.deepEqual(calls,['servers','presets','os']);
+  assert.deepEqual(calls,['servers','presets','os','costs','ips']);
   assert.equal(result.status,'unavailable');
   assert.ok(!JSON.stringify(result).includes('sensitive-provider-error'));
+});
+test('inventory completeness and service totals do not expose names or IPs',()=>{
+  const report=summarizeInventory({servers:[],meta:{total:0}}, {presets:[]}, {os:[]},
+    {services_costs:[{service_id:1,cost:150,total_cost:200,type:'ip',info:{name:'private-service'},
+      services:[{cost:50,total_cost:50,type:'backup',info:{ip:'192.0.2.1'}}]}]},
+    {floating_ips:[{id:'synthetic-id',ip:'192.0.2.1',availability_zone:'msk-1',resource_id:null}]});
+  assert.equal(report.server_inventory_complete,true);
+  assert.equal(report.active_service_costs[0].total_cost,200);
+  assert.ok(!JSON.stringify(report).includes('192.0.2.1'));
+  assert.ok(!JSON.stringify(report).includes('private-service'));
 });

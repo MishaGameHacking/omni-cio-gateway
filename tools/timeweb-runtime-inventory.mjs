@@ -4,7 +4,8 @@ import {writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {pathToFileURL} from 'node:url';
 
-const PATHS = Object.freeze({servers:'/api/v1/servers', presets:'/api/v1/presets/servers', os:'/api/v1/os/servers'});
+const PATHS = Object.freeze({servers:'/api/v1/servers?limit=100&offset=0', presets:'/api/v1/presets/servers',
+  os:'/api/v1/os/servers', costs:'/api/v1/account/services/cost', ips:'/api/v1/floating-ips'});
 class InventoryError extends Error { constructor(code) { super(code); this.code = code; } }
 
 export function readCloud(name, token) {
@@ -33,8 +34,9 @@ export function readCloud(name, token) {
   });
 }
 
-const numericKeys=['id','cpu','ram','disk','bandwidth','price','price_month','price_day','preset_id','configurator_id'];
-const textKeys=['location','status','type','disk_type','currency','currency_code','os_name','version'];
+const numericKeys=['id','cpu','ram','disk','size','bandwidth','price','price_month','price_day','preset_id','configurator_id',
+  'cost','total_cost','service_id','project_id'];
+const textKeys=['location','status','type','disk_type','currency','currency_code','os_name','version','availability_zone'];
 function safeRecord(row) {
   if(!row||typeof row!=='object'||Array.isArray(row))throw new InventoryError('inventory_record_invalid');
   return Object.fromEntries([
@@ -48,14 +50,27 @@ function rows(value, keys) {
   return value[key];
 }
 
-export function summarizeInventory(servers, presets, operatingSystems) {
+export function summarizeInventory(servers, presets, operatingSystems, costs, ips) {
   const active=rows(servers,['servers']).map(row=>({...safeRecord(row),
     matches_project_name:typeof row.name==='string'&&/analyst|omnicio|omni-cio/i.test(row.name),
     disk_summaries:Array.isArray(row.disks)?row.disks.map(d=>safeRecord(d)):[]}));
   const plans=rows(presets,['server_presets','presets']).map(row=>safeRecord(row));
   const systems=rows(operatingSystems,['servers_os','os','operating_systems']).map(row=>({...safeRecord(row),
     ...(typeof row.name==='string'&&/^[A-Za-z0-9 ._-]{1,80}$/.test(row.name)?{os_name:row.name}:{})}));
-  return {servers:active,presets:plans,operating_systems:systems,server_count:active.length,
+  const costsSummary=costs?rows(costs,['services_costs']).map(row=>({...safeRecord(row),
+    services:Array.isArray(row.services)?row.services.map(s=>safeRecord(s)):[]})):null;
+  const ipSummary=ips?rows(ips,['floating_ips']).map(row=>({...safeRecord(row),
+    is_ddos_guard:row.is_ddos_guard===true,is_attached:Boolean(row.resource_id||row.resource),
+    ...(typeof row.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(row.id)?{resource_id:row.id}:{})})):null;
+  const selected=rows(presets,['server_presets','presets']).filter(row=>[6749,6759].includes(row.id)).map(row=>({
+    ...safeRecord(row), description:typeof row.description==='string'?row.description.slice(0,600):null,
+    tags:Array.isArray(row.tags)?row.tags.filter(v=>typeof v==='string'&&v.length<100):[],
+    additional_pricing_fields:Object.fromEntries(Object.entries(row).filter(([k,v])=>/price|cost|ipv4|ip_included/.test(k)&&
+      /^[a-z_]{1,80}$/.test(k)&&(['boolean','number'].includes(typeof v)||typeof v==='string'&&v.length<100)))}));
+  return {servers:active,presets:plans,selected_public_presets:selected,operating_systems:systems,server_count:active.length,
+    reported_server_total:Number.isInteger(servers?.meta?.total)?servers.meta.total:null,
+    server_inventory_complete:Number.isInteger(servers?.meta?.total)&&servers.meta.total===active.length,
+    active_service_costs:costsSummary,floating_ips:ipSummary,
     preset_count:plans.length,includes_secrets_or_network_addresses:false,
     plan_prices_are_complete_invoice:false,resources_created:0,resources_changed:0};
 }
@@ -64,7 +79,7 @@ export async function inspectRuntime(token, request=readCloud) {
   const report={schema_version:1,checked_at_utc:new Date().toISOString(),status:'unverified',
     source:'https://api.timeweb.cloud',api_requests_read_only:true,financial_orders:0,model_invocations:0};
   try {
-    const results=await Promise.all(['servers','presets','os'].map(name=>request(name,token)));
+    const results=await Promise.all(['servers','presets','os','costs','ips'].map(name=>request(name,token)));
     Object.assign(report,summarizeInventory(...results),{status:'received'});
   } catch(error) {
     report.status='unavailable';
