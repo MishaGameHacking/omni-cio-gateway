@@ -1,0 +1,47 @@
+name: Qualify requested Timeweb models on bounded synthetic portfolio cases
+on:
+  push:
+    branches: [codex/timeweb-model-access-2026-11-01]
+    paths:
+      - tools/timeweb-model-eval.mjs
+      - tools/tests/timeweb-model-eval.test.mjs
+      - tools/fixtures/portfolio-action-v1.json
+      - .github/workflows/timeweb-model-eval.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-timeweb-model-evaluation
+  cancel-in-progress: false
+jobs:
+  evaluate:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.run_attempt == 1
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: ai-eval-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Check evaluator, budget and failure behavior before loading secret
+        shell: cmd
+        working-directory: ai-eval-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" --test tools/tests/timeweb-model-eval.test.mjs tools/tests/timeweb-model-pricing.test.mjs
+          if errorlevel 1 exit /b 1
+      - name: Evaluate synthetic cases once within the 60 RUB client reservation cap
+        shell: cmd
+        working-directory: ai-eval-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" tools/timeweb-model-eval.mjs
+          if errorlevel 1 exit /b 1
+      - name: Preserve complete or interrupted qualification evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: timeweb-model-evaluation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ai-eval-${{ github.run_id }}-${{ github.run_attempt }}/timeweb-model-evaluation.json
+          if-no-files-found: error
+          retention-days: 7

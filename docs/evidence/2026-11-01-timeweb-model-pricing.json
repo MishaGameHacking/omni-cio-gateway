@@ -1,0 +1,132 @@
+{
+  "schema_version": 1,
+  "checked_at_utc": "2026-11-01T11:44:33.040Z",
+  "provider": "Timeweb AI Gateway",
+  "source": "https://api.timeweb.cloud/api/v3/cloud-ai/models",
+  "status": "metadata_received",
+  "model_invocations": 0,
+  "financial_orders": 0,
+  "owner_data_transmitted": false,
+  "models": [
+    {
+      "identity": {
+        "id": 263,
+        "name": "gpt",
+        "model_name": "openai/gpt-6-astra",
+        "is_deprecated": false,
+        "is_stopped": false
+      },
+      "parameter_values": {
+        "aa_intelligence_index": 50,
+        "avg_speed": 53,
+        "supports_function_calling": true,
+        "context_window": 1050000,
+        "max_output_tokens": 128000,
+        "release_date": "2026-09-03",
+        "is_reasoning": true,
+        "cost_in": 0.00135,
+        "cost_out": 0.00675,
+        "cost_cache_read": 0.000135,
+        "cost_cache_write": 0.0016875
+      }
+    },
+    {
+      "identity": {
+        "id": 285,
+        "name": "gpt",
+        "model_name": "openai/gpt-6-sol",
+        "is_deprecated": false,
+        "is_stopped": false
+      },
+      "parameter_values": {
+        "is_reasoning": true,
+        "cost_in": 0.00027,
+        "cost_out": 0.00135,
+        "cost_cache_read": 2.7e-05,
+        "cost_cache_write": 0.0003375
+      }
+    },
+    {
+      "identity": {
+        "id": 287,
+        "name": "gpt",
+        "model_name": "openai/gpt-6-luna",
+        "is_deprecated": false,
+        "is_stopped": false
+      },
+      "parameter_values": {
+        "is_reasoning": true,
+        "cost_in": 1.35e-05,
+        "cost_out": 6.75e-05,
+        "cost_cache_read": 1.35e-06,
+        "cost_cache_write": 1.6875e-05
+      }
+    },
+    {
+      "identity": {
+        "id": 335,
+        "name": "gpt",
+        "model_name": "openai/gpt-6.1-sol",
+        "is_deprecated": false,
+        "is_stopped": false
+      },
+      "parameter_values": {
+        "aa_intelligence_index": 52,
+        "supports_function_calling": true,
+        "context_window": 1050000,
+        "max_output_tokens": 128000,
+        "release_date": "2026-09-29",
+        "is_reasoning": true,
+        "cost_in": 0.00027,
+        "cost_out": 0.00135,
+        "cost_cache_read": 1.35e-05,
+        "cost_cache_write": 0.0003375
+      }
+    }
+  ],
+  "price_parameters": [
+    {
+      "code": "cost_in",
+      "name": "Р¦РµРЅР° Р·Р° input",
+      "description": "РЎС‚РѕРёРјРѕСЃС‚СЊ 1 РІС…РѕРґРЅРѕРіРѕ С‚РѕРєРµРЅР° СЃ СѓС‡С‘С‚РѕРј Р±СЂРµРЅРґР°",
+      "type": "number",
+      "unit": "currency_per_million"
+    },
+    {
+      "code": "cost_per_image",
+      "name": "Р¦РµРЅР° Р·Р° РёР·РѕР±СЂР°Р¶РµРЅРёРµ",
+      "description": "РЎС‚РѕРёРјРѕСЃС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ Р±Р°Р·РѕРІРѕРіРѕ СЂР°Р·РјРµСЂР° (1 MP) СЃ СѓС‡С‘С‚РѕРј Р±СЂРµРЅРґР°; СЂР°СЃС‚С‘С‚ РІРјРµСЃС‚Рµ СЃ СЂР°Р·РјРµСЂРѕРј",
+      "type": "number",
+      "unit": "currency_per_image"
+    },
+    {
+      "code": "cost_out",
+      "name": "Р¦РµРЅР° Р·Р° output",
+      "description": "РЎС‚РѕРёРјРѕСЃС‚СЊ 1 РІС‹С…РѕРґРЅРѕРіРѕ С‚РѕРєРµРЅР° СЃ СѓС‡С‘С‚РѕРј Р±СЂРµРЅРґР°",
+      "type": "number",
+      "unit": "currency_per_million"
+    }
+  ],
+  "catalogue_count": 194,
+  "catalogue_row_fields": [
+    "id",
+    "provider_id",
+    "name",
+    "public_name",
+    "model_name",
+    "type",
+    "version",
+    "is_deprecated",
+    "is_stopped",
+    "deprecation_date",
+    "created_at",
+    "updated_at",
+    "params_info",
+    "parameter_values",
+    "price_tiers",
+    "batch"
+  ],
+  "workflow_run": "https://github.com/MishaGameHacking/omni-cio-gateway/actions/runs/41303200016",
+  "source_commit": "82b79366b42407e9dc73a1d4162717c2b0ea8bf4",
+  "billing_units_note": "Provider metadata says currency_per_million, but descriptions say one token. Use each raw cost as RUB per token, the conservative larger interpretation, pending invoice reconciliation. No claim of actual invoiced cost."
+}
