@@ -1,0 +1,41 @@
+name: Scheduled signed Timeweb prices
+on:
+  push:
+    branches: [main, codex/scheduled-price-feed-2026-11-01]
+    paths: [.github/workflows/timeweb-price-feed-schedule.yml]
+  workflow_dispatch:
+  schedule:
+    - cron: '29 */6 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: analyst-signed-price-feed
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # Exact producer, verifier and public key already passed live CI.
+          ref: f1ce2ba3dba3dd914af9d2c7dcf0d7cd62bc188c
+          persist-credentials: false
+      - name: Check signed tariff publication contracts
+        run: node --test tools/tests/timeweb-price-feed.test.mjs
+      - name: Read tariff metadata without invoking a model
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          ANALYST_PRICE_SIGNING_KEY: ${{ secrets.ANALYST_PRICE_SIGNING_KEY }}
+        run: node tools/timeweb-price-feed.mjs
+      - name: Publish the independently verified public quote
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/publish-timeweb-price-feed.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: scheduled-public-prices-${{ github.run_id }}-${{ github.run_attempt }}
+          path: timeweb-price-feed.json
+          if-no-files-found: error
+          retention-days: 7
