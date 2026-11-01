@@ -17,6 +17,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
 if __package__:
@@ -322,8 +324,21 @@ class CompanionService:
         return {'cleared': True, 'old_generation_results_discarded': True}
 
 
+class _CompanionRoute(APIRoute):
+    """Do not echo invalid/private input through the framework error encoder."""
+    def get_route_handler(self):
+        original = super().get_route_handler()
+        async def checked(request):
+            try:
+                return await original(request)
+            except RequestValidationError:
+                return JSONResponse({'detail': 'companion_input_invalid'}, status_code=422,
+                                    headers={'Cache-Control': 'no-store, private'})
+        return checked
+
+
 def install_routes(app, connect, cipher, current_user, environment_provider):
-    router = APIRouter(prefix='/assistant/chat', tags=['Local companion'])
+    router = APIRouter(prefix='/assistant/chat', tags=['Local companion'], route_class=_CompanionRoute)
     service = CompanionService(connect, cipher, environment_provider)
 
     @router.post('')
