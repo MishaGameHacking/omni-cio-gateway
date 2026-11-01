@@ -1,0 +1,60 @@
+name: Refresh signed public Timeweb tariffs
+on:
+  push:
+    branches: [codex/timeweb-model-access-2026-11-01]
+    paths:
+      - tools/timeweb-price-feed.mjs
+      - tools/publish-timeweb-price-feed.mjs
+      - tools/tests/timeweb-price-feed.test.mjs
+      - tools/fixtures/timeweb-price-signer.json
+      - .github/workflows/timeweb-price-feed.yml
+  workflow_dispatch:
+  # GitHub schedules run only after this workflow is installed on the default branch.
+  # Do not enable the server feed before its periodic publisher is accepted.
+  schedule:
+    - cron: '19 */6 * * *'
+permissions:
+  contents: write
+concurrency:
+  group: analyst-signed-price-feed
+  cancel-in-progress: false
+jobs:
+  refresh:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: signed-prices-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Test integer price conversion and signatures
+        shell: cmd
+        working-directory: signed-prices-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" --test tools/tests/timeweb-price-feed.test.mjs
+          if errorlevel 1 exit /b 1
+      - name: Read provider metadata and sign public prices
+        shell: cmd
+        working-directory: signed-prices-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+          ANALYST_PRICE_SIGNING_KEY: ${{ secrets.ANALYST_PRICE_SIGNING_KEY }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" tools/timeweb-price-feed.mjs
+          if errorlevel 1 exit /b 1
+      - name: Publish only the signed public tariff file
+        shell: cmd
+        working-directory: signed-prices-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" tools/publish-timeweb-price-feed.mjs
+          if errorlevel 1 exit /b 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: signed-public-prices-${{ github.run_id }}-${{ github.run_attempt }}
+          path: signed-prices-${{ github.run_id }}-${{ github.run_attempt }}/timeweb-price-feed.json
+          if-no-files-found: error
+          retention-days: 7
