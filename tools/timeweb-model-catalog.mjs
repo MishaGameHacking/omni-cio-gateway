@@ -61,7 +61,13 @@ export function readGatewayCatalogue(apiKey) {
       req.destroy();
       finish(new CatalogueError('gateway_timeout'));
     }, 30000);
-    req.on('error', () => finish(new CatalogueError('gateway_connection_failed')));
+    req.on('error', error => {
+      const codes = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ECONNREFUSED', 'ECONNRESET',
+        'CERT_HAS_EXPIRED', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'ERR_TLS_CERT_ALTNAME_INVALID']);
+      const suffix = codes.has(error.code) ? `_${error.code.toLowerCase()}` : '';
+      finish(new CatalogueError(`gateway_connection_failed${suffix}`));
+    });
     req.end();
   });
 }
