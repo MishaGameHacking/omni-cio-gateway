@@ -34,6 +34,7 @@ MAX_TURNS = 200
 MAX_TEXT = 2000
 MAX_ANSWER = 4000
 MAX_TOKENS = 384
+MAX_REQUEST_BYTES = 40_000
 LEASE_SECONDS = 300
 SYSTEM = '''Ты — личный помощник Analyst AI. Отвечай по-русски, естественно и кратко.
 Это обычный разговор, а не управление брокерским счётом. У тебя здесь нет инструментов,
@@ -69,13 +70,40 @@ def fail(code: str, status: int = 409):
     raise HTTPException(status_code=status, detail=code)
 
 
+def _valid_text(value, limit):
+    if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        return False
+    try:
+        value.encode('utf-8', 'strict')
+    except UnicodeError:
+        return False
+    # Preserve normal whitespace, Russian text, combining marks and emoji.
+    return all(ord(c) >= 32 or c in '\t\n\r' for c in value)
+
+
+def _messages(history, text):
+    """Bound the exact double-encoded model request, not just the inner text."""
+    retained = list(history)
+    while True:
+        payload = {'history': retained, 'message': text}
+        messages = [{'role': 'system', 'content': SYSTEM},
+                    {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False, allow_nan=False)}]
+        wire = json.dumps({'messages': messages, 'max_output_tokens': MAX_TOKENS},
+                          ensure_ascii=False, allow_nan=False).encode('utf-8', 'strict')
+        if len(wire) <= min(MAX_REQUEST_BYTES, local.MAX_INPUT_BYTES):
+            return messages
+        if not retained:
+            fail('companion_context_too_large', 422)
+        retained.pop(0)
+
+
 def session_hash(authorization: str | None) -> str:
     if not isinstance(authorization, str) or not authorization.startswith('Bearer '):
         fail('invalid_session', 401)
     token = authorization[7:].strip()
-    if not token or len(token) > 4096:
+    if not token or len(token) > 4096 or not token.isascii():
         fail('invalid_session', 401)
-    return hashlib.sha256(token.encode()).hexdigest()
+    return hashlib.sha256(token.encode('ascii')).hexdigest()
 
 
 class CompanionService:
@@ -119,14 +147,14 @@ class CompanionService:
 
     def _seal(self, user_id, epoch, turn_id, kind, text):
         value = [user_id, epoch, turn_id, kind, text]
-        return self.cipher.encrypt(json.dumps(value, ensure_ascii=False).encode())
+        return self.cipher.encrypt(json.dumps(value, ensure_ascii=False).encode('utf-8', 'strict'))
 
     def _open(self, row, kind):
         try:
             value = json.loads(self.cipher.decrypt(row[kind + '_cipher']))
             if (not isinstance(value, list) or len(value) != 5 or
                     value[:4] != [row['user_id'], row['epoch'], row['id'], kind] or
-                    not isinstance(value[4], str)):
+                    not _valid_text(value[4], MAX_TEXT if kind == 'input' else MAX_ANSWER)):
                 raise ValueError
             return value[4]
         except Exception:
@@ -158,8 +186,11 @@ class CompanionService:
             db.execute("UPDATE companion_turns SET state=?,error_code=?,finished_at=? "
                        "WHERE id=? AND state='running'", (state, code, int(time.time()), turn_id))
 
-    def _generate(self, messages):
+    def _generate(self, messages, before_dispatch):
         local.ensure_ready()
+        # Readiness checks are not atomic with cancellation. Recheck immediately
+        # before dispatch; completion is still checked atomically before storage.
+        before_dispatch()
         raw = local.complete(messages, MAX_TOKENS)
         response = _model_json(raw)
         if not isinstance(response, dict) or response.get('model') != local.MODEL_ID:
@@ -179,14 +210,13 @@ class CompanionService:
         if not isinstance(message, dict) or message.get('tool_calls') or message.get('function_call'):
             fail('companion_tool_output_rejected', 502)
         content = _result_content(response)
-        if (set(content) != {'answer'} or not isinstance(content['answer'], str) or
-                not content['answer'].strip() or len(content['answer']) > MAX_ANSWER):
+        if set(content) != {'answer'} or not _valid_text(content['answer'], MAX_ANSWER):
             fail('companion_invalid_response', 502)
         return content['answer'].strip()
 
     def chat(self, user_id, authorization, request_id, text):
-        if (not isinstance(text, str) or not text.strip() or len(text) > MAX_TEXT or
-                not isinstance(request_id, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,120}', request_id)):
+        if (not _valid_text(text, MAX_TEXT) or not isinstance(request_id, str) or
+                not re.fullmatch(r'[A-Za-z0-9_.:-]{8,120}', request_id)):
             fail('companion_input_invalid', 422)
         binding = session_hash(authorization)
         self.initialize()
@@ -212,22 +242,20 @@ class CompanionService:
                        for row in reversed(rows)]
             turn_id = uuid.uuid4().hex
             now = int(time.time())
-            # The service never opens an additional model/network route under this lock.
             db.execute('INSERT INTO companion_turns '
                 '(id,user_id,epoch,request_id,session_hash,state,input_cipher,created_at,deadline) '
                 "VALUES(?,?,?,?,?,'running',?,?,?)",
                 (turn_id, user_id, epoch, request_id, binding,
                  self._seal(user_id, epoch, turn_id, 'input', text), now, now + LEASE_SECONDS))
             db.execute('INSERT INTO companion_slots VALUES(1,?,?)', (turn_id, now + LEASE_SECONDS))
+        release_slot = True
         try:
-            payload = {'history': history, 'message': text}
-            while history and len(json.dumps(payload, ensure_ascii=False).encode()) > 40_000:
-                history.pop(0)
-            messages = [{'role': 'system', 'content': SYSTEM},
-                        {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False, allow_nan=False)}]
-            with closing(self.connect()) as db:
-                self._active_in(db, user_id, binding, turn_id)
-            answer = self._generate(messages)
+            messages = _messages(history, text)
+            def before_dispatch():
+                with closing(self.connect()) as db:
+                    self._active_in(db, user_id, binding, turn_id)
+            before_dispatch()
+            answer = self._generate(messages, before_dispatch)
             with transaction(self.connect) as db:
                 self._active_in(db, user_id, binding, turn_id)
                 db.execute("UPDATE companion_turns SET state='completed',answer_cipher=?,model=?,finished_at=? WHERE id=?",
@@ -237,15 +265,22 @@ class CompanionService:
             self._terminal(turn_id, 'cancelled' if error.status_code in (401, 409) else 'failed',
                            'companion_turn_revoked' if error.status_code in (401, 409) else 'companion_response_rejected')
             raise
-        except local.LocalAIError:
+        except local.LocalAIError as error:
+            if str(error) == 'local_ai_timeout':
+                # Closing a client socket does not prove native generation stopped.
+                # Keep the short persisted cooldown, even across API restarts/clear.
+                release_slot = False
+                self._terminal(turn_id, 'failed', 'companion_local_timeout')
+                fail('companion_local_timeout', 504)
             self._terminal(turn_id, 'failed', 'companion_local_unavailable')
             fail('companion_local_unavailable', 503)
         except Exception:
             self._terminal(turn_id, 'failed', 'companion_invalid_response')
             fail('companion_invalid_response', 502)
         finally:
-            with transaction(self.connect) as db:
-                db.execute('DELETE FROM companion_slots WHERE turn_id=?', (turn_id,))
+            if release_slot:
+                with transaction(self.connect) as db:
+                    db.execute('DELETE FROM companion_slots WHERE turn_id=?', (turn_id,))
 
     def history(self, user_id, authorization):
         binding = session_hash(authorization)
@@ -261,6 +296,8 @@ class CompanionService:
 
     def cancel(self, user_id, authorization, turn_id):
         binding = session_hash(authorization)
+        if not isinstance(turn_id, str) or not re.fullmatch(r'[a-f0-9]{32}', turn_id):
+            fail('companion_turn_not_found', 404)
         self.initialize()
         with transaction(self.connect) as db:
             self._session(db, user_id, binding)
@@ -269,8 +306,6 @@ class CompanionService:
                 fail('companion_turn_not_found', 404)
             db.execute("UPDATE companion_turns SET state='cancelled',error_code='companion_cancelled',finished_at=? "
                        "WHERE id=? AND state='running'", (int(time.time()), turn_id))
-            # Cancel suppresses publication, not the remote/local generation itself.
-            # The owned slot remains until the active caller exits or its lease expires.
             row = db.execute('SELECT * FROM companion_turns WHERE id=?', (turn_id,)).fetchone()
             return {'id': turn_id, 'state': row['state'], 'generation_interrupt_confirmed': False}
 
@@ -283,7 +318,7 @@ class CompanionService:
             db.execute('INSERT INTO companion_epochs VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET epoch=excluded.epoch',
                        (user_id, value))
             db.execute('DELETE FROM companion_turns WHERE user_id=?', (user_id,))
-            # Do not free a running slot: clear/retry must not flood model workers.
+            # Do not free a running/cooling slot: clear/retry must not flood the worker.
         return {'cleared': True, 'old_generation_results_discarded': True}
 
 

@@ -12,6 +12,8 @@ TESTS = [
     'backend/tests/test_agent_routing_status.py',
     'backend/tests/test_agent_status_transport.py',
     'backend/tests/test_companion_chat.py',
+    'backend/tests/test_companion_bounds.py',
+    'backend/tests/test_local_ai_deadline.py',
     'backend/tests/test_autonomous_ai.py',
     'backend/tests/test_ai_policy.py',
     'backend/tests/test_ai_accounting_audit.py',
