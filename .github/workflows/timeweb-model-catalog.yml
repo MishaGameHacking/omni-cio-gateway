@@ -1,0 +1,46 @@
+name: Verify existing Timeweb model access without model charges
+on:
+  push:
+    branches: [codex/timeweb-model-access-2026-11-01]
+    paths:
+      - tools/timeweb-model-catalog.mjs
+      - tools/tests/timeweb-model-catalog.test.mjs
+      - .github/workflows/timeweb-model-catalog.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-timeweb-model-catalog
+  cancel-in-progress: false
+jobs:
+  catalog:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway'
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+          persist-credentials: false
+      - name: Verify catalogue parser before loading the existing secret
+        shell: powershell
+        working-directory: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          node --test tools/tests/timeweb-model-catalog.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Read only the provider catalogue with the existing key
+        shell: powershell
+        working-directory: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
+        run: |
+          node tools/timeweb-model-catalog.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve sanitized access result
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: timeweb-model-catalog-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ai-catalog-${{ github.run_id }}-${{ github.run_attempt }}/timeweb-model-catalog.json
+          if-no-files-found: error
+          retention-days: 7
