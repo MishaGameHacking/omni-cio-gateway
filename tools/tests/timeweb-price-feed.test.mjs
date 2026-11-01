@@ -25,13 +25,25 @@ test('exact decimal upper bounds include cache write and ignore discounts', () =
 
 test('missing, stopped, ambiguous or tiered model prices cannot become a fresh quote', () => {
   for (const changes of [{is_stopped: true}, {is_deprecated: true}, {is_stopped: undefined},
-    {price_tiers: [{threshold: 10}]}, {price_tiers: {}}, {parameter_values: {cost_in: 1e-5, cost_out: 1e-4}}]) {
+    {price_tiers: [{threshold: 10}]}, {price_tiers: {}}, {parameter_values: {cost_in: 1e-5}}]) {
     assert.throws(() => makePayload(catalogue(changes)));
   }
   const duplicate = catalogue(); duplicate.models.push(duplicate.models[0]);
   assert.throws(() => makePayload(duplicate));
   assert.throws(() => makePayload({models: []}));
   assert.throws(() => makePayload(catalogue(), NaN));
+});
+
+test('only context tiers strictly outside the admitted request bound are irrelevant', () => {
+  const tier = {above_context_tokens: 16384, cost_in: 0.00054, cost_out: 0.0027};
+  assert.equal(makePayload(catalogue({price_tiers: [tier]})).input_rub_per_million, '337.500000');
+  assert.throws(() => makePayload(catalogue({price_tiers: [{...tier, above_context_tokens: 16383}]})));
+  assert.throws(() => makePayload(catalogue({price_tiers: [tier, tier]})));
+  assert.throws(() => makePayload(catalogue({price_tiers: [{...tier, cost_out: -1}]})));
+  assert.throws(() => makePayload(catalogue({parameter_values: {cost_in: 1e-5, cost_out: 1e-4, pricing_unit: 'credit'}})));
+  assert.throws(() => makePayload(catalogue({parameter_values: {cost_in: 1e-5, cost_out: 1e-4, cost_cache_write: null}})));
+  assert.throws(() => makePayload(catalogue({price_tiers: null})));
+  assert.equal(makePayload(catalogue({parameter_values: {cost_in: 1e-5, cost_out: 1e-4}})).input_rub_per_million, '10.000000');
 });
 
 test('a signed envelope verifies exact bytes and omits signing and admin credentials', async () => {

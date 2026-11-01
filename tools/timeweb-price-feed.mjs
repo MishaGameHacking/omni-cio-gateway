@@ -31,6 +31,23 @@ function decimal(micro) {
   return `${micro / 1_000_000n}.${String(micro % 1_000_000n).padStart(6, '0')}`;
 }
 
+function checkTiers(tiers) {
+  if (!Array.isArray(tiers) || tiers.length > 32) fail('price_tiers_unreviewed');
+  let previous = -1;
+  for (const tier of tiers) {
+    if (!tier || typeof tier !== 'object' || Array.isArray(tier) ||
+        Object.keys(tier).sort().join() !== 'above_context_tokens,cost_in,cost_out' ||
+        !Number.isSafeInteger(tier.above_context_tokens) || tier.above_context_tokens <= previous ||
+        tier.above_context_tokens > 2_000_000) fail('price_tiers_unreviewed');
+    previous = tier.above_context_tokens;
+    rate(tier.cost_in); rate(tier.cost_out);
+    // The official ModelPriceTier contract applies strictly ABOVE the threshold.
+    // Every request is independently capped at 16,384 total input+output tokens.
+    // Applicable tiers (including their cache semantics) require another review.
+    if (tier.above_context_tokens < 16384) fail('price_context_tier_requires_review');
+  }
+}
+
 export function makePayload(catalogue, now = Date.now()) {
   if (!Number.isSafeInteger(now) || now < 0) fail('price_clock_invalid');
   const models = catalogue?.models;
@@ -41,11 +58,11 @@ export function makePayload(catalogue, now = Date.now()) {
   if (rows.length !== 1) fail('price_model_identity_invalid');
   const row = rows[0];
   if (row.is_stopped !== false || row.is_deprecated !== false) fail('price_model_unavailable');
-  // Tiered or batch tariffs need a separate, reviewed interpretation.
-  if (row.price_tiers != null && (!Array.isArray(row.price_tiers) || row.price_tiers.length)) fail('price_tiers_unreviewed');
+  checkTiers(row.price_tiers);
   const values = row.parameter_values;
   if (!values || typeof values !== 'object' || Array.isArray(values)) fail('price_values_missing');
-  const costs = ['cost_in', 'cost_cache_write'].map(name => rate(values[name]));
+  if (Object.hasOwn(values, 'pricing_unit') && values.pricing_unit !== 'token') fail('price_unit_unreviewed');
+  const costs = [values.cost_in, Object.hasOwn(values, 'cost_cache_write') ? values.cost_cache_write : values.cost_in].map(rate);
   const input = costs.reduce((a, b) => a > b ? a : b);
   const output = rate(values.cost_out);
   const issued = Math.floor(now / 1000);
