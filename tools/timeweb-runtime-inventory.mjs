@@ -59,7 +59,7 @@ export function summarizeInventory(servers, presets, operatingSystems, costs, ip
     ...(typeof row.name==='string'&&/^[A-Za-z0-9 ._-]{1,80}$/.test(row.name)?{os_name:row.name}:{})}));
   const costsSummary=costs?rows(costs,['services_costs']).map(row=>({...safeRecord(row),
     services:Array.isArray(row.services)?row.services.map(s=>safeRecord(s)):[]})):null;
-  const ipSummary=ips?rows(ips,['floating_ips']).map(row=>({...safeRecord(row),
+  const ipSummary=ips?rows(ips,['ips']).map(row=>({...safeRecord(row),
     is_ddos_guard:row.is_ddos_guard===true,is_attached:Boolean(row.resource_id||row.resource),
     ...(typeof row.id==='string'&&/^[a-zA-Z0-9-]{1,80}$/.test(row.id)?{resource_id:row.id}:{})})):null;
   const selected=rows(presets,['server_presets','presets']).filter(row=>[6749,6759].includes(row.id)).map(row=>({
@@ -79,8 +79,10 @@ export async function inspectRuntime(token, request=readCloud) {
   const report={schema_version:1,checked_at_utc:new Date().toISOString(),status:'unverified',
     source:'https://api.timeweb.cloud',api_requests_read_only:true,financial_orders:0,model_invocations:0};
   try {
-    const results=await Promise.all(['servers','presets','os','costs','ips'].map(name=>request(name,token)));
-    Object.assign(report,summarizeInventory(...results),{status:'received'});
+    const results=await Promise.allSettled(['servers','presets','os','costs','ips'].map(name=>request(name,token)));
+    const failed=results.find(result=>result.status==='rejected');
+    if(failed)throw failed.reason;
+    Object.assign(report,summarizeInventory(...results.map(result=>result.value)),{status:'received'});
   } catch(error) {
     report.status='unavailable';
     report.reason=error instanceof InventoryError?error.code:'inventory_failed';
