@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "purpose": "AnalystAI:Lenovo:TimewebGateway:v1",
+  "host": "LAPTOP-NPSGA016",
+  "key_id": "6a6c09ffb94fa63f5faa3dac1fea418666d567690ac1d2026142e8e308f069b7",
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAvshkf4RdZMe4Axj8X0K4\neAlNbMx2Mr/ehf4J+OFIkeevr5Yrn+rsvUi7jDauRwzqHAcZzzVyGj2P2+R0iwJW\nXXycPFRkQKYSH/LCzOHrkxWAV+HbZ8UdSGoJnUWh/tCJ8ZkwGNSALn+cyP21HjQq\nG9OS9of4jpYx/OaPAAMBZI7b388SZdLz0fS7BshIrYb6PfEdhdgNrZv45YafNHbd\ns7nyPAUcwpj4nSg8emUOkLQ2HsVppBwYNEshb6BNQr/i9w1FF/TSvGzXzSDQJEnb\nnnZIhzyG7f6D0kDsNMYeCWxZ7N3s4OiefaLPKh22zXUAi37sMPc9pICKNMftbtVp\njUzw4zA4qlUJmUMz0NQu4gP2moW3NcTHa0igZx9qlpHUaRGq2igP9NwWW9JEJzg1\nq4Tez4McVLFDFvsEI1N2uZv1z5VlwDfyRf48jDmEmNMFHH6lGKKf8e/+5XHNBSqJ\nHN8iMDnmAy3e5rjtpWn5qhpsOtMGcJIrztVvMW1L+Lw/AgMBAAE=\n-----END PUBLIC KEY-----\n",
+  "expires_at_utc": "2026-11-01T14:12:44.657094+00:00"
+}
