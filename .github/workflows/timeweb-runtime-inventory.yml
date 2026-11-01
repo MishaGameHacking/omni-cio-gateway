@@ -1,0 +1,38 @@
+name: Inspect Timeweb hosting capacity without changes
+on:
+  push:
+    branches: [codex/timeweb-model-access-2026-11-01]
+    paths:
+      - tools/timeweb-runtime-inventory.mjs
+      - tools/tests/timeweb-runtime-inventory.test.mjs
+      - .github/workflows/timeweb-runtime-inventory.yml
+permissions:
+  contents: read
+concurrency:
+  group: analyst-timeweb-runtime-inventory
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'MishaGameHacking/omni-cio-gateway' && github.run_attempt == 1
+    runs-on: [self-hosted, Windows, X64, omni-cio-ci]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: runtime-inventory-${{ github.run_id }}
+          persist-credentials: false
+      - name: Verify redaction and read-only restrictions
+        shell: cmd
+        working-directory: runtime-inventory-${{ github.run_id }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" --test tools/tests/timeweb-runtime-inventory.test.mjs
+          if errorlevel 1 exit /b 1
+      - name: Read existing resources and public plans
+        shell: cmd
+        working-directory: runtime-inventory-${{ github.run_id }}
+        env:
+          TIMEWEB_CLOUD_TOKEN: ${{ secrets.TIMEWEB_CLOUD_TOKEN }}
+        run: |
+          "C:\Program Files\nodejs\node.exe" tools/timeweb-runtime-inventory.mjs
+          if errorlevel 1 exit /b 1
