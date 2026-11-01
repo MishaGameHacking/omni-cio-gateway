@@ -21,11 +21,21 @@ jobs:
           ref: ${{ github.sha }}
           path: guarded-eval-${{ github.run_id }}-${{ github.run_attempt }}
           persist-credentials: false
+      - name: Prepare an isolated interpreter for the existing runner identity
+        shell: cmd
+        working-directory: guarded-eval-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          "C:\actions-runner-2\_work\_tool\omnicio-python-3.12.10\python.exe" -m venv .qualification-venv
+          if errorlevel 1 exit /b 1
+          .qualification-venv\Scripts\python.exe -m pip install --disable-pip-version-check --no-input --index-url https://pypi.org/simple fastapi==0.120.0 httpx==0.28.1 cryptography==50.0.0 PyJWT==2.15.0 tzdata==2026.5
+          if errorlevel 1 exit /b 1
+          .qualification-venv\Scripts\python.exe -m pip check
+          if errorlevel 1 exit /b 1
       - name: Exercise production guards and ledger with no network or secret
         shell: cmd
         working-directory: guarded-eval-${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          "C:\Users\Klima\AndroidStudioProjects\AnalystAI-Lenovo\build\python\Scripts\python.exe" tools/qualify_guarded_ai.py --dry-run
+          .qualification-venv\Scripts\python.exe tools/qualify_guarded_ai.py --dry-run
           if errorlevel 1 exit /b 1
       - name: Make ten synthetic Sol calls through the existing server client
         shell: cmd
@@ -33,7 +43,7 @@ jobs:
         env:
           TIMEWEB_AI_TOKEN: ${{ secrets.TIMEWEB_AI_TOKEN }}
         run: |
-          "C:\Users\Klima\AndroidStudioProjects\AnalystAI-Lenovo\build\python\Scripts\python.exe" tools/qualify_guarded_ai.py
+          .qualification-venv\Scripts\python.exe tools/qualify_guarded_ai.py
           if errorlevel 1 exit /b 1
       - name: Preserve sanitized results and accounting status
         if: always()

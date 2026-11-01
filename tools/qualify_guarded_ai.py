@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 import httpx
 
 MODEL = 'openai/gpt-6.1-sol'
-TESTED_SOURCE = Path('C:/Users/Klima/AndroidStudioProjects/AnalystAI-Lenovo/build/lenovo59-tests-817a4809.zip')
+TESTED_SOURCE = Path('C:/actions-runner-2/_work/_tool/analyst-evidence/qualification-source-817a4809.zip')
 TESTED_SHA256 = '817a4809c5afda3d00c2b57832a025af0c86f8e0a8017ec4819b703822f4f1be'
 
 
